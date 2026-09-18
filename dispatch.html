@@ -32,6 +32,7 @@
   .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
   .kpi small{color:var(--muted);font-size:13px}.kpi b{display:block;font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:26px;margin-top:4px}
   .kpi.late{background:var(--late-bg);border-color:var(--late-line)}.kpi.late small,.kpi.late b{color:var(--late)}
+  tr.click{cursor:pointer}tr.click:hover{background:#faf8f4}
   .banner{display:flex;align-items:center;gap:12px;background:var(--late-bg);border:1px solid var(--late-line);border-radius:10px;padding:10px 14px;margin-bottom:10px;color:#6e1a12;flex-wrap:wrap}
   .banner div{flex-grow:1}
   .tablewrap{overflow-x:auto}
@@ -81,7 +82,6 @@
       <div class="card kpi late"><small>Running late</small><b id="k-late">–</b></div>
       <div class="card kpi"><small>Delivered loads</small><b id="k-done">–</b></div>
     </div>
-    <div id="cpi-alerts"></div>
     <div id="banners"></div>
     <div class="card">
       <div class="tablewrap">
@@ -149,18 +149,7 @@ async function start() {
   $('signout').hidden = false;
   $('login-view').hidden = true;
   if (data.role === 'driver') { location.href = 'driver.html'; return; }
-  else { $('office-view').hidden = false; $('day').value = todayISO(); loadBoard(); cpiAlerts(); }
-}
-
-// CPI reminders for customer contracts (set on the Rates page)
-async function cpiAlerts() {
-  const { data } = await sb.from('customers').select('name, next_cpi_date, cpi_notice_days').not('next_cpi_date', 'is', null);
-  const today = new Date(todayISO() + 'T00:00:00');
-  $('cpi-alerts').innerHTML = (data || []).map(c => {
-    const days = Math.round((new Date(c.next_cpi_date + 'T00:00:00') - today) / 86400000);
-    if (days > (c.cpi_notice_days ?? 60)) return '';
-    return `<div class="banner" style="background:#fbeed8;border-color:#f0d9a8;color:#8a4b08"><div><strong>CPI ${days < 0 ? 'overdue' : 'due'}: ${esc(c.name)}</strong> — ${new Date(c.next_cpi_date + 'T00:00:00').toLocaleDateString()} ${days < 0 ? `(${-days} days ago)` : `(in ${days} days)`}.</div><a class="btn small" href="rates.html" style="text-decoration:none;display:inline-flex;align-items:center">Open Rates</a></div>`;
-  }).join('');
+  else { $('office-view').hidden = false; $('day').value = todayISO(); loadBoard(); }
 }
 
 function showLogin() {
@@ -214,7 +203,7 @@ async function loadBoard() {
       : state === 'late' ? '<span class="pill p-late">Running late</span>'
       : l.status === 'planned' ? '<span class="pill p-info">Planned</span>'
       : '<span class="pill p-ok">On time</span>';
-    rows += `<tr>
+    rows += `<tr class="click" data-load="${l.id}" title="Open load ${esc(l.load_no)}">
       <td class="mono">${esc(l.load_no)}</td>
       <td>${esc(l.customers?.name)}</td>
       <td>${esc(l.drivers?.full_name)} · ${esc(l.equipment?.unit_no)}</td>
@@ -230,12 +219,14 @@ async function loadBoard() {
   $('iso').textContent = `Signed in to ${profile.carriers?.name}. The database returned ${loads.length} load(s) for this date, all from this carrier.`;
 
   const { data: profit, error: pErr } = await sb.from('load_profit')
-    .select('load_no, customer, miles, billed, cost').eq('service_date', day).order('load_no');
+    .select('load_id, load_no, customer, miles, billed, cost').eq('service_date', day).order('load_no');
   $('profit-body').innerHTML = pErr ? `<tr><td colspan="6" class="error">${esc(pErr.message)}</td></tr>`
     : (profit.map(p => {
         const m = p.billed - p.cost, pct = p.billed ? Math.round(m / p.billed * 100) : 0;
-        return `<tr><td class="mono">${esc(p.load_no)}</td><td>${esc(p.customer)}</td><td class="num mono">${Math.round(p.miles)}</td><td class="num mono">${money(p.billed)}</td><td class="num mono">${money(p.cost)}</td><td class="num mono">${money(m)} (${pct}%)</td></tr>`;
+        return `<tr class="click" data-load="${p.load_id}" title="Open load ${esc(p.load_no)}"><td class="mono">${esc(p.load_no)}</td><td>${esc(p.customer)}</td><td class="num mono">${Math.round(p.miles)}</td><td class="num mono">${money(p.billed)}</td><td class="num mono">${money(p.cost)}</td><td class="num mono">${money(m)} (${pct}%)</td></tr>`;
       }).join('') || '<tr><td colspan="6">No loads on this date.</td></tr>');
+  // Click a load to open it on the Loads page
+  document.querySelectorAll('tr[data-load]').forEach(tr => tr.onclick = () => { location.href = `loads.html?load=${tr.dataset.load}&day=${day}`; });
 }
 
 async function loadDriver() {

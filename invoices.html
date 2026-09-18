@@ -164,9 +164,15 @@ $('login-btn').onclick = async () => {
 };
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 
-function cpiAlerts() {
+async function cpiAlerts() {
   const today = new Date(localISO(new Date()) + 'T00:00:00');
-  $('cpi-alerts').innerHTML = customers.filter(c => c.next_cpi_date).map(c => {
+  // Customers with dated POs need one covering two weeks from now
+  const { data: pos } = await sb.from('customer_pos').select('customer_id, valid_from, valid_to');
+  const soonISO = addDays(localISO(new Date()), 14), byCust = {};
+  (pos || []).forEach(p => (byCust[p.customer_id] = byCust[p.customer_id] || []).push(p));
+  const poAlerts = Object.entries(byCust).filter(([, list]) => !list.some(p => p.valid_from <= soonISO && (!p.valid_to || p.valid_to >= soonISO)))
+    .map(([cid]) => `<div class="banner"><b>PO needed: ${esc((customers.find(c => c.id === cid) || {}).name || '')}</b> — no PO on file from ${dt(soonISO)}. Add it on the <a href="rates.html">Rates</a> page.</div>`).join('');
+  $('cpi-alerts').innerHTML = poAlerts + customers.filter(c => c.next_cpi_date).map(c => {
     const days = Math.round((new Date(c.next_cpi_date + 'T00:00:00') - today) / 86400000);
     if (days > (c.cpi_notice_days ?? 60)) return '';
     return `<div class="banner ${days < 0 ? 'over' : ''}"><b>CPI ${days < 0 ? 'overdue' : 'due'}: ${esc(c.name)}</b> — ${dt(c.next_cpi_date)}. Apply it on the <a href="rates.html">Rates</a> page before invoicing weeks after that date.</div>`;

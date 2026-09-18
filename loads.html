@@ -234,9 +234,12 @@ async function start() {
   $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
   yard = p.carriers?.yard_address || '';
-  $('day').value = todayISO();
+  // Opened from the dispatch board: loads.html?load=<id>&day=<date>
+  const qs = new URLSearchParams(location.search);
+  $('day').value = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('day') || '') ? qs.get('day') : todayISO();
   await loadLists();
-  loadList();
+  await loadList();
+  if (qs.get('load')) showDetail(qs.get('load'));
 }
 $('login-btn').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
