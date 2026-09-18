@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoadCoda · Loads</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -540,9 +545,21 @@ function accessLine(d) {
     d.after_hours_phone && `After hours: ${esc(d.after_hours_contact || '')} <span class="mono">${esc(d.after_hours_phone)}</span>`, d.phone && `Location phone <span class="mono">${esc(d.phone)}</span>`].filter(Boolean);
   return bits.length ? `<details class="acc-d"><summary>Instructions, codes &amp; after-hours contact</summary><div class="hint">${bits.join('<br>')}</div></details>` : '';
 }
+// Customer emails for this load: what went out, and a mute switch
+const NOTICE = { on_the_way: 'On the way', late: 'Running late', delivered: 'Delivered', issue: 'Delivery issue' };
+function noticeSection(l) {
+  const rows = (l.notification_queue || []).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const seqOf = Object.fromEntries((l.stops || []).map(s => [s.id, s.seq]));
+  return `<div class="row" style="margin-top:12px;align-items:center">
+      <b>Customer notifications</b>
+      <label style="flex-direction:row;align-items:center;gap:8px;height:40px;color:var(--ink)"><input type="checkbox" id="d-mute" style="height:auto" ${l.notify_muted ? 'checked' : ''}> Mute emails for this load</label>
+      <span class="hint" id="d-mute-msg"></span></div>
+    ${rows.length ? `<div class="hint">${rows.map(n => `Stop ${seqOf[n.stop_id] ?? '?'} · ${NOTICE[n.event]} → ${esc(n.to_email || '')}: <b>${esc(n.status)}</b>${n.sent_at ? ' ' + time(n.sent_at) : ''}${n.detail && n.status !== 'sent' ? ` (${esc(n.detail)})` : ''}${['failed', 'muted', 'skipped'].includes(n.status) ? ` <a href="#" data-resend="${n.id}">send again</a>` : ''}`).join('<br>')}</div>`
+      : '<div class="hint">No customer emails yet for this load. Only stop customers with notifications turned on (Customers tab) get them.</div>'}`;
+}
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), notify_muted, notification_queue(id, stop_id, event, status, to_email, sent_at, created_at, detail), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
@@ -614,6 +631,7 @@ async function showDetail(id) {
         ? `From the toll statement: ${tollRows.filter(t => t.status === 'matched').length} transaction(s)${tollRows.some(t => t.status !== 'matched') ? ', others set aside' : ''}. Change them on the <a href="tolls.html">Tolls</a> page.`
         : 'Filled in automatically when the toll statement is uploaded on the Tolls page. Billed on the weekly invoice when the contract has a tolls line.'}</span>
     </div>
+    ${noticeSection(l)}
     ${tollRows.length ? `<div class="hint" style="margin-top:6px">${tollRows.sort((a, b) => a.txn_at.localeCompare(b.txn_at)).map(t => `<span class="mono">${time(t.txn_at)}</span> ${esc([t.agency, t.exit_plaza].filter(Boolean).join(' '))} ${money2(t.amount)}${t.status !== 'matched' ? ' (' + ({ non_billable: 'not billable', disputed: 'disputed' })[t.status] + ')' : ''}`).join(' · ')}</div>` : ''}`;
   // ---- change stops mid-trip ----
   const stopMsg = (t, ok) => { const m = $('d-msg'); m.hidden = false; m.innerHTML = ok ? `<span class="ok">${esc(t)}</span>` : `<span class="error">${esc(t)}</span>`; };
@@ -656,6 +674,17 @@ async function showDetail(id) {
     if (error) { $('d-miles-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
     await loadList(); showDetail(id);
   };
+  $('d-mute').onchange = async () => {
+    const { error } = await sb.rpc('set_load_notify_muted', { p_load_id: id, p_muted: $('d-mute').checked });
+    $('d-mute-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : ($('d-mute').checked ? 'Muted: no more emails for this load.' : 'Emails on.');
+  };
+  document.querySelectorAll('[data-resend]').forEach(a => a.onclick = async (e) => {
+    e.preventDefault();
+    const { error } = await sb.rpc('retry_notification', { p_id: a.dataset.resend });
+    if (error) return alert(error.message);
+    try { await sb.functions.invoke('send-notifications'); } catch (_) {}
+    showDetail(id);
+  });
   $('d-tolls-save').onclick = async () => {
     const amt = parseFloat($('d-tolls').value || '0');
     await sb.from('load_costs').delete().eq('load_id', id).eq('cost_type', 'tolls');

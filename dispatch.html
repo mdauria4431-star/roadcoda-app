@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoadCoda · Dispatch</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <!-- Supabase JavaScript library -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -188,10 +193,22 @@ function stopState(s) {
   return 'ok';
 }
 
+let notices = {};
+const noticeTag = (stopId, ev) => {
+  const n = notices[stopId + ':' + ev];
+  if (!n) return '<span class="pill" style="background:#ecebe8;color:#45423d;white-space:nowrap">Customer not notified</span>';
+  return n.status === 'sent' ? `<span class="pill p-ok" style="white-space:nowrap">Customer emailed ${time(n.sent_at)}</span>`
+    : n.status === 'pending' ? '<span class="pill p-info" style="white-space:nowrap">Email sending…</span>'
+    : `<span class="pill" style="background:#ecebe8;color:#45423d;white-space:nowrap">Email ${esc(n.status)}</span>`;
+};
 async function loadBoard() {
+  // send any customer notices that are due (late notices are found here too), then read today's log
+  try { await sb.functions.invoke('send-notifications'); } catch (_) {}
+  const { data: nq } = await sb.from('notification_queue').select('stop_id, event, status, sent_at, created_at').gte('created_at', new Date(Date.now() - 36 * 3600e3).toISOString());
+  notices = {}; (nq || []).forEach(n => { notices[n.stop_id + ':' + n.event] = n; });
   const day = $('day').value;
   const { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, miles, invoice_id, customers(name), drivers(full_name), equipment(unit_no), stops(seq, consignee, window_start, window_end, eta, status, late_reason, issue_type)')
+    .select('id, load_no, status, miles, invoice_id, notify_muted, customers(name), drivers(full_name), equipment(unit_no), stops(id, seq, consignee, window_start, window_end, eta, status, late_reason, issue_type)')
     .eq('service_date', day).order('load_no');
   if (error) { $('loads-body').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}</td></tr>`; return; }
 
@@ -210,7 +227,7 @@ async function loadBoard() {
     if (state === 'late') {
       lateCount++;
       const mins = Math.round((new Date(next.eta) - new Date(next.window_end)) / 60000);
-      banners += `<div class="banner"><div><strong>Load ${esc(l.load_no)}, Stop ${next.seq} · ${esc(next.consignee)}</strong> — about ${mins} min past the window. Window ${time(next.window_start)}–${time(next.window_end)}, ETA ${time(next.eta)}.</div><button class="btn small" disabled title="Day 12 of the test plan">Notify customer</button></div>`;
+      banners += `<div class="banner"><div><strong>Load ${esc(l.load_no)}, Stop ${next.seq} · ${esc(next.consignee)}</strong> — about ${mins} min past the window. Window ${time(next.window_start)}–${time(next.window_end)}, ETA ${time(next.eta)}.</div>${noticeTag(next.id, 'late')}</div>`;
     }
     const pill = l.status === 'delivered' ? '<span class="pill p-done">Delivered</span>'
       : state === 'late' ? '<span class="pill p-late">Running late</span>'

@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>RoadCoda · Driver</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -310,6 +315,7 @@ async function loadStops() {
     b.disabled = true;
     const { error } = await sb.rpc('driver_hub_reading', { p_load_id: b.dataset.hub, p_which: b.dataset.which, p_reading: v });
     if (error) { alert(error.message); b.disabled = false; return; }
+    if (b.dataset.which === 'start') kickNotices();
     loadStops();
   });
   document.querySelectorAll('[data-scan]').forEach(b => b.onclick = () => openScanner(b.dataset.scan, b.dataset.label));
@@ -322,6 +328,8 @@ async function loadStops() {
   document.querySelectorAll('[data-open-issue]').forEach(b => b.onclick = () => { const p = $('issue-' + b.dataset.openIssue); p.hidden = !p.hidden; });
 }
 
+// Ask the server to send any customer notices this action queued (fire and forget)
+const kickNotices = () => { try { sb.functions.invoke('send-notifications').catch(() => {}); } catch (_) {} };
 async function act(btn) {
   const id = btn.dataset.id, ev = btn.dataset.act;
   let counts = null, note = null, type = null;
@@ -343,6 +351,7 @@ async function act(btn) {
   }
   const { error } = await sb.rpc('driver_stop_event', { p_stop_id: id, p_event: ev, p_counts: counts, p_note: note, p_type: type });
   if (error) { alert(error.message); btn.disabled = false; return; }
+  if (ev !== 'arrive') kickNotices();
   loadStops();
 }
 

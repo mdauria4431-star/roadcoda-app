@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoadCoda · Customers</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -129,7 +134,14 @@
           <label for="dl-phone">Phone<input id="dl-phone" type="tel"></label>
           <label for="dl-email">Email<input id="dl-email" type="email"></label>
           <label for="dl-nemail">Notification email (if different)<input id="dl-nemail" type="email" placeholder="blank = email"></label>
-          <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;height:40px"><input type="checkbox" id="dl-notify" style="height:auto"> Send delivery notifications</label>
+          <div style="grid-column:1/-1;display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:8px">
+            <label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="dl-notify" style="height:auto"> <b>Send delivery notifications</b></label>
+            <span class="hint" style="margin:0">Which:</span>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="on_the_way" style="height:auto"> On the way</label>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="late" style="height:auto"> Running late</label>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="delivered" style="height:auto"> Delivered</label>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="issue" style="height:auto"> Delivery issue</label>
+          </div>
           <label for="dl-notes" style="grid-column:span 2">Office notes (drivers don't see these)<input id="dl-notes"></label>
           <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;height:40px"><input type="checkbox" id="dl-active" checked style="height:auto"> Active</label>
         </div>
@@ -260,7 +272,7 @@ function drawDl() {
     <td>${[d.door_code && 'Door', d.gate_code && 'Gate', d.other_code && (d.other_code_name || 'Other')].filter(Boolean).map(t => `<span class="pill p-acc">${esc(t)}</span>`).join(' ')}${d.delivery_instructions ? ' <span class="pill p-acc" title="' + esc(d.delivery_instructions) + '">Instructions</span>' : ''}</td>
     <td class="mono">${esc(d.phone || '')}${d.email ? `<br><span class="hint">${esc(d.email)}</span>` : ''}</td>
     <td>${d.after_hours_phone ? `${esc(d.after_hours_contact || '')}<br><span class="mono">${esc(d.after_hours_phone)}</span>` : ''}</td>
-    <td>${d.notify ? `<span class="current" title="${esc(d.notify_email || d.email || '')}">On</span>` : ''}</td></tr>`).join('')
+    <td>${d.notify ? `<span class="current" title="${esc(d.notify_email || d.email || '')}">${esc((d.notify_events || []).map(e => EVS[e]).join(', ') || 'none picked')}</span>` : ''}</td></tr>`).join('')
     || `<tr><td colspan="9" class="hint">${dlRows.length ? (dlFilter === 'missing' ? 'Every stop customer has an address.' : 'No matches.') : 'None yet. They are added as loads are entered or lists imported, or use + Add stop customer.'}</td></tr>`;
   document.querySelectorAll('tr[data-dl]').forEach(tr => tr.onclick = (e) => { if (e.target.closest('[data-nofollow]')) return; editDl(tr.dataset.dl); });
   document.querySelectorAll('[data-fixsave]').forEach(b => b.onclick = () => fixAddr(b.dataset.fixsave));
@@ -287,6 +299,7 @@ async function editDl(id) {
   $('dl-phone').value = d.phone || ''; $('dl-email').value = d.email || ''; $('dl-notify').checked = !!d.notify; $('dl-nemail').value = d.notify_email || '';
   $('dl-ws').value = (d.window_start || '').slice(0, 5); $('dl-we').value = (d.window_end || '').slice(0, 5); $('dl-notes').value = d.notes || ''; $('dl-active').checked = d.active;
   ACC.forEach(([id, k]) => $(id).value = d[k] || '');
+  document.querySelectorAll('.dl-ev').forEach(c => c.checked = (d.notify_events || ['delivered', 'issue']).includes(c.value));
   $('dl-title').textContent = 'Edit ' + d.name; $('dl-edit').open = true; $('dl-msg').innerHTML = '';
   $('dl-edit').scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Recent stops at this location
@@ -297,11 +310,13 @@ async function editDl(id) {
     recent.map(s => `<a href="loads.html?load=${s.loads.id}&day=${s.loads.service_date}">Load ${esc(s.loads.load_no)}</a> (${s.loads.service_date})`).join(', ')
     : 'Not used on any load yet.';
 }
+const EVS = { on_the_way: 'On the way', late: 'Late', delivered: 'Delivered', issue: 'Issue' };
 const ACC = [['dl-instr', 'delivery_instructions'], ['dl-door', 'door_code'], ['dl-gate', 'gate_code'], ['dl-oname', 'other_code_name'],
              ['dl-ocode', 'other_code'], ['dl-ahname', 'after_hours_contact'], ['dl-ahphone', 'after_hours_phone']];
 function clearDl() {
   dlEditing = null; ['dl-name', 'dl-code', 'dl-contact', 'dl-phone', 'dl-email', 'dl-nemail', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes', ...ACC.map(a => a[0])].forEach(id => $(id).value = '');
   $('dl-notify').checked = false; $('dl-kind').value = 'delivery';
+  document.querySelectorAll('.dl-ev').forEach(c => c.checked = ['delivered', 'issue'].includes(c.value));
   $('dl-active').checked = true; $('dl-title').textContent = 'Add a stop customer'; $('dl-used').hidden = true;
 }
 $('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; $('dl-edit').open = false; };
@@ -314,6 +329,8 @@ $('dl-save').onclick = async () => {
     phone: $('dl-phone').value.trim() || null, email: $('dl-email').value.trim().toLowerCase() || null,
     notify: $('dl-notify').checked, notify_email: $('dl-nemail').value.trim().toLowerCase() || null };
   ACC.forEach(([id, k]) => row[k] = $(id).value.trim() || null);
+  row.notify_events = [...document.querySelectorAll('.dl-ev')].filter(c => c.checked).map(c => c.value);
+  if (row.notify && !row.notify_events.length) { $('dl-msg').innerHTML = '<span class="error">Pick at least one notice, or untick Send delivery notifications.</span>'; return; }
   if (row.other_code && !row.other_code_name) { $('dl-msg').innerHTML = '<span class="error">Give the other code a name (Alarm, Lock box…) so the driver knows what it opens.</span>'; return; }
   if (row.notify && !row.email && !row.notify_email) { $('dl-msg').innerHTML = '<span class="error">Add an email to send notifications to.</span>'; return; }
   if (dlEditing && row.address) await fillOpenStops(dlEditing, row.address);
