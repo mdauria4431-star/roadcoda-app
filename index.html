@@ -77,7 +77,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a class="on" href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a class="on" href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -161,8 +161,8 @@ $('refresh').onclick = () => load();
 async function load() {
   const day = $('day').value, tomorrow = addDays(day, 1), today = localISO(new Date());
   $('title').textContent = day === today ? 'Today' : new Date(day + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-  const sel = 'id, load_no, status, miles, driver_id, invoice_id, hub_required, hub_start, hub_end, drivers(full_name), equipment(unit_no), customers(name), ' +
-              'stops(id, seq, stop_type, consignee, status, window_start, window_end, eta, arrived_at, departed_at, issue_type, late_reason)';
+  const sel = 'id, load_no, status, miles, driver_id, customer_id, invoice_id, hub_required, hub_start, hub_end, drivers(full_name), equipment(unit_no), customers(name), ' +
+              'stops(id, seq, stop_type, needs_review, added_note, consignee, address, status, window_start, window_end, eta, arrived_at, departed_at, issue_type, late_reason)';
   const [L, T, P, I] = await Promise.all([
     sb.from('loads').select(sel).eq('service_date', day).neq('status', 'cancelled').order('load_no'),
     sb.from('loads').select('id, load_no, driver_id, status, customers(name), stops(id)').eq('service_date', tomorrow).neq('status', 'cancelled'),
@@ -192,8 +192,14 @@ async function load() {
   const att = [];
   late.forEach(s => att.push(['red', `<a href="${loadLink(s.load, day)}">Load ${esc(s.load.load_no)}</a> · stop ${s.seq} ${esc(s.consignee)} running late (window ends ${time(s.window_end)})`]));
   issues.forEach(s => att.push(['red', `<a href="${loadLink(s.load, day)}">Load ${esc(s.load.load_no)}</a> · ${esc(ISSUE[s.issue_type] || 'Delivery issue')} at ${esc(s.consignee)}${s.late_reason ? ': ' + esc(s.late_reason) : ''}`]));
+  stops.filter(s => s.needs_review).forEach(s => att.push(['', `<a href="${loadLink(s.load, day)}">Load ${esc(s.load.load_no)}</a> · driver added a stop: ${esc(s.consignee)}${s.added_note ? ' (' + esc(s.added_note) + ')' : ''}`]));
   loads.filter(l => !l.driver_id).forEach(l => att.push(['', `<a href="${loadLink(l, day)}">Load ${esc(l.load_no)}</a> · no driver assigned`]));
   loads.filter(l => l.hub_required && l.status === 'delivered' && l.hub_end == null).forEach(l => att.push(['', `<a href="${loadLink(l, day)}">Load ${esc(l.load_no)}</a> · delivered but the ending odometer is missing (hub miles)`]));
+  const noAddr = stops.filter(s => !s.address && s.status === 'pending');
+  if (noAddr.length) {
+    const cid = noAddr[0].load?.customer_id;
+    att.push(['', `${noAddr.length} open stop${noAddr.length === 1 ? '' : 's'} today ${noAddr.length === 1 ? 'has' : 'have'} no address (${esc([...new Set(noAddr.map(s => s.consignee))].slice(0, 3).join(', '))}${new Set(noAddr.map(s => s.consignee)).size > 3 ? '…' : ''}) · <a href="customers.html?filter=missing${cid ? '&customer=' + cid : ''}">Fix on Customers</a>`]);
+  }
   $('attention').innerHTML = att.map(([c, t]) => `<li><span class="dot ${c}"></span><span>${t}</span></li>`).join('') || '<li><span class="dot blue"></span><span>Nothing needs attention right now.</span></li>';
 
   // Drivers
