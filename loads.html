@@ -62,7 +62,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -240,6 +240,8 @@ async function start() {
   await loadLists();
   await loadList();
   if (qs.get('load')) showDetail(qs.get('load'));
+  if (qs.get('new')) $('new-btn').click();
+  if (qs.get('import')) $('imp-btn').click();
 }
 $('login-btn').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
