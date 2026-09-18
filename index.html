@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadCoda</title>
+<script>
+  // Phones go to the driver app, everything else to the dispatch board.
+  location.replace(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'driver.html' : 'dispatch.html');
+</script>
+</head>
+<body style="font-family:system-ui;padding:24px">
+  <a href="dispatch.html">Office</a> · <a href="driver.html">Driver</a>
+</body>
+</html>

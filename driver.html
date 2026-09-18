@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RoadCoda · Driver</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:17px;
+       padding-bottom:env(safe-area-inset-bottom,0px)}
+  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:12px;
+         padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;position:sticky;top:0;z-index:5}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:20px}.brand span{color:#5fc2c7}
+  .who{margin-left:auto;font-size:14px;color:#d9d5cc;text-align:right}
+  button{font-family:inherit;cursor:pointer}
+  .btn{min-height:52px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:17px}
+  .btn.primary{background:var(--accent);color:#fff;border:none}
+  .btn.warn{color:var(--late);border-color:#f0c9c2}
+  .btn.link{min-height:40px;border:none;background:none;color:#d9d5cc;font-size:14px;padding:0 4px}
+  main{padding:16px;display:flex;flex-direction:column;gap:14px;max-width:640px;margin:0 auto}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600}
+  input{height:52px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;font-family:inherit}
+  .error{color:var(--late);font-size:15px}
+  h1{font-family:Archivo,sans-serif;font-size:24px;margin:0}
+  .load-head{font-size:14px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-top:6px}
+  .stop.done{opacity:.6}
+  .stop h2{font-family:Archivo,sans-serif;font-size:19px;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:15px;line-height:1.45}
+  .mono{font-family:'IBM Plex Mono',monospace}
+  .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:700;margin-top:8px}
+  .b-pending{background:#e3edf6;color:#1d4e89}.b-arrived{background:#e3f1e6;color:var(--ok)}
+  .b-delivered{background:#ecebe8;color:#45423d}.b-exception{background:#fbe0db;color:var(--late)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.row .btn{flex:1 1 140px}
+  .count{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+  .count input{width:110px;text-align:center}
+  select,textarea{border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;font-family:inherit;width:100%}
+  select{height:52px}textarea{height:80px;padding:10px 12px}
+  .issue{margin-top:12px;padding:12px;border:1px solid #f0c9c2;border-radius:12px;background:#fdf6f4;display:flex;flex-direction:column;gap:10px}
+  .scanbox{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .codes{list-style:none;margin:8px 0 0;padding:0;font-family:'IBM Plex Mono',monospace;font-size:14px}
+  .codes li{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #f0ece5}
+  .x{min-height:36px;min-width:44px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--late);font-weight:700}
+  .scanner{position:fixed;inset:0;background:#0e1013;color:#fff;z-index:40;display:flex;flex-direction:column;gap:12px;padding:calc(16px + env(safe-area-inset-top,0px)) 16px 16px}
+  #reader{width:100%;max-width:520px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000}
+  #scan-status{text-align:center;font-size:18px;font-weight:600;min-height:26px}
+  .scanner input{flex:1 1 auto;min-width:0}
+  .lock{position:fixed;inset:0;background:#0e1013;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:12px;text-align:center;padding:24px;z-index:50}
+  .lock b{font-family:Archivo,sans-serif;font-size:28px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <div class="who" id="who"></div>
+  <button class="btn link" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Driver sign in</h1>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h1 style="flex-grow:1">Today's stops</h1>
+      <button class="btn" id="refresh" style="min-height:44px">Refresh</button>
+    </div>
+    <div id="stops"></div>
+    <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
+  </section>
+</main>
+
+<div class="scanner" id="scanner" hidden role="dialog" aria-label="Scan labels">
+  <div id="scan-title" style="font-family:Archivo,sans-serif;font-size:20px"></div>
+  <div id="reader"></div>
+  <div id="scan-status" aria-live="polite">Point the camera at a label</div>
+  <div class="row" style="margin-top:0"><input id="manual-code" placeholder="Or type the label number" autocomplete="off"><button class="btn" id="manual-add" style="flex:0 0 auto">Add</button></div>
+  <button class="btn primary" id="scan-done">Done scanning</button>
+</div>
+
+<div class="lock" id="lock" hidden role="alertdialog" aria-live="assertive">
+  <b>Locked while moving</b>
+  <div>Eyes on the road. RoadCoda opens again when the truck stops.</div>
+</div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
+    '<h2 style="margin-top:0">RoadCoda can\'t find its settings</h2>' +
+    (window.RC_CONFIG ? '<p><b>config.js</b> still has the placeholder key. Open it and paste your Publishable key (Supabase &gt; Project Settings &gt; API Keys).</p>'
+                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder (right-click the zip &gt; <b>Extract All</b>), then open the page from that folder.</p>') +
+    '</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const time = (t) => t ? new Date(t).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '–';
+const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+
+// ---------- Lock the screen while the truck is moving ----------
+// Uses the phone's GPS speed. Above ~5 mph for a few seconds = locked.
+const STATUS = { pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered' };
+const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Issue reported' };
+const MOVING_MPS = 2.2;
+let me = null, lastPos = null;
+let movingSince = null;
+function watchMotion() {
+  if (!('geolocation' in navigator)) return;
+  navigator.geolocation.watchPosition(pos => {
+    lastPos = pos.coords;
+    const speed = pos.coords.speed;            // meters/second, may be null
+    if (speed != null && speed > MOVING_MPS) {
+      movingSince = movingSince || Date.now();
+      if (Date.now() - movingSince > 3000) $('lock').hidden = false;
+    } else if (speed != null) {
+      movingSince = null; $('lock').hidden = true;
+    }
+  }, () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
+}
+
+// ---------- Sign in ----------
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
+  if (p.role !== 'driver') { $('login-error').textContent = 'This page is for driver logins. Office users: open dispatch.html.'; $('login-view').hidden = false; return; }
+  me = p;
+  $('who').innerHTML = `${esc(p.full_name)}<br>${esc(p.carriers?.name || '')}`;
+  $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  watchMotion();
+  loadStops();
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; }
+  start();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('refresh').onclick = () => loadStops();
+
+// ---------- Today's stops ----------
+async function loadStops() {
+  const { data: loads, error } = await sb.from('loads')
+    .select('id, load_no, status, stops(id, seq, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
+    .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');
+  if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
+  if (!loads.length) { $('stops').innerHTML = '<div class="card">No stops assigned to you today.</div>'; return; }
+
+  let html = '';
+  for (const l of loads) {
+    html += `<div class="load-head">Load ${esc(l.load_no)}</div>`;
+    const stops = l.stops.sort((a, b) => a.seq - b.seq);
+    const nextId = (stops.find(s => !['delivered', 'exception'].includes(s.status)) || {}).id;
+    for (const s of stops) {
+      const done = ['delivered', 'exception'].includes(s.status);
+      const items = s.stop_items.map(i => `${i.qty_delivered != null ? i.qty_delivered + ' of ' : ''}${i.qty_ordered} ${esc(i.unit_type)}`).join(', ');
+      const maps = s.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(s.address)}" target="_blank" rel="noopener">Directions</a>` : '';
+      const codes = (s.scans || []).filter(c => c.barcode), photos = (s.scans || []).filter(c => c.photo_path);
+      let actions = '';
+      if (!done && s.id === nextId) {
+        actions = s.status === 'pending'
+          ? `<div class="row"><button class="btn primary" data-act="arrive" data-id="${s.id}">Arrived</button></div>`
+          : `<div class="counts" id="counts-${s.id}">${s.stop_items.map(i => `
+               <div class="count"><label for="q-${i.id}" style="font-weight:600">${esc(i.unit_type)} delivered (of ${i.qty_ordered})</label>
+               <input id="q-${i.id}" type="number" inputmode="numeric" min="0" value="${s.stop_items.length === 1 && codes.length ? codes.length : i.qty_ordered}" data-item="${i.id}"></div>`).join('')}</div>
+             <div class="scanbox">
+               <div class="meta">Scanned <b>${codes.length}</b> label${codes.length === 1 ? '' : 's'}${s.stop_items.length === 1 && codes.length && codes.length !== s.stop_items[0].qty_ordered ? ` <span style="color:var(--late)">(ordered ${s.stop_items[0].qty_ordered})</span>` : ''} · <b>${photos.length}</b> photo${photos.length === 1 ? '' : 's'}</div>
+               <div class="row">
+                 <button class="btn" data-scan="${s.id}" data-label="Stop ${s.seq} · ${esc(s.consignee)}">Scan labels</button>
+                 <button class="btn" data-photo="${s.id}" data-load="${l.id}">Add photo</button>
+               </div>
+               <input type="file" accept="image/*" capture="environment" id="ph-${s.id}" hidden>
+               ${codes.length || photos.length ? `<ul class="codes">${[...codes.map(c => `<li><span>${esc(c.barcode)}</span><button class="x" data-del="${c.id}" aria-label="Remove ${esc(c.barcode)}">✕</button></li>`),
+                  ...photos.map((c, n) => `<li><span>Photo ${n + 1} · ${time(c.scanned_at)}</span><button class="x" data-del="${c.id}" data-path="${esc(c.photo_path)}" aria-label="Remove photo ${n + 1}">✕</button></li>`)].join('')}</ul>` : ''}
+             </div>
+             <div class="row">
+               <button class="btn primary" data-act="deliver" data-id="${s.id}">Delivered</button>
+               <button class="btn warn" data-open-issue="${s.id}">Report issue</button>
+             </div>
+             <div class="issue" id="issue-${s.id}" hidden>
+               <label for="it-${s.id}">What happened?
+                 <select id="it-${s.id}">
+                   <option value="">Choose…</option>
+                   <option value="damaged">Damaged freight</option>
+                   <option value="short">Short (fewer than ordered)</option>
+                   <option value="over">Over (more than ordered)</option>
+                   <option value="refused">Refused by receiver</option>
+                   <option value="closed">Closed / no access</option>
+                   <option value="other">Other</option>
+                 </select></label>
+               <label for="in-${s.id}">Note<textarea id="in-${s.id}" maxlength="200" placeholder="e.g. 1 pallet crushed, receiver signed noting damage"></textarea></label>
+               <div class="meta">Set the delivered counts above, and add a photo of any damage, before you submit.</div>
+               <button class="btn primary" data-act="exception" data-id="${s.id}">Submit issue</button>
+             </div>`;
+      }
+      html += `<div class="card stop ${done ? 'done' : ''}">
+        <h2>Stop ${s.seq} · ${esc(s.consignee)}</h2>
+        <div class="meta">${esc(s.address || '')} ${maps}<br>
+          Window <span class="mono">${time(s.window_start)}–${time(s.window_end)}</span><br>${items}</div>
+        <span class="badge b-${s.status}">${s.status === 'exception' ? ISSUE[s.issue_type] || 'Issue reported' : (STATUS[s.status] || esc(s.status))}${s.arrived_at ? ' · arrived ' + time(s.arrived_at) : ''}${s.departed_at ? ' · left ' + time(s.departed_at) : ''}</span>
+        ${s.status === 'exception' && s.late_reason ? `<div class="meta" style="color:var(--late);margin-top:6px">${esc(s.late_reason)}</div>` : ''}
+        ${actions}</div>`;
+    }
+  }
+  $('stops').innerHTML = html;
+  document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b));
+  document.querySelectorAll('[data-scan]').forEach(b => b.onclick = () => openScanner(b.dataset.scan, b.dataset.label));
+  document.querySelectorAll('[data-photo]').forEach(b => {
+    const input = $('ph-' + b.dataset.photo);
+    b.onclick = () => input.click();
+    input.onchange = () => input.files[0] && uploadPhoto(b.dataset.photo, b.dataset.load, input.files[0], b);
+  });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => removeScan(b.dataset.del, b.dataset.path));
+  document.querySelectorAll('[data-open-issue]').forEach(b => b.onclick = () => { const p = $('issue-' + b.dataset.openIssue); p.hidden = !p.hidden; });
+}
+
+async function act(btn) {
+  const id = btn.dataset.id, ev = btn.dataset.act;
+  let counts = null, note = null, type = null;
+  const readCounts = () => { const c = {}; document.querySelectorAll(`#counts-${id} input[data-item]`).forEach(inp => c[inp.dataset.item] = parseInt(inp.value || '0', 10)); return c; };
+  if (ev === 'deliver') counts = readCounts();
+  if (ev === 'exception') {
+    type = $('it-' + id).value;
+    note = $('in-' + id).value.trim() || null;
+    if (!type) { alert('Choose what happened.'); return; }
+    if (['damaged', 'other'].includes(type) && !note) { alert('Add a short note describing what happened.'); return; }
+    if (!['refused', 'closed'].includes(type)) counts = readCounts();   // refused / closed = nothing delivered
+  }
+  btn.disabled = true;
+  const { error } = await sb.rpc('driver_stop_event', { p_stop_id: id, p_event: ev, p_counts: counts, p_note: note, p_type: type });
+  if (error) { alert(error.message); btn.disabled = false; return; }
+  loadStops();
+}
+
+// ---------- Barcode scanning (phone camera) ----------
+let scanner = null, scanStop = null, lastCode = '', lastAt = 0, scanCount = 0;
+const where = () => lastPos ? { lat: +lastPos.latitude.toFixed(6), lng: +lastPos.longitude.toFixed(6) } : {};
+
+async function saveCode(code) {
+  code = String(code || '').trim();
+  if (!code) return;
+  if (code === lastCode && Date.now() - lastAt < 2500) return;   // same label still in view
+  lastCode = code; lastAt = Date.now();
+  const { error } = await sb.from('scans').insert({ stop_id: scanStop, barcode: code, scan_type: 'delivery', ...where() });
+  if (error) {
+    $('scan-status').textContent = error.code === '23505' ? `Already scanned: ${code}` : error.message;
+    $('scan-status').style.color = '#f0a89b';
+    return;
+  }
+  scanCount++;
+  if (navigator.vibrate) navigator.vibrate(80);
+  $('scan-status').style.color = '#9be3a8';
+  $('scan-status').textContent = `✓ ${code}  ·  ${scanCount} scanned this time`;
+}
+
+async function openScanner(stopId, label) {
+  scanStop = stopId; scanCount = 0; lastCode = '';
+  $('scan-title').textContent = label;
+  $('scan-status').textContent = 'Point the camera at a label'; $('scan-status').style.color = '';
+  $('scanner').hidden = false;
+  if (!window.Html5Qrcode) { $('scan-status').textContent = 'Camera scanner did not load. Type label numbers instead.'; return; }
+  try {
+    scanner = new Html5Qrcode('reader');
+    await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 260, height: 160 } }, saveCode, () => {});
+  } catch (e) {
+    $('scan-status').textContent = 'Camera not available (' + (e?.message || e) + '). Type label numbers instead.';
+    scanner = null;
+  }
+}
+async function closeScanner() {
+  if (scanner) { try { await scanner.stop(); scanner.clear(); } catch (_) {} scanner = null; }
+  $('scanner').hidden = true;
+  loadStops();
+}
+$('scan-done').onclick = closeScanner;
+$('manual-add').onclick = async () => { await saveCode($('manual-code').value); $('manual-code').value = ''; $('manual-code').focus(); };
+$('manual-code').onkeydown = (e) => { if (e.key === 'Enter') $('manual-add').click(); };
+
+async function removeScan(id, path) {
+  if (!confirm(path ? 'Remove this photo?' : 'Remove this scan?')) return;
+  const { error } = await sb.from('scans').delete().eq('id', id);
+  if (error) { alert(error.message); return; }
+  if (path) await sb.storage.from('scan-photos').remove([path]);
+  loadStops();
+}
+
+// ---------- Photos ----------
+// Shrinks the photo to 1600 px (about 300 KB) so it uploads fast on a weak signal.
+async function shrink(file) {
+  try {
+    const img = await createImageBitmap(file);
+    const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8)) || file;
+  } catch (_) { return file; }
+}
+async function uploadPhoto(stopId, loadId, file, btn) {
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  try {
+    const blob = await shrink(file);
+    const path = `${me.carrier_id}/${loadId}/${stopId}/${Date.now()}.jpg`;
+    const up = await sb.storage.from('scan-photos').upload(path, blob, { contentType: 'image/jpeg' });
+    if (up.error) throw up.error;
+    const { error } = await sb.from('scans').insert({ stop_id: stopId, photo_path: path, scan_type: 'delivery', ...where() });
+    if (error) { await sb.storage.from('scan-photos').remove([path]); throw error; }
+  } catch (e) {
+    alert('Photo not saved: ' + (e.message || e));
+  }
+  loadStops();
+}
+
+start();
+</script>
+</body>
+</html>
