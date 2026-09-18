@@ -6,6 +6,8 @@
 <title>RoadCoda · Loads</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;
@@ -42,12 +44,17 @@
   .s-planned{background:var(--info-bg);color:var(--info)}.s-dispatched{background:var(--risk-bg);color:var(--risk)}
   .s-in_progress{background:var(--ok-bg);color:var(--ok)}.s-delivered{background:#ecebe8;color:#45423d}.s-cancelled{background:#fbe0db;color:var(--late)}
   .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-  .stop{border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:10px}
+  .stop{border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;grid-template-columns:2fr .8fr 2fr 1fr 1fr 1fr .8fr .9fr auto;gap:10px;align-items:end;margin-bottom:10px}
   .stop .n{font-family:Archivo,sans-serif;font-weight:800;align-self:center}
   #app{display:flex;flex-direction:column;gap:16px}
   .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .note{margin-top:10px;padding:10px 12px;background:#f7f5f0;border-radius:8px;font-size:13px;color:var(--muted);line-height:1.5}
   .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.thumbs img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#eee}
+  .s-hint{grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:-4px}
+  .s-hint.new{color:#8a4b08}
+  .imp-tbl td,.imp-tbl th{font-size:13px;padding:6px 5px}
+  .tag-new{background:#fbeed8;color:#8a4b08;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600;white-space:nowrap}
+  .tag-old{background:#e3f1e6;color:#1e6b34;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600;white-space:nowrap}
   .detail-stop{padding:10px 0;border-bottom:1px solid #efebe4;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
   @media (max-width:1000px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stop{grid-template-columns:1fr 1fr}}
 </style>
@@ -73,8 +80,23 @@
     <div class="toolbar">
       <h1>Loads</h1>
       <label for="day">Service date<input id="day" type="date"></label>
+      <button class="btn" id="imp-btn">Import delivery list</button>
       <button class="btn primary" id="new-btn">New load</button>
     </div>
+
+    <!-- Import a delivery list -->
+    <section class="card" id="imp" hidden>
+      <h2>Import a delivery list</h2>
+      <p class="hint">Upload the customer's list of deliveries (Excel, CSV or PDF). Each row becomes a stop. Delivery customers already on file are matched by
+        code or name; any that aren't are <b>added to the delivery customer database</b> when you import.</p>
+      <div class="row">
+        <label for="imp-cust" style="min-width:220px">Bill-to customer<select id="imp-cust"></select></label>
+        <label for="imp-date">Delivery date<input id="imp-date" type="date"></label>
+        <label for="imp-file">File<input id="imp-file" type="file" accept=".xlsx,.xls,.csv,.pdf,.txt" style="height:auto;padding:8px"></label>
+        <button class="btn" id="imp-close" type="button">Close</button>
+      </div>
+      <div id="imp-body" style="margin-top:14px"></div>
+    </section>
 
     <!-- New load form -->
     <section class="card" id="form" hidden>
@@ -183,6 +205,24 @@ function allocate(total, stops) {
 const STATUS_LABEL = {planned:'Planned', dispatched:'Dispatched', in_progress:'In progress', delivered:'Delivered', cancelled:'Cancelled'};
 let lists = {customers: [], drivers: [], equipment: []};
 let yard = '';
+// Delivery customers (stores, DCs...) for each bill-to customer
+let locs = [];
+const nameKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+async function loadLocs(customerId) {
+  locs = [];
+  if (customerId) {
+    const { data } = await sb.from('delivery_locations').select('id, name, code, address, window_start, window_end, notes, active').eq('customer_id', customerId).order('name');
+    locs = data || [];
+  }
+  let dl = document.getElementById('loc-list');
+  if (!dl) { dl = document.createElement('datalist'); dl.id = 'loc-list'; document.body.appendChild(dl); }
+  dl.innerHTML = locs.filter(l => l.active).map(l => `<option value="${esc(l.name)}">${esc(l.code ? '#' + l.code : '')}</option>`).join('');
+}
+function findLoc({ name, code }) {
+  if (code && String(code).trim()) { const c = String(code).trim().toLowerCase(); const hit = locs.find(l => (l.code || '').toLowerCase() === c); if (hit) return hit; }
+  if (name && nameKey(name)) return locs.find(l => nameKey(l.name) === nameKey(name)) || null;
+  return null;
+}
 let priced = null;   // what the last 'Get miles & price' returned
 
 async function start() {
@@ -243,7 +283,8 @@ function stopRow(n) {
   div.className = 'stop';
   div.innerHTML = `
     <div class="n">Stop ${n}</div>
-    <label>Consignee<input class="s-consignee" placeholder="e.g. XYZ Retail - Elm St. store"></label>
+    <label>Delivery customer<input class="s-consignee" list="loc-list" placeholder="Start typing to pick from the list" autocomplete="off"></label>
+    <label>Code<input class="s-code" placeholder="Store #"></label>
     <label>Address<input class="s-address"></label>
     <label>Window opens<input class="s-start" type="time" value="08:00"></label>
     <label>Window closes<input class="s-end" type="time" value="09:00"></label>
@@ -251,12 +292,32 @@ function stopRow(n) {
     <label>Quantity<input class="s-qty" type="number" min="0" step="1"></label>
     <label>Billed $<input class="s-billed" type="number" min="0" step="0.01" placeholder="Auto"></label>
     <button class="btn small danger s-remove" type="button" aria-label="Remove stop ${n}">Remove</button>`;
+  div.insertAdjacentHTML('beforeend', '<div class="s-hint"></div>');
   div.querySelector('.s-remove').onclick = () => { div.remove(); renumber(); };
+  const fill = (loc) => {
+    const hint = div.querySelector('.s-hint');
+    if (loc) {
+      div.dataset.loc = loc.id;
+      div.querySelector('.s-consignee').value = loc.name;
+      div.querySelector('.s-code').value = loc.code || '';
+      if (loc.address) div.querySelector('.s-address').value = loc.address;
+      if (loc.window_start) div.querySelector('.s-start').value = loc.window_start.slice(0, 5);
+      if (loc.window_end) div.querySelector('.s-end').value = loc.window_end.slice(0, 5);
+      hint.className = 's-hint'; hint.textContent = `On file${loc.notes ? ' · ' + loc.notes : ''}`;
+    } else {
+      div.dataset.loc = '';
+      const typed = div.querySelector('.s-consignee').value.trim();
+      hint.className = 's-hint new'; hint.textContent = typed ? 'New delivery customer: it will be added to the database when you save.' : '';
+    }
+  };
+  div.querySelector('.s-consignee').onchange = () => fill(findLoc({ name: div.querySelector('.s-consignee').value }));
+  div.querySelector('.s-code').onchange = () => { const l = findLoc({ code: div.querySelector('.s-code').value }); if (l) fill(l); };
   return div;
 }
 function renumber() { document.querySelectorAll('#stops .stop .n').forEach((el, i) => el.textContent = `Stop ${i + 1}`); }
 // Dedicated trucks usually start at the customer's facility: use it when the customer has one
 $('f-customer').onchange = () => {
+  loadLocs($('f-customer').value);
   const c = lists.customers.find(x => x.id === $('f-customer').value);
   if ($('f-origin').dataset.auto === '1' || !$('f-origin').value) {
     $('f-origin').value = c?.start_address || yard; $('f-origin').dataset.auto = '1';
@@ -270,6 +331,7 @@ $('new-btn').onclick = async () => {
   $('f-date').value = $('day').value;
   ['f-customer','f-driver','f-truck','f-miles','f-linehaul','f-fsc'].forEach(id => $(id).value = '');
   $('f-origin').value = yard; $('f-origin').dataset.auto = '1'; $('f-round').checked = true; $('calc-note').hidden = true; priced = null;
+  loadLocs('');
   $('stops').innerHTML = ''; $('stops').appendChild(stopRow(1));
   // Suggest the next load number
   const { data } = await sb.from('loads').select('load_no').order('created_at', { ascending: false }).limit(50);
@@ -343,6 +405,8 @@ $('save').onclick = async () => {
   const stops = [...document.querySelectorAll('#stops .stop')].map((el, i) => ({
     seq: i + 1,
     consignee: el.querySelector('.s-consignee').value.trim(),
+    code: el.querySelector('.s-code').value.trim(),
+    loc: el.dataset.loc || null,
     address: el.querySelector('.s-address').value.trim() || null,
     start: el.querySelector('.s-start').value, end: el.querySelector('.s-end').value,
     unit: el.querySelector('.s-unit').value,
@@ -379,8 +443,17 @@ $('save').onclick = async () => {
     });
     if (e2) throw e2;
 
+    // Every stop points to a delivery customer; new ones are added to the database here
+    for (const s of stops) {
+      const { data: locId, error: el } = await sb.rpc('find_or_add_location', { p_customer_id: $('f-customer').value, p_name: s.consignee,
+        p_code: s.code || null, p_address: s.address, p_start: s.start || null, p_end: s.end || null });
+      if (el) throw el;
+      s.loc = locId;
+    }
+    await loadLocs($('f-customer').value);
+    stops.forEach(s => { const l = locs.find(x => x.id === s.loc); if (l) { s.consignee = l.name; s.address = s.address || l.address; } });
     const { data: stopRows, error: e3 } = await sb.from('stops').insert(stops.map(s => ({
-      load_id: loadId, seq: s.seq, consignee: s.consignee, address: s.address,
+      load_id: loadId, seq: s.seq, consignee: s.consignee, address: s.address, location_id: s.loc,
       window_start: toTs(s.start), window_end: toTs(s.end), eta: toTs(s.start)
     }))).select('id, seq');
     if (e3) throw e3;
@@ -411,7 +484,7 @@ $('save').onclick = async () => {
 // ---------- Load detail ----------
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, consignee, address, window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, consignee, address, window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
@@ -420,7 +493,7 @@ async function showDetail(id) {
     return `<div class="detail-stop">
       <div><strong>Stop ${s.seq} · ${esc(s.consignee)}</strong><br><span style="color:var(--muted)">${esc(s.address || '')}</span><br>${items}${scanInfo(s)}</div>
       <div class="mono" style="text-align:right">Window ${time(s.window_start)}–${time(s.window_end)}<br>
-        Arrived ${time(s.arrived_at)} · Departed ${time(s.departed_at)}<br>
+        Arrived ${time(s.arrived_at)} · Departed ${time(s.departed_at)}<br>${s.odometer != null ? `Odometer ${s.odometer} · ${s.leg_miles} mi from previous<br>` : l.hub_required && s.status === 'pending' ? '<span style="color:var(--muted)">Odometer due on arrival</span><br>' : ''}
         <span class="pill s-${s.status === 'pending' ? 'planned' : s.status === 'arrived' ? 'in_progress' : s.status === 'exception' ? 'cancelled' : 'delivered'}">${s.status === 'exception' ? esc(issueLabel(s)) : ({pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered'}[s.status] || esc(s.status))}</span>
         ${s.late_reason ? `<br><span class="error">${esc(s.late_reason)}</span>` : ''}</div></div>`;
   }).join('');
@@ -495,6 +568,181 @@ async function showDetail(id) {
   showPhotos();
   $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// ---------- Import a delivery list (Excel, CSV or PDF) ----------
+const FIELDS = [
+  ['name', 'Delivery customer name', /store ?name|consignee|ship ?to|deliver(y)? ?to|customer|location|name|account ?name|dest/i],
+  ['code', 'Code / store #', /store ?(#|no|num)|code|site|loc(ation)? ?(#|no|id)|acct|account ?(#|no)|dest ?(#|no)|^#$|^store$/i],
+  ['address', 'Address', /address|street|addr/i],
+  ['city', 'City', /city|town/i],
+  ['state', 'State', /^st$|state|prov/i],
+  ['zip', 'Zip', /zip|postal/i],
+  ['wstart', 'Window opens', /open|start|from|earliest|window|appt|appointment|time/i],
+  ['wend', 'Window closes', /close|end|latest|until|^to$/i],
+  ['qty', 'Quantity', /qty|quantity|pallets?|cases|pieces|pcs|units|count|plts?|cages?|totes?|boxes/i],
+  ['unit', 'Unit', /unit|uom|type/i],
+  ['route', 'Route / load no.', /route|load|trip|run|truck/i],
+];
+let imp = { rows: [], header: 0, map: {} };
+
+$('imp-btn').onclick = () => {
+  $('imp').hidden = false; $('form').hidden = true; $('detail').hidden = true;
+  $('imp-cust').innerHTML = '<option value="">Choose…</option>' + lists.customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  const t = new Date(); t.setDate(t.getDate() + 1); $('imp-date').value = localDate(t);
+  $('imp-body').innerHTML = ''; $('imp-file').value = '';
+};
+$('imp-close').onclick = () => { $('imp').hidden = true; };
+function localDate(d) { d = new Date(d); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); }
+
+$('imp-file').onchange = async () => {
+  const f = $('imp-file').files[0]; if (!f) return;
+  $('imp-body').innerHTML = '<span class="ok">Reading the file…</span>';
+  try {
+    const buf = await f.arrayBuffer();
+    let rows;
+    if (/\.pdf$/i.test(f.name)) rows = await pdfRows(buf);
+    else {
+      if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Check your internet connection and refresh.');
+      const wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: /\.(csv|txt)$/i.test(f.name) });   // CSV: keep text as typed (leading zeros)
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+    }
+    rows = rows.map(r => r.map(c => (c == null ? '' : c))).filter(r => r.some(c => String(c).trim() !== ''));
+    if (!rows.length) throw new Error('No rows found in that file.');
+    imp.rows = rows;
+    // header = first row within the top 15 with at least 2 cells that contain letters
+    imp.header = Math.max(0, rows.slice(0, 15).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
+    guessMap(); drawImport();
+  } catch (e) { $('imp-body').innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
+};
+
+// PDF: rebuild the table from the text positions on each page
+async function pdfRows(buf) {
+  const lib = window['pdfjs-dist/build/pdf'];
+  if (!lib) throw new Error('The PDF reader did not load. Check your internet connection and refresh.');
+  lib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const pdf = await lib.getDocument({ data: buf }).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    const byY = {};
+    tc.items.filter(i => i.str.trim()).forEach(i => { const y = Math.round(i.transform[5] / 3); (byY[y] = byY[y] || []).push({ x: i.transform[4], w: i.width, t: i.str }); });
+    Object.keys(byY).map(Number).sort((a, b) => b - a).forEach(y => {
+      const items = byY[y].sort((a, b) => a.x - b.x), cells = [];
+      for (const it of items) {
+        const last = cells[cells.length - 1];
+        if (last && it.x - (last.x + last.w) < 6) { last.t += (it.x - (last.x + last.w) > 1 ? ' ' : '') + it.t; last.w = it.x + it.w - last.x; }
+        else cells.push({ ...it });
+      }
+      lines.push(cells);
+    });
+  }
+  // Use the header line's column positions to line up every other row
+  const hi = Math.max(0, lines.slice(0, 20).reduce((best, l, i) => (l.filter(c => /[A-Za-z]/.test(c.t)).length > (lines[best]?.filter(c => /[A-Za-z]/.test(c.t)).length || 0) ? i : best), 0));
+  const cols = lines[hi].map(c => c.x);
+  return lines.slice(hi).map(l => {
+    const row = cols.map(() => '');
+    l.forEach(c => { let k = 0; cols.forEach((x, j) => { if (c.x + 4 >= x) k = j; }); row[k] = row[k] ? row[k] + ' ' + c.t : c.t; });
+    return row;
+  });
+}
+
+function guessMap() {
+  const head = imp.rows[imp.header].map(h => String(h).trim());
+  imp.map = {};
+  const used = new Set();
+  // most specific first, so "Store #" goes to code and "Store name" to name
+  for (const key of ['code', 'route', 'qty', 'unit', 'zip', 'state', 'city', 'address', 'wend', 'wstart', 'name']) {
+    const [, , re] = FIELDS.find(f => f[0] === key);
+    const i = head.findIndex((h, j) => h && !used.has(j) && re.test(h));
+    if (i >= 0) { imp.map[key] = i; used.add(i); }
+  }
+}
+
+// "6:00 AM", "0600", "6am", 0.25 (Excel) -> "06:00"
+function toTime(v) {
+  if (v === '' || v == null) return '';
+  if (typeof v === 'number') { const m = Math.round((v % 1) * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+  const t = String(v).trim().toLowerCase().match(/^(\d{1,2}):?(\d{2})?\s*(a|p)?/);
+  if (!t) return '';
+  let h = parseInt(t[1], 10), m = parseInt(t[2] || '0', 10);
+  if (String(v).replace(/\D/g, '').length === 4 && !String(v).includes(':')) { h = parseInt(String(v).slice(0, 2), 10); m = parseInt(String(v).slice(2, 4), 10); }
+  if (t[3] === 'p' && h < 12) h += 12; if (t[3] === 'a' && h === 12) h = 0;
+  return h < 24 && m < 60 ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : '';
+}
+
+function importRows() {
+  const g = (r, k) => imp.map[k] != null ? r[imp.map[k]] : '';
+  const unitDefault = $('imp-unit')?.value || 'pallets';
+  return imp.rows.slice(imp.header + 1).map((r, i) => {
+    let ws = g(r, 'wstart'), we = g(r, 'wend');
+    if (typeof ws === 'string' && /[-–]/.test(ws) && !we) { const [a, b] = ws.split(/\s*[-–]\s*/); ws = a; we = b; }
+    const addr = [g(r, 'address'), g(r, 'city'), [g(r, 'state'), /^\d{3,4}$/.test(String(g(r, 'zip')).trim()) ? String(g(r, 'zip')).trim().padStart(5, '0') : g(r, 'zip')].filter(Boolean).join(' ')].map(x => String(x).trim()).filter(Boolean).join(', ');
+    const unitRaw = String(g(r, 'unit') || '').toLowerCase();
+    const unit = UNITS.find(u => unitRaw.startsWith(u.replace(/e?s$/, ''))) || unitDefault;
+    const row = { i, name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address: addr,
+      window_start: toTime(ws), window_end: toTime(we), qty: parseFloat(String(g(r, 'qty')).replace(/[^\d.]/g, '')) || 0, unit,
+      route: String(g(r, 'route')).trim() };
+    row.ok = !!(row.name || row.code);
+    row.loc = row.ok ? findLoc(row) : null;
+    return row;
+  });
+}
+
+async function drawImport() {
+  if ($('imp-cust').value) await loadLocs($('imp-cust').value);
+  const head = imp.rows[imp.header].map(h => String(h).trim());
+  const colOpts = (sel) => '<option value="">(not in file)</option>' + head.map((h, j) => `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(h || 'Column ' + (j + 1))}</option>`).join('');
+  const rows = importRows();
+  const hasRoute = imp.map.route != null;
+  const groupBy = $('imp-group')?.value || (hasRoute ? 'route' : 'all');
+  const news = new Set(rows.filter(r => r.ok && !r.loc).map(r => (r.code || nameKey(r.name))));
+  $('imp-body').innerHTML = `
+    <div class="row">
+      <label for="imp-head">Header row<select id="imp-head">${imp.rows.slice(0, 15).map((r, i) => `<option value="${i}" ${i === imp.header ? 'selected' : ''}>Row ${i + 1}: ${esc(r.filter(Boolean).slice(0, 3).join(' | ').slice(0, 50))}</option>`).join('')}</select></label>
+      <label for="imp-group">Make loads<select id="imp-group">
+        <option value="route" ${groupBy === 'route' ? 'selected' : ''} ${hasRoute ? '' : 'disabled'}>One per route / load no. in the file</option>
+        <option value="all" ${groupBy === 'all' ? 'selected' : ''}>All deliveries on one load</option>
+        <option value="each" ${groupBy === 'each' ? 'selected' : ''}>One load per delivery</option></select></label>
+      <label for="imp-unit">Unit if the file has none<select id="imp-unit">${UNITS.map(u => `<option ${u === ($('imp-unit')?.value || 'pallets') ? 'selected' : ''}>${u}</option>`).join('')}</select></label>
+    </div>
+    <details style="margin-top:10px" ${Object.keys(imp.map).length < 2 ? 'open' : ''}><summary style="cursor:pointer;font-weight:600">Match the file's columns (${Object.keys(imp.map).length} found automatically)</summary>
+      <div class="grid" style="margin-top:8px">${FIELDS.map(([k, label]) => `<label>${label}<select data-map="${k}">${colOpts(imp.map[k])}</select></label>`).join('')}</div>
+    </details>
+    ${!$('imp-cust').value ? '<p class="error" style="margin-top:10px">Choose the bill-to customer above to match delivery customers.</p>' : ''}
+    <p style="margin-top:12px"><b>${rows.filter(r => r.ok).length}</b> deliveries ·
+      <span class="tag-old">${rows.filter(r => r.ok && r.loc).length} on file</span>
+      <span class="tag-new">${news.size} new delivery customer${news.size === 1 ? '' : 's'} will be added</span>
+      ${rows.some(r => !r.ok) ? ` · <span class="error">${rows.filter(r => !r.ok).length} row(s) without a name or code will be skipped</span>` : ''}</p>
+    <div class="tablewrap" style="max-height:360px;overflow:auto"><table class="imp-tbl">
+      <thead><tr><th>Row</th><th>Load</th><th>Delivery customer</th><th>Code</th><th>Address</th><th>Window</th><th class="num">Qty</th><th></th></tr></thead>
+      <tbody>${rows.map(r => `<tr style="${r.ok ? '' : 'opacity:.45'}"><td class="mono">${imp.header + r.i + 2}</td><td class="mono">${esc(groupBy === 'route' ? r.route : groupBy === 'all' ? 'one load' : 'own load')}</td>
+        <td>${esc(r.loc ? r.loc.name : r.name)}</td><td class="mono">${esc(r.code)}</td><td>${esc(r.address || r.loc?.address || '')}</td>
+        <td class="mono">${esc([r.window_start, r.window_end].filter(Boolean).join('–'))}</td><td class="num mono">${r.qty} ${esc(r.unit)}</td>
+        <td>${!r.ok ? 'skipped' : r.loc ? '<span class="tag-old">On file</span>' : '<span class="tag-new">New – will be added</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="row" style="margin-top:12px"><button class="btn primary" id="imp-go" ${$('imp-cust').value && rows.some(r => r.ok) ? '' : 'disabled'}>Create loads</button>
+      <span class="hint">Loads are created as Planned. Assign drivers and trucks, then Get miles &amp; price, on each load.</span></div>
+    <div id="imp-msg" style="margin-top:8px"></div>`;
+  $('imp-head').onchange = () => { imp.header = parseInt($('imp-head').value, 10); guessMap(); drawImport(); };
+  $('imp-group').onchange = drawImport; $('imp-unit').onchange = drawImport;
+  document.querySelectorAll('[data-map]').forEach(sel => sel.onchange = () => {
+    if (sel.value === '') delete imp.map[sel.dataset.map]; else imp.map[sel.dataset.map] = parseInt(sel.value, 10); drawImport(); });
+  $('imp-go').onclick = async () => {
+    const ok = importRows().filter(r => r.ok);
+    const g = $('imp-group').value, groups = new Map();
+    ok.forEach((r, n) => { const k = g === 'route' ? (r.route || '(no route)') : g === 'all' ? 'all' : 'row' + n; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+    const payload = [...groups.entries()].map(([k, list]) => ({ load_no: g === 'route' && k !== '(no route)' ? k : null,
+      stops: list.map(r => ({ name: r.name, code: r.code, address: r.address, window_start: r.window_start, window_end: r.window_end, unit: r.unit, qty: r.qty })) }));
+    $('imp-go').disabled = true;
+    const { data, error } = await sb.rpc('create_loads_from_import', { p_customer_id: $('imp-cust').value, p_date: $('imp-date').value,
+      p_loads: payload, p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York' });
+    if (error) { $('imp-go').disabled = false; $('imp-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    $('imp-body').innerHTML = `<p class="ok">Created ${data.loads} load${data.loads === 1 ? '' : 's'} with ${data.stops} stops for ${dt2($('imp-date').value)}.
+      ${data.new_locations ? `${data.new_locations} new delivery customer${data.new_locations === 1 ? ' was' : 's were'} added to the database.` : ''}</p>`;
+    $('day').value = $('imp-date').value; loadList();
+  };
+}
+const dt2 = (s) => new Date(s + 'T00:00:00').toLocaleDateString();
+$('imp-cust').onchange = () => { if (imp.rows.length) drawImport(); };
 
 start();
 </script>

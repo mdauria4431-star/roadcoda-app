@@ -168,6 +168,27 @@
       </div>
       <div id="x-msg" style="margin-top:6px"></div>
 
+      <h3>Delivery customers</h3>
+      <p class="hint">The stores, DCs and job sites this customer's loads deliver to. Stops are picked from this list; new ones are added automatically when a load is saved or a delivery list is imported.</p>
+      <div class="row" style="margin-bottom:8px"><label for="dl-q" style="flex:1 1 240px">Search<input id="dl-q" placeholder="name, code or town"></label>
+        <label style="flex-direction:row;align-items:center;gap:8px;height:40px"><input type="checkbox" id="dl-inactive" style="height:auto"> Show inactive</label></div>
+      <div class="tablewrap" style="max-height:320px;overflow:auto"><table style="min-width:760px">
+        <thead><tr><th>Name</th><th>Code</th><th>Address</th><th>Window</th><th>Notes</th><th></th></tr></thead>
+        <tbody id="dl-list"></tbody></table></div>
+      <details id="dl-edit" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600" id="dl-title">Add a delivery customer</summary>
+        <div class="grid" style="margin-top:10px">
+          <label for="dl-name" style="grid-column:span 2">Name<input id="dl-name" placeholder="e.g. XYZ Retail - Store 212"></label>
+          <label for="dl-code">Code / store #<input id="dl-code"></label>
+          <label for="dl-contact">Contact<input id="dl-contact"></label>
+          <label for="dl-addr" style="grid-column:span 2">Address<input id="dl-addr" placeholder="Street, Town, ST 00000"></label>
+          <label for="dl-ws">Window opens<input id="dl-ws" type="time"></label>
+          <label for="dl-we">Window closes<input id="dl-we" type="time"></label>
+          <label for="dl-notes" style="grid-column:span 3">Notes (dock, gate code, hours)<input id="dl-notes"></label>
+          <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;height:40px"><input type="checkbox" id="dl-active" checked style="height:auto"> Active</label>
+        </div>
+        <div class="row" style="margin-top:10px"><button class="btn primary" id="dl-save">Save</button><button class="btn" id="dl-new" type="button">Clear</button><span id="dl-msg"></span></div>
+      </details>
+
       <h3>Per-load rate sheet versions (optional)</h3>
       <p class="hint">Rates are never edited. To change a price (a CPI increase, a new contract), add a new version with the date it starts.
         Loads before that date keep the old price.</p>
@@ -458,6 +479,7 @@ async function loadContract() {
   if (cur) $('c-ver').value = cur.id;
   showVersion();
   loadExtras();
+  loadDl();
 }
 $('c-ver').onchange = () => showVersion();
 async function loadPos() {
@@ -602,6 +624,41 @@ $('c-apply').onclick = async () => {
   $('c-pct').value = '';
   await loadContract(); loadCpiAlerts();
   $('c-set-msg').innerHTML = '<span class="ok">CPI applied. The new version is listed above; the next CPI date moved out one year.</span>';
+};
+
+// ---------- Delivery customers ----------
+let dlRows = [], dlEditing = null;
+async function loadDl() {
+  const { data } = await sb.from('delivery_locations').select('*').eq('customer_id', $('cust').value).order('name');
+  dlRows = data || []; drawDl(); clearDl();
+}
+function drawDl() {
+  const q = $('dl-q').value.trim().toLowerCase(), inact = $('dl-inactive').checked;
+  const rows = dlRows.filter(d => (inact || d.active) && (!q || [d.name, d.code, d.address].join(' ').toLowerCase().includes(q)));
+  $('dl-list').innerHTML = rows.map(d => `<tr style="${d.active ? '' : 'opacity:.5'}"><td>${esc(d.name)}</td><td class="mono">${esc(d.code || '')}</td><td>${esc(d.address || '')}</td>
+    <td class="mono">${d.window_start ? d.window_start.slice(0, 5) + '–' + (d.window_end || '').slice(0, 5) : ''}</td><td>${esc(d.notes || '')}</td>
+    <td><button class="btn small" data-dl="${d.id}">Edit</button></td></tr>`).join('') || `<tr><td colspan="6" class="hint">${dlRows.length ? 'No matches.' : 'None yet. They are added as loads are entered or lists imported, or add one below.'}</td></tr>`;
+  document.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
+    const d = dlRows.find(x => x.id === b.dataset.dl); dlEditing = d.id;
+    $('dl-name').value = d.name; $('dl-code').value = d.code || ''; $('dl-contact').value = d.contact || ''; $('dl-addr').value = d.address || '';
+    $('dl-ws').value = (d.window_start || '').slice(0, 5); $('dl-we').value = (d.window_end || '').slice(0, 5); $('dl-notes').value = d.notes || ''; $('dl-active').checked = d.active;
+    $('dl-title').textContent = 'Edit ' + d.name; $('dl-edit').open = true; $('dl-msg').innerHTML = '';
+  });
+}
+function clearDl() {
+  dlEditing = null; ['dl-name', 'dl-code', 'dl-contact', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes'].forEach(id => $(id).value = '');
+  $('dl-active').checked = true; $('dl-title').textContent = 'Add a delivery customer';
+}
+$('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; };
+$('dl-save').onclick = async () => {
+  if (!$('dl-name').value.trim()) { $('dl-msg').innerHTML = '<span class="error">Enter the name.</span>'; return; }
+  const row = { name: $('dl-name').value.trim(), code: $('dl-code').value.trim() || null, contact: $('dl-contact').value.trim() || null,
+    address: $('dl-addr').value.trim() || null, window_start: $('dl-ws').value || null, window_end: $('dl-we').value || null,
+    notes: $('dl-notes').value.trim() || null, active: $('dl-active').checked };
+  const { error } = dlEditing ? await sb.from('delivery_locations').update(row).eq('id', dlEditing)
+                              : await sb.from('delivery_locations').insert({ ...row, customer_id: $('cust').value });
+  if (error) { $('dl-msg').innerHTML = `<span class="error">${esc(/duplicate|unique/i.test(error.message) ? 'A delivery customer with that name or code already exists for this customer.' : error.message)}</span>`; return; }
+  await loadDl(); $('dl-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
 
 start();

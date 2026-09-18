@@ -155,7 +155,7 @@ $('refresh').onclick = () => loadStops();
 // ---------- Today's stops ----------
 async function loadStops() {
   const { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
   if (!loads.length) { $('stops').innerHTML = '<div class="card">No stops assigned to you today.</div>'; return; }
@@ -186,7 +186,11 @@ async function loadStops() {
         actions = s.status === 'pending'
           ? (l.ask_odometer && l.hub_start == null
               ? `<div class="meta" style="margin-top:10px;color:var(--late)">Enter the starting odometer above first.</div>`
-              : `<div class="row"><button class="btn primary" data-act="arrive" data-id="${s.id}">Arrived</button></div>`)
+              : l.hub_required
+                ? `<div class="row" style="align-items:end"><label for="so-${s.id}" style="flex:1 1 160px">Odometer at this stop
+                     <input id="so-${s.id}" type="number" inputmode="decimal" step="0.1" min="0" placeholder="required"></label>
+                     <button class="btn primary" data-act="arrive" data-id="${s.id}">Arrived</button></div>`
+                : `<div class="row"><button class="btn primary" data-act="arrive" data-id="${s.id}">Arrived</button></div>`)
           : `<div class="counts" id="counts-${s.id}">${s.stop_items.map(i => `
                <div class="count"><label for="q-${i.id}" style="font-weight:600">${esc(i.unit_type)} delivered (of ${i.qty_ordered})</label>
                <input id="q-${i.id}" type="number" inputmode="numeric" min="0" value="${s.stop_items.length === 1 && codes.length ? codes.length : i.qty_ordered}" data-item="${i.id}"></div>`).join('')}</div>
@@ -224,7 +228,7 @@ async function loadStops() {
         <h2>Stop ${s.seq} · ${esc(s.consignee)}</h2>
         <div class="meta">${esc(s.address || '')} ${maps}<br>
           Window <span class="mono">${time(s.window_start)}–${time(s.window_end)}</span><br>${items}</div>
-        <span class="badge b-${s.status}">${s.status === 'exception' ? ISSUE[s.issue_type] || 'Issue reported' : (STATUS[s.status] || esc(s.status))}${s.arrived_at ? ' · arrived ' + time(s.arrived_at) : ''}${s.departed_at ? ' · left ' + time(s.departed_at) : ''}</span>
+        <span class="badge b-${s.status}">${s.status === 'exception' ? ISSUE[s.issue_type] || 'Issue reported' : (STATUS[s.status] || esc(s.status))}${s.arrived_at ? ' · arrived ' + time(s.arrived_at) : ''}${s.departed_at ? ' · left ' + time(s.departed_at) : ''}${s.odometer != null ? ` · odometer ${s.odometer} (${s.leg_miles} mi)` : ''}</span>
         ${s.status === 'exception' && s.late_reason ? `<div class="meta" style="color:var(--late);margin-top:6px">${esc(s.late_reason)}</div>` : ''}
         ${actions}</div>`;
     }
@@ -262,6 +266,12 @@ async function act(btn) {
     if (!['refused', 'closed'].includes(type)) counts = readCounts();   // refused / closed = nothing delivered
   }
   btn.disabled = true;
+  if (ev === 'arrive' && $('so-' + id)) {   // hub miles customer: odometer at every stop
+    const v = parseFloat($('so-' + id).value);
+    if (isNaN(v)) { alert('Enter the odometer at this stop.'); btn.disabled = false; return; }
+    const { error: oe } = await sb.rpc('driver_stop_odometer', { p_stop_id: id, p_reading: v });
+    if (oe) { alert(oe.message); btn.disabled = false; return; }
+  }
   const { error } = await sb.rpc('driver_stop_event', { p_stop_id: id, p_event: ev, p_counts: counts, p_note: note, p_type: type });
   if (error) { alert(error.message); btn.disabled = false; return; }
   loadStops();

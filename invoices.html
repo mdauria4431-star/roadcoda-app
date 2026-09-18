@@ -287,7 +287,7 @@ async function showInvoice(id) {
   const bd = inv.breakdown || [];
   const bdRows = bd.map(l => `<tr><td class="mono">${dt(l.date)}</td><td class="mono">${esc(l.load_no)}</td><td>${esc(l.driver || '')}</td><td>${esc(l.truck || '')}</td>
       <td class="num mono">${Math.round(Number(l.miles || 0))}</td>
-      <td>${(l.stops || []).map(s => `Stop ${s.seq} · ${esc(s.consignee)}: ${(s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${esc(i.unit)}` : `${i.ordered} ${esc(i.unit)}`).join(', ')}${s.issue ? ` <span class="pill st-issue">${esc(ISSUE_PDF[s.issue] || 'Issue')}</span>${s.note ? ' ' + esc(s.note) : ''}` : ''}`).join('<br>')}</td></tr>`).join('');
+      <td>${(l.stops || []).map(s => `Stop ${s.seq} · ${esc(s.consignee)}${s.code ? ' #' + esc(s.code) : ''}${s.leg_miles != null ? ` (${Number(s.leg_miles).toFixed(1)} mi)` : ''}: ${(s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${esc(i.unit)}` : `${i.ordered} ${esc(i.unit)}`).join(', ')}${s.issue ? ` <span class="pill st-issue">${esc(ISSUE_PDF[s.issue] || 'Issue')}</span>${s.note ? ' ' + esc(s.note) : ''}` : ''}`).join('<br>')}</td></tr>`).join('');
 
   box.hidden = false;
   box.innerHTML = `
@@ -424,7 +424,7 @@ async function buildRebillWorkbook(inv, filename) {
   ws.columns = [{ width: 12 }, { width: 11 }, { width: 38 }, { width: 28 }, { width: 16 }, { width: 14 }, { width: 18 }];
   ws.getCell('A1').value = `Backup for invoice ${inv.invoice_no} - ${inv.customer.name}`; ws.getCell('A1').font = { bold: true, size: 14 };
   ws.getCell('A2').value = `Service week ${dt(inv.period_from)} to ${dt(inv.period_to)} - invoice total ${usd(total)}`;
-  ws.getCell('A3').value = 'Our weekly charges are spread across the loads by miles, then evenly across each load\'s delivery points.';
+  ws.getCell('A3').value = 'Our weekly charges are spread across the loads by miles, then across each load\'s delivery points (by each stop\'s hub miles where recorded, otherwise evenly).';
   ws.getCell('A3').font = { italic: true, color: { argb: 'FF5B5750' } };
   ws.getCell('A5').value = 'Your markup %'; ws.getCell('A5').font = { bold: true };
   const mk = ws.getCell('C5'); mk.value = 0; mk.numFmt = '0.00"%"';
@@ -436,15 +436,24 @@ async function buildRebillWorkbook(inv, filename) {
   head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   head.eachCell(c => c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F5E63' } });
   let r = 8;
+  const byCust = new Map();   // delivery customer -> { name, code, stops, cents }
   bd.forEach((l, li) => {
     const stops = (l.stops || []).length ? l.stops : [{ seq: 1, consignee: '(load total)', items: [] }];
     const per = Math.floor(cents[li] / stops.length);
+    // Hub-mile loads: split by each stop's leg miles when every stop has a reading
+    const legs = stops.map(s => Number(s.leg_miles)), useLegs = legs.every(x => x > 0);
+    const legTot = legs.reduce((a, b) => a + b, 0);
+    const shares = useLegs ? legs.map(x => Math.floor(cents[li] * x / legTot)) : null;
     stops.forEach((s, si) => {
-      const c = si === stops.length - 1 ? cents[li] - per * (stops.length - 1) : per;
+      const c = useLegs ? (si === stops.length - 1 ? cents[li] - shares.slice(0, -1).reduce((a, b) => a + b, 0) : shares[si])
+                        : (si === stops.length - 1 ? cents[li] - per * (stops.length - 1) : per);
       const row = ws.getRow(r);
       row.getCell(1).value = l.date ? new Date(String(l.date).slice(0, 10) + 'T00:00:00') : null; row.getCell(1).numFmt = 'mm/dd/yyyy';
       row.getCell(2).value = String(l.load_no || '');
-      row.getCell(3).value = `Stop ${s.seq} - ${s.consignee}`;
+      row.getCell(3).value = `Stop ${s.seq} - ${s.consignee}${s.code ? ' (#' + s.code + ')' : ''}`;
+      const key = s.location_id || (s.code ? 'c:' + s.code : 'n:' + String(s.consignee).toLowerCase());
+      const agg = byCust.get(key) || { name: s.consignee, code: s.code || '', stops: 0, cents: 0 };
+      agg.stops++; agg.cents += c; byCust.set(key, agg);
       row.getCell(4).value = (s.items || []).map(i => `${i.delivered ?? i.ordered} ${i.unit}`).join(', ') + (s.issue ? ` (${ISSUE_PDF[s.issue] || 'issue'})` : '');
       row.getCell(5).value = c / 100; row.getCell(5).numFmt = money;
       row.getCell(6).numFmt = '0.00"%"';
@@ -471,6 +480,20 @@ async function buildRebillWorkbook(inv, filename) {
   const last = ws2.rowCount;
   const tr = ws2.addRow(['', '', '', 'Totals', { formula: `SUM(E2:E${last})` }, { formula: `SUM(F2:F${last})` }]);
   tr.font = { bold: true }; tr.getCell(5).numFmt = money; tr.getCell(6).numFmt = money;
+
+  // One row per delivery customer: what to bill each of them
+  const ws3 = wb.addWorksheet('Rebill by delivery customer');
+  ws3.columns = [{ header: 'Delivery customer', width: 40 }, { header: 'Code', width: 10 }, { header: 'Stops', width: 8 }, { header: 'Our charge', width: 16 }, { header: 'Your rebill price', width: 18 }];
+  ws3.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  ws3.getRow(1).eachCell(c => c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F5E63' } });
+  [...byCust.values()].sort((a, b) => a.name.localeCompare(b.name)).forEach(a => {
+    const row = ws3.addRow([a.name, a.code, a.stops, a.cents / 100, null]);
+    row.getCell(4).numFmt = money;
+    row.getCell(5).value = { formula: `ROUND(D${row.number}*(1+'Rebill by delivery point'!$C$5/100),2)` }; row.getCell(5).numFmt = money;
+  });
+  const l3 = ws3.rowCount;
+  const t3 = ws3.addRow(['Totals', '', { formula: `SUM(C2:C${l3})` }, { formula: `SUM(D2:D${l3})` }, { formula: `SUM(E2:E${l3})` }]);
+  t3.font = { bold: true }; t3.getCell(4).numFmt = money; t3.getCell(5).numFmt = money;
 
   const buf = await wb.xlsx.writeBuffer();
   const a = document.createElement('a');
@@ -607,7 +630,7 @@ function buildInvoicePdf(jsPDF, inv) {
       { content: String((l.stops || []).length), styles: { halign: 'right' } }]);
     for (const s of l.stops || []) {
       const items = (s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${i.unit}` : `${i.ordered} ${i.unit}`).join(', ');
-      rows.push([{ content: `   Stop ${s.seq} - ${s.consignee}: ${items}`, colSpan: 5, styles: { fontSize: 8, textColor: muted, cellPadding: { top: 1, bottom: 1, left: 6, right: 6 } } }]);
+      rows.push([{ content: `   Stop ${s.seq} - ${s.consignee}${s.code ? ' #' + s.code : ''}: ${items}${s.leg_miles != null ? ` - ${Number(s.leg_miles).toFixed(1)} mi (odometer ${s.odometer})` : ''}`, colSpan: 5, styles: { fontSize: 8, textColor: muted, cellPadding: { top: 1, bottom: 1, left: 6, right: 6 } } }]);
       if (s.issue) rows.push([{ content: `      ${ISSUE_PDF[s.issue] || 'Delivery issue'}${s.note ? ': ' + s.note : ''}`, colSpan: 5,
         styles: { fontSize: 8, textColor: red, cellPadding: { top: 0, bottom: 2, left: 6, right: 6 } } }]);
     }
