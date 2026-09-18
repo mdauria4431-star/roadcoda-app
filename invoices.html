@@ -120,7 +120,7 @@
     <section class="card" id="detail" hidden></section>
 
     <section class="card">
-      <details><summary style="cursor:pointer;font-weight:600">Invoice settings (our office, remit-to, default terms)</summary>
+      <details><summary style="cursor:pointer;font-weight:600">Invoice settings (logo, our office, remit-to, default terms)</summary>
         <p class="hint">Printed on every invoice. Customer-specific terms, PO number and invoice number format are set per customer on the Rates page. Only the owner can change these.</p>
         <div class="grid">
           <label for="s-name" style="grid-column:span 2">Company name<input id="s-name"></label>
@@ -130,6 +130,16 @@
           <label for="s-remit" style="grid-column:span 2">Remit-to address (where payments go)<input id="s-remit" placeholder="PO Box or lockbox, Town, ST 00000"></label>
           <label for="s-terms">Default payment terms (days)<input id="s-terms" type="number" min="0" step="1"></label>
         </div>
+        <div class="row" style="margin-top:14px;align-items:center;gap:16px">
+          <div id="logo-box" style="width:200px;height:72px;border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden"></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label for="s-logo" class="btn" style="flex-direction:row;align-items:center;cursor:pointer;color:var(--ink);font-size:15px">Upload logo<input id="s-logo" type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" style="display:none"></label>
+            <button class="btn small" id="s-logo-rm" type="button">Remove logo</button>
+          </div>
+          <label for="s-color">Brand color<input id="s-color" type="color" style="width:80px;padding:2px"></label>
+          <p class="hint" style="flex:1 1 220px;margin:0">Your logo and color go on invoices, the breakdown report and customer emails. PNG, JPG or SVG; a wide logo on a white or clear background works best.</p>
+        </div>
+        <div id="logo-msg" style="margin-top:6px"></div>
         <div class="row" style="margin-top:12px"><button class="btn primary" id="s-save">Save settings</button><span id="s-msg"></span></div>
       </details>
     </section>
@@ -432,7 +442,7 @@ async function showInvoice(id) {
     try {
       await saveEdits(); if (draft) { inv = await getInvoice(inv.id); }
       if (!window.jspdf) throw new Error('The PDF tool did not load. Check your internet connection and refresh.');
-      buildInvoicePdf(window.jspdf.jsPDF, pack()).save(fileBase() + '.pdf');
+      buildInvoicePdf(window.jspdf.jsPDF, { ...pack(), logo: await logoForPdf() }).save(fileBase() + '.pdf');
     } catch (e) { msg(e.message); }
   };
   $('d-xlsx').onclick = async () => {
@@ -553,12 +563,68 @@ function fillSettings() {
   $('s-email').value = carrier.remit_email || '';
   $('s-remit').value = carrier.remit_address || '';
   $('s-terms').value = carrier.terms_days ?? 30;
-  if (me.role !== 'owner') ['s-name', 's-office', 's-phone', 's-email', 's-remit', 's-terms', 's-save'].forEach(id => $(id).disabled = true);
+  $('s-color').value = carrier.brand_color || '#0f5e63';
+  drawLogoBox();
+  if (me.role !== 'owner') ['s-name', 's-office', 's-phone', 's-email', 's-remit', 's-terms', 's-save', 's-logo', 's-logo-rm', 's-color'].forEach(id => $(id).disabled = true);
+}
+// ---------- Logo ----------
+const logoUrl = () => carrier.logo_path ? `${RC_CONFIG.SUPABASE_URL}/storage/v1/object/public/brand-logos/${carrier.logo_path}` : '';
+function drawLogoBox() {
+  $('logo-box').innerHTML = carrier.logo_path ? `<img src="${esc(logoUrl())}" alt="Company logo" style="max-width:190px;max-height:64px">` : '<span class="hint">No logo yet</span>';
+  $('s-logo-rm').hidden = !carrier.logo_path;
+}
+// Any image -> PNG no bigger than 800 x 320 (keeps PDFs and emails light)
+function toPng(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const w0 = img.naturalWidth || 600, h0 = img.naturalHeight || 240, k = Math.min(1, 800 / w0, 320 / h0);
+      const c = document.createElement('canvas'); c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); c.toBlob(b => b ? resolve(b) : reject(new Error('Could not read that image')), 'image/png');
+    };
+    img.onerror = () => reject(new Error('That file is not an image the browser can read. Try a PNG or JPG.'));
+    img.src = url;
+  });
+}
+$('s-logo').onchange = async () => {
+  const f = $('s-logo').files[0]; if (!f) return;
+  if (f.size > 5e6) { $('logo-msg').innerHTML = '<span class="error">That file is over 5 MB. Use a smaller logo.</span>'; return; }
+  $('logo-msg').innerHTML = '<span class="ok">Uploading…</span>';
+  try {
+    const png = await toPng(f), path = `${me.carrier_id}/logo-${Date.now()}.png`, old = carrier.logo_path;
+    const up = await sb.storage.from('brand-logos').upload(path, png, { contentType: 'image/png', cacheControl: '31536000' });
+    if (up.error) throw up.error;
+    const { data, error } = await sb.from('carriers').update({ logo_path: path }).eq('id', me.carrier_id).select('*');
+    if (error || !data.length) throw new Error(error?.message || 'Not saved. Only the owner can change the logo.');
+    carrier = data[0]; drawLogoBox();
+    if (old) sb.storage.from('brand-logos').remove([old]);
+    $('logo-msg').innerHTML = '<span class="ok">Logo saved. It appears on new PDFs and emails.</span>';
+  } catch (e) { $('logo-msg').innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
+  $('s-logo').value = '';
+};
+$('s-logo-rm').onclick = async () => {
+  if (!confirm('Remove the logo from invoices and emails?')) return;
+  const old = carrier.logo_path;
+  const { data, error } = await sb.from('carriers').update({ logo_path: null }).eq('id', me.carrier_id).select('*');
+  if (error || !data.length) { $('logo-msg').innerHTML = `<span class="error">${esc(error?.message || 'Not saved')}</span>`; return; }
+  carrier = data[0]; drawLogoBox(); if (old) sb.storage.from('brand-logos').remove([old]);
+  $('logo-msg').innerHTML = '<span class="ok">Logo removed.</span>';
+};
+// Logo as a data URL for the PDF (null if none / can't load)
+async function logoForPdf() {
+  if (!carrier.logo_path) return null;
+  try {
+    const blob = await (await fetch(logoUrl())).blob();
+    const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+    const size = await new Promise(r => { const im = new Image(); im.onload = () => r({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => r(null); im.src = data; });
+    return size ? { data, ...size } : null;
+  } catch (_) { return null; }
 }
 $('s-save').onclick = async () => {
   const upd = { remit_name: $('s-name').value.trim() || null, office_address: $('s-office').value.trim() || null,
     office_phone: $('s-phone').value.trim() || null, remit_email: $('s-email').value.trim() || null,
-    remit_address: $('s-remit').value.trim() || null, terms_days: parseInt($('s-terms').value || '30', 10) };
+    remit_address: $('s-remit').value.trim() || null, terms_days: parseInt($('s-terms').value || '30', 10), brand_color: $('s-color').value || '#0f5e63' };
   const { data, error } = await sb.from('carriers').update(upd).eq('id', me.carrier_id).select('*');
   if (error || !data.length) { $('s-msg').innerHTML = `<span class="error">${esc(error?.message || 'Not saved. Only the owner can change these.')}</span>`; return; }
   carrier = data[0]; $('s-msg').innerHTML = '<span class="ok">Saved.</span>';
@@ -574,7 +640,8 @@ const splitAddr = (a) => String(a || '').split(/\n|,\s*(?=[^,]*,[^,]*$)/).map(t 
 function buildInvoicePdf(jsPDF, inv) {
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 44;
-  const teal = [15, 94, 99], ink = [28, 31, 36], muted = [91, 87, 80], red = [143, 35, 24];
+  const hex = (inv.carrier?.brand_color || '#0f5e63').replace('#', '');
+  const teal = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) || 0), ink = [28, 31, 36], muted = [91, 87, 80], red = [143, 35, 24];
   const usd = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const val = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   const vol = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -583,19 +650,31 @@ function buildInvoicePdf(jsPDF, inv) {
   const footer = () => {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...muted);
     doc.text(`${C.remit_name || C.name || ''} - Invoice ${inv.invoice_no} - page ${doc.internal.getNumberOfPages()}`, W - M, H - 22, { align: 'right' });
+    doc.setFontSize(7); doc.setTextColor(160, 156, 148); doc.text('Powered by RoadCoda', M, H - 22);
   };
 
   // ----- Header: our office on the left, invoice facts on the right -----
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...ink);
-  doc.text(C.remit_name || C.name || '', M, 56);
+  // Logo (if uploaded) above the company name; fits in 180 x 50 pt
+  let top = 0;
+  if (inv.logo) {
+    const k = Math.min(180 / inv.logo.w, 50 / inv.logo.h);
+    try { doc.addImage(inv.logo.data, 'PNG', M, 30, inv.logo.w * k, inv.logo.h * k); top = inv.logo.h * k + 4; } catch (_) { top = 0; }
+  }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(top ? 12 : 16); doc.setTextColor(...ink);
+  doc.text(C.remit_name || C.name || '', M, top ? 30 + top + 10 : 56);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...muted);
   const office = [...splitAddr(C.office_address), C.office_phone, C.remit_email].filter(Boolean);
-  office.forEach((t, i) => doc.text(String(t), M, 71 + i * 11.5));
+  const oy = top ? 30 + top + 24 : 71;
+  office.forEach((t, i) => doc.text(String(t), M, oy + i * 11.5));
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...teal);
   doc.text('INVOICE', W - M, 58, { align: 'right' });
   const meta = [['Invoice no.', inv.invoice_no], ['Invoice date', d(inv.invoice_date)], ['Terms', `Net ${inv.terms}`], ['Due date', d(inv.due_date)]];
-  if (inv.period_from) meta.push(['Billing window', periodText(inv).replace(/[–]/g, '-')]);
+  if (inv.period_start) {
+    const sh = (v) => new Date(v).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
+    meta.push(['Billing from', sh(inv.period_start)], ['Through', sh(new Date(new Date(inv.period_end) - 60000))]);
+    if (inv.period_basis && inv.period_basis !== 'service_date') meta.push(['Loads counted', inv.period_basis === 'delivered' ? 'when delivered' : 'when started']);
+  } else if (inv.period_from) meta.push(['Service week', `${d(inv.period_from)} - ${d(inv.period_to)}`]);
   if (inv.po_number) meta.push(['PO / reference', inv.po_number]);
   doc.setFontSize(9);
   meta.forEach(([k, v], i) => {
@@ -609,7 +688,7 @@ function buildInvoicePdf(jsPDF, inv) {
   }
 
   // ----- Bill to / Remit to -----
-  y = Math.max(y, 71 + office.length * 11.5) + 18;
+  y = Math.max(y, oy + office.length * 11.5) + 18;
   doc.setDrawColor(226, 221, 211); doc.setLineWidth(0.8); doc.line(M, y - 10, W - M, y - 10);
   const block = (title, name, addr, x) => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...muted); doc.text(title, x, y + 4);
@@ -661,6 +740,7 @@ function buildInvoicePdf(jsPDF, inv) {
   // ----- Breakdown report -----
   const bd = inv.breakdown || [];
   doc.addPage();
+  if (inv.logo) { const k = Math.min(110 / inv.logo.w, 32 / inv.logo.h); try { doc.addImage(inv.logo.data, 'PNG', W - M - inv.logo.w * k, 34, inv.logo.w * k, inv.logo.h * k); } catch (_) {} }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...ink);
   doc.text('Breakdown report', M, 52);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...muted);
