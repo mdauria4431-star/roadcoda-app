@@ -33,12 +33,19 @@
   .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
   .tablewrap{overflow-x:auto}
+  .num{text-align:right}
   table{width:100%;border-collapse:collapse;min-width:640px}
   th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
   td{padding:9px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
   .mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
   .current{background:#e3f1e6;color:var(--ok);border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600}
   .hint{font-size:13px;color:var(--muted);line-height:1.5}
+  .alert{padding:12px 14px;border-radius:10px;background:#fbeed8;color:#8a4b08;font-size:14px;margin-bottom:8px}
+  .alert.over{background:#fbe0db;color:var(--late)}
+  .cpi{background:#f7f5f0;border-radius:10px;padding:12px 14px;margin-bottom:12px}
+  .sec{font-weight:700;color:var(--accent);text-transform:uppercase;font-size:12px;letter-spacing:.04em}
+  #c-rows input,#c-rows select{height:34px;font-size:14px;width:100%}
+  #c-rows td{padding:4px 3px}
   .note{margin-top:10px;padding:10px 12px;background:#f7f5f0;border-radius:8px;font-size:13px;color:var(--muted);line-height:1.5}
   @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
@@ -46,7 +53,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a class="on" href="rates.html">Rates</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a class="on" href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -62,14 +69,17 @@
 
   <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
     <h1>Rates &amp; fuel</h1>
+    <div id="cpi-alerts"></div>
 
     <section class="card">
-      <h2>Yard address</h2>
-      <p class="hint">Where trucks start and return. Used to work out miles on every new load. Only the owner can change it.</p>
+      <h2>Yard and odometer</h2>
+      <p class="hint">Your yard is the default start for miles. For dedicated customers whose trucks start at their facility, set the customer's start location below instead. Only the owner can change these.</p>
       <div class="row">
-        <label for="yard" style="flex:1 1 320px">Address<input id="yard"></label>
+        <label for="yard" style="flex:1 1 320px">Yard address<input id="yard"></label>
+        <label style="flex-direction:row;align-items:center;gap:8px;height:40px;color:var(--ink)"><input type="checkbox" id="odo-all" style="height:auto"> Ask drivers for the odometer at the start and end of every load</label>
         <button class="btn primary" id="yard-save">Save</button>
       </div>
+      <p class="hint">Readings give actual miles and deadhead for every load (for IFTA, insurance mileage and maintenance). Customers billed on hub miles are always asked.</p>
       <div id="yard-msg" style="margin-top:8px"></div>
     </section>
 
@@ -79,7 +89,86 @@
         <label for="cust" style="min-width:260px">Customer<select id="cust"></select></label>
       </div>
 
-      <h3>Rate sheet versions</h3>
+      <h3>Dedicated contract (weekly invoice)</h3>
+      <p class="hint">The pricing sheet for a weekly master invoice: fixed components, variable components and pass-through expenses.
+        Each line is Value × Volume. Contracts are never edited: save a new version with its start date, and older weeks keep their pricing.</p>
+      <div class="cpi">
+        <div class="row" style="margin-bottom:10px">
+          <label style="flex-direction:row;align-items:center;gap:8px;height:40px;color:var(--ink)"><input type="checkbox" id="b-master" style="height:auto"> <b>Master bill</b> (all loads for the week on one invoice)</label>
+          <label for="b-sname">Truck starts at (customer facility)<input id="b-sname" style="width:180px" placeholder="e.g. ABC Route 9 DC"></label>
+          <label for="b-saddr" style="flex:1 1 260px">Facility address<input id="b-saddr" placeholder="blank = our yard"></label>
+          <label for="b-miles">Miles billed on<select id="b-miles"><option value="route">Route miles (Google / typed)</option><option value="hub">Hub miles (driver enters odometer)</option></select></label>
+          <label for="b-terms">Payment terms (days)<input id="b-terms" type="number" min="0" style="width:110px" placeholder="default"></label>
+          <label for="b-po">PO / reference no.<input id="b-po" style="width:150px"></label>
+          <label for="b-code">Customer code<input id="b-code" style="width:100px" placeholder="ABC"></label>
+          <label for="b-fmt" style="flex:1 1 220px">Invoice number format<input id="b-fmt" placeholder="{seq}"></label>
+        </div>
+        <p class="hint" style="margin:-4px 0 10px">Format tokens: <b>{seq}</b> next number for all customers · <b>{cseq}</b> / <b>{cseq3}</b> this customer's count (001) ·
+          <b>{code}</b> customer code · <b>{yyyy}</b> <b>{yy}</b> <b>{mm}</b> <b>{dd}</b> invoice date · <b>{ww}</b> week number · <b>{load}</b> load number (per-load invoices).
+          Example: {code}-{yyyy}-{cseq3} gives <span class="mono" id="b-example">ABC-2026-001</span>. Untick Master bill to invoice each load separately.</p>
+        <details style="margin:0 0 10px"><summary style="cursor:pointer;font-weight:600">POs that change by month or period</summary>
+          <p class="hint">Each invoice uses the PO in effect for its service week. If none covers the week, the standing PO above is used (or none, if this list has entries).</p>
+          <div class="tablewrap"><table style="min-width:520px"><thead><tr><th>PO number</th><th>From</th><th>To</th><th>Note</th><th></th></tr></thead><tbody id="po-list"></tbody></table></div>
+          <div class="row" style="margin-top:8px">
+            <label for="po-no">PO number<input id="po-no" style="width:150px"></label>
+            <label for="po-from">From<input id="po-from" type="date"></label>
+            <label for="po-to">To<input id="po-to" type="date"></label>
+            <label for="po-note" style="flex:1 1 160px">Note<input id="po-note"></label>
+            <button class="btn" id="po-add">Add PO</button>
+          </div>
+        </details>
+        <div class="row">
+          <label for="c-next">Next CPI date<input id="c-next" type="date"></label>
+          <label for="c-notice">Remind me (days before)<input id="c-notice" type="number" min="0" style="width:120px"></label>
+          <label for="c-week">Billing week starts<select id="c-week">
+            <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
+            <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>
+          <label for="c-cpinote" style="flex:1 1 240px">CPI terms (index, cap…)<input id="c-cpinote" placeholder="e.g. CPI-U 12-month change, capped at 4%"></label>
+          <button class="btn primary" id="c-save-set">Save billing &amp; CPI settings</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label for="c-pct">Apply CPI increase %<input id="c-pct" type="number" step="0.01" style="width:120px" placeholder="3.10"></label>
+          <label for="c-eff">Starting<input id="c-eff" type="date"></label>
+          <button class="btn primary" id="c-apply">Apply CPI</button>
+          <span class="hint">Creates a new contract version with CPI lines raised; fuel and other pass-throughs stay as they are. Next CPI date moves out one year.</span>
+        </div>
+        <div id="c-set-msg" style="margin-top:6px"></div>
+      </div>
+      <div class="row" style="margin-bottom:6px"><label for="c-ver">Contract version<select id="c-ver"></select></label></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Description</th><th class="num">Value</th><th>Basis</th><th>Volume comes from</th><th class="num">Qty</th><th>CPI</th></tr></thead>
+        <tbody id="c-view"></tbody></table></div>
+      <details style="margin-top:12px" id="c-edit"><summary style="cursor:pointer;font-weight:600">New contract version (starts as a copy of the version shown)</summary>
+        <div class="row" style="margin-top:12px">
+          <label for="c-neweff">Starts on<input id="c-neweff" type="date"></label>
+          <label for="c-newnote" style="flex:1 1 260px">Note<input id="c-newnote" placeholder="e.g. 2027 contract renewal, added 3rd tractor"></label>
+          <label style="flex-direction:row;align-items:center;gap:8px;height:40px"><input type="checkbox" id="c-loads" style="height:auto"> Also bill each load's own charges (per-load rate sheet)</label>
+        </div>
+        <datalist id="bases"><option>per week</option><option>per driver</option><option>per tractor</option><option>per trailer</option><option>per mile</option>
+          <option>per hour</option><option>per stop</option><option>per load</option><option>per pallet</option><option>$/gallon</option><option>as incurred</option><option>weekly</option></datalist>
+        <div class="tablewrap" style="margin-top:10px"><table style="min-width:900px">
+          <thead><tr><th style="width:130px">Section</th><th>Description</th><th style="width:110px">Value $</th><th style="width:120px">Basis</th><th style="width:170px">Volume comes from</th><th style="width:80px">Qty</th><th style="width:50px">CPI</th><th style="width:40px"></th></tr></thead>
+          <tbody id="c-rows"></tbody></table></div>
+        <p class="hint">Volume comes from: <b>Fixed quantity</b> bills the Qty every week (e.g. 2 drivers). <b>Entered each week</b> puts the line on the draft invoice for you to fill in (hours, gallons, hotel, tolls), starting at Qty.
+          Miles, loads, stops, units and tolls are counted from that week's delivered loads (for tolls use Value 1.00, basis "as incurred"). For a flat toll estimate instead, use a Fixed quantity line. <b>Extras</b> (extra tractor, trailer, straight truck, driver) are only billed in weeks you schedule them below; use basis "per day" or "per week". Keep an extra's description the same in later versions so scheduled extras still match it.</p>
+        <div class="row"><button class="btn" id="c-add">Add line</button><span style="flex-grow:1"></span><button class="btn primary" id="c-savever">Save as new version</button></div>
+        <div id="c-msg" style="margin-top:8px"></div>
+      </details>
+
+      <h3>Extras scheduled (billed at the contracted extra rates)</h3>
+      <p class="hint">When the customer asks for an extra tractor, trailer, straight truck or driver, add it here with its dates. The weekly invoice bills units × days that fall in the week (or units per week for weekly-rated extras).</p>
+      <div class="tablewrap"><table style="min-width:600px"><thead><tr><th>Extra</th><th class="num">Units</th><th>From</th><th>To</th><th>Note</th><th></th></tr></thead><tbody id="x-list"></tbody></table></div>
+      <div class="row" style="margin-top:8px">
+        <label for="x-code">Extra<select id="x-code"></select></label>
+        <label for="x-units">Units<input id="x-units" type="number" min="0.5" step="0.5" value="1" style="width:90px"></label>
+        <label for="x-from">From<input id="x-from" type="date"></label>
+        <label for="x-to">To<input id="x-to" type="date"></label>
+        <label for="x-note" style="flex:1 1 180px">Note<input id="x-note" placeholder="e.g. peak season, customer request #"></label>
+        <button class="btn" id="x-add">Schedule extra</button>
+      </div>
+      <div id="x-msg" style="margin-top:6px"></div>
+
+      <h3>Per-load rate sheet versions (optional)</h3>
       <p class="hint">Rates are never edited. To change a price (a CPI increase, a new contract), add a new version with the date it starts.
         Loads before that date keep the old price.</p>
       <div class="tablewrap"><table>
@@ -184,19 +273,20 @@ let me = null, carrierId = null;
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { $('login-view').hidden = false; return; }
-  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name, yard_address)').eq('user_id', session.user.id).single();
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name, yard_address, odometer_every_load)').eq('user_id', session.user.id).single();
   if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
   if (p.role === 'driver') { location.href = 'driver.html'; return; }
   me = p; carrierId = p.carrier_id;
   $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
   $('yard').value = p.carriers?.yard_address || '';
-  if (p.role !== 'owner') { $('yard').disabled = true; $('yard-save').disabled = true; }
+  $('odo-all').checked = p.carriers?.odometer_every_load !== false;
+  if (p.role !== 'owner') { $('yard').disabled = true; $('odo-all').disabled = true; $('yard-save').disabled = true; }
   $('f-series').innerHTML = Object.entries(REGIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
   ['r-eff', 'f-eff', 't-date'].forEach(id => $(id).value = todayISO());
   const { data: cs } = await sb.from('customers').select('id, name').order('name');
   $('cust').innerHTML = (cs || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  loadCustomer(); loadDoe();
+  loadCustomer(); loadContract(); loadCpiAlerts(); loadDoe();
 }
 $('login-btn').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
@@ -207,13 +297,13 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 
 // ---------- Yard ----------
 $('yard-save').onclick = async () => {
-  const { data, error } = await sb.from('carriers').update({ yard_address: $('yard').value.trim() || null }).eq('id', carrierId).select('id');
+  const { data, error } = await sb.from('carriers').update({ yard_address: $('yard').value.trim() || null, odometer_every_load: $('odo-all').checked }).eq('id', carrierId).select('id');
   $('yard-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>`
     : data.length ? '<span class="ok">Saved.</span>' : '<span class="error">Not saved. Only the owner can change this.</span>';
 };
 
 // ---------- Rate sheets and fuel rules ----------
-$('cust').onchange = () => loadCustomer();
+$('cust').onchange = () => { loadCustomer(); loadContract(); };
 async function loadCustomer() {
   const cid = $('cust').value; if (!cid) return;
   const [r, f] = await Promise.all([
@@ -308,6 +398,210 @@ $('doe-check').onclick = async () => {
   $('doe-msg').innerHTML = bad.length ? `<span class="error">${esc(bad.map(b => (REGIONS[b.series] || b.series) + ': ' + b.error).join(' · '))}</span>`
     : '<span class="ok">Up to date.</span>';
   loadDoe();
+};
+
+// ---------- Dedicated contract and CPI ----------
+const SECTION = { fixed: 'Fixed components', variable: 'Variable components', extras: 'Extras on request (extra tractor, trailer, truck, driver)', pass_through: 'Pass-through expense' };
+const SECTION_ORDER = ['fixed', 'variable', 'extras', 'pass_through'];
+const slug = (t) => String(t || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const SOURCES = { fixed: 'Fixed quantity', manual: 'Entered each week', miles: 'Total miles (loads)', loads: 'Number of loads', stops: 'Number of stops', tolls: 'Tolls on the loads ($)', extras: 'Scheduled extras',
+  'unit:pallets': 'Pallets delivered', 'unit:boxes': 'Boxes delivered', 'unit:cages': 'Cages delivered', 'unit:totes': 'Totes delivered', 'unit:parts': 'Parts delivered' };
+const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString() : '';
+let versions = [], custInfo = null;
+
+async function loadCpiAlerts() {
+  const [{ data }, { data: pos }] = await Promise.all([
+    sb.from('customers').select('id, name, next_cpi_date, cpi_notice_days').not('next_cpi_date', 'is', null).order('next_cpi_date'),
+    sb.from('customer_pos').select('customer_id, valid_from, valid_to, customers(name)')]);
+  // A customer with dated POs needs one covering two weeks from now
+  const soon = new Date(); soon.setDate(soon.getDate() + 14); const soonISO = soon.toISOString().slice(0, 10);
+  const byCust = {}; (pos || []).forEach(p => (byCust[p.customer_id] = byCust[p.customer_id] || []).push(p));
+  const poAlerts = Object.values(byCust).filter(list => !list.some(p => p.valid_from <= soonISO && (!p.valid_to || p.valid_to >= soonISO)))
+    .map(list => `<div class="alert"><b>PO needed: ${esc(list[0].customers?.name)}</b> — no PO on file for ${fmtDate(soonISO)} onward. Add the next PO under the customer's billing settings.</div>`).join('');
+  const today = new Date(todayISO() + 'T00:00:00');
+  $('cpi-alerts').innerHTML = (data || []).map(c => {
+    const days = Math.round((new Date(c.next_cpi_date + 'T00:00:00') - today) / 86400000);
+    if (days > (c.cpi_notice_days ?? 60)) return '';
+    return `<div class="alert ${days < 0 ? 'over' : ''}"><b>CPI ${days < 0 ? 'overdue' : 'due'}: ${esc(c.name)}</b> — ${fmtDate(c.next_cpi_date)}
+      ${days < 0 ? `(${-days} days ago)` : days === 0 ? '(today)' : `(in ${days} days)`}. Pick the customer below and use Apply CPI.</div>`;
+  }).join('') + poAlerts;
+}
+
+async function loadContract() {
+  const cid = $('cust').value; if (!cid) return;
+  const [cu, vs] = await Promise.all([
+    sb.from('customers').select('id, week_start_dow, next_cpi_date, cpi_notice_days, cpi_note, master_bill, terms_days, po_number, customer_code, invoice_format, miles_basis, start_name, start_address').eq('id', cid).single(),
+    sb.from('contract_versions').select('*, contract_lines(*)').eq('customer_id', cid).order('effective_from', { ascending: false })
+  ]);
+  custInfo = cu.data || {};
+  $('c-next').value = custInfo.next_cpi_date || '';
+  $('c-notice').value = custInfo.cpi_notice_days ?? 60;
+  $('c-week').value = custInfo.week_start_dow ?? 0;
+  $('c-cpinote').value = custInfo.cpi_note || '';
+  $('b-master').checked = custInfo.master_bill !== false;
+  $('b-miles').value = custInfo.miles_basis || 'route';
+  $('b-sname').value = custInfo.start_name || '';
+  $('b-saddr').value = custInfo.start_address || '';
+  $('b-terms').value = custInfo.terms_days ?? '';
+  $('b-po').value = custInfo.po_number || '';
+  $('b-code').value = custInfo.customer_code || '';
+  $('b-fmt').value = custInfo.invoice_format || '';
+  fmtExample();
+  loadPos();
+  $('c-eff').value = custInfo.next_cpi_date || todayISO();
+  $('c-set-msg').innerHTML = '';
+  versions = vs.data || [];
+  const today = todayISO();
+  const cur = versions.find(v => v.effective_from <= today);
+  $('c-ver').innerHTML = versions.length ? versions.map(v => `<option value="${v.id}">${fmtDate(v.effective_from)}${v.id === cur?.id ? ' (current)' : v.effective_from > today ? ' (future)' : ''}${v.note ? ' · ' + esc(v.note) : ''}</option>`).join('')
+    : '<option value="">No contract yet</option>';
+  if (cur) $('c-ver').value = cur.id;
+  showVersion();
+  loadExtras();
+}
+$('c-ver').onchange = () => showVersion();
+async function loadPos() {
+  const { data } = await sb.from('customer_pos').select('*').eq('customer_id', $('cust').value).order('valid_from', { ascending: false });
+  const today = todayISO();
+  $('po-list').innerHTML = (data || []).map(p => `<tr><td class="mono">${esc(p.po_number)}</td><td>${fmtDate(p.valid_from)}</td><td>${p.valid_to ? fmtDate(p.valid_to) : 'open'}</td>
+    <td>${esc(p.note || '')}${p.valid_from <= today && (!p.valid_to || p.valid_to >= today) ? ' <span class="current">current</span>' : ''}</td>
+    <td><button class="btn small" data-po="${p.id}" aria-label="Remove PO ${esc(p.po_number)}">✕</button></td></tr>`).join('') || '<tr><td colspan="5" class="hint">No dated POs. The standing PO is used on every invoice.</td></tr>';
+  document.querySelectorAll('[data-po]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remove this PO? Invoices already created keep the PO printed on them.')) return;
+    await sb.from('customer_pos').delete().eq('id', b.dataset.po); loadPos();
+  });
+  // Suggest the next period: day after the latest PO ends
+  const last = (data || [])[0];
+  if (last?.valid_to) { const d = new Date(last.valid_to + 'T00:00:00'); d.setDate(d.getDate() + 1); $('po-from').value = d.toISOString().slice(0, 10); }
+}
+$('po-add').onclick = async () => {
+  if (!$('po-no').value.trim() || !$('po-from').value) { $('c-set-msg').innerHTML = '<span class="error">Enter the PO number and its start date.</span>'; return; }
+  const { error } = await sb.from('customer_pos').insert({ customer_id: $('cust').value, po_number: $('po-no').value.trim(),
+    valid_from: $('po-from').value, valid_to: $('po-to').value || null, note: $('po-note').value.trim() || null });
+  if (error) { $('c-set-msg').innerHTML = `<span class="error">${esc(error.message.includes('duplicate') ? 'A PO already starts on that date.' : error.message)}</span>`; return; }
+  $('po-no').value = ''; $('po-to').value = ''; $('po-note').value = ''; loadPos(); loadCpiAlerts();
+};
+
+function fmtExample() {
+  const d = new Date(), p2 = (n) => String(n).padStart(2, '0');
+  const f = $('b-fmt').value.trim() || '{seq}';
+  $('b-example').textContent = f.replace(/\{seq\}/g, '1024').replace(/\{cseq3\}/g, '001').replace(/\{cseq\}/g, '1')
+    .replace(/\{code\}/g, $('b-code').value.trim()).replace(/\{yyyy\}/g, d.getFullYear()).replace(/\{yy\}/g, String(d.getFullYear()).slice(2))
+    .replace(/\{mm\}/g, p2(d.getMonth() + 1)).replace(/\{dd\}/g, p2(d.getDate())).replace(/\{ww\}/g, '38').replace(/\{load\}/g, '1042');
+}
+$('b-fmt').oninput = fmtExample; $('b-code').oninput = fmtExample;
+
+async function loadExtras() {
+  const today = todayISO();
+  const cur = versions.find(v => v.effective_from <= today) || versions[versions.length - 1];
+  const opts = (cur?.contract_lines || []).filter(l => l.section === 'extras').sort((a, b) => a.sort - b.sort);
+  const names = Object.fromEntries(versions.flatMap(v => v.contract_lines || []).filter(l => l.extra_code).map(l => [l.extra_code, l.description]));
+  $('x-code').innerHTML = opts.length ? opts.map(l => `<option value="${esc(l.extra_code)}">${esc(l.description)} · ${money(l.rate)} ${esc(l.basis)}</option>`).join('')
+    : '<option value="">Add extras to the contract first</option>';
+  $('x-add').disabled = !opts.length;
+  if (!$('x-from').value) { $('x-from').value = today; $('x-to').value = today; }
+  const { data } = await sb.from('customer_extras').select('*').eq('customer_id', $('cust').value).order('date_from', { ascending: false });
+  $('x-list').innerHTML = (data || []).map(x => `<tr><td>${esc(names[x.extra_code] || x.extra_code)}</td><td class="num mono">${Number(x.units)}</td>
+    <td>${fmtDate(x.date_from)}</td><td>${fmtDate(x.date_to)}</td><td>${esc(x.note || '')}</td>
+    <td><button class="btn small" data-x="${x.id}" aria-label="Remove">✕</button></td></tr>`).join('') || '<tr><td colspan="6" class="hint">No extras scheduled.</td></tr>';
+  document.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remove this scheduled extra? Invoices already created keep what they billed.')) return;
+    await sb.from('customer_extras').delete().eq('id', b.dataset.x); loadExtras();
+  });
+}
+$('x-add').onclick = async () => {
+  const m = (t, c = 'error') => $('x-msg').innerHTML = `<span class="${c}">${esc(t)}</span>`;
+  if (!$('x-code').value || !$('x-from').value || !$('x-to').value) return m('Pick the extra and its dates.');
+  if ($('x-to').value < $('x-from').value) return m('The end date must be on or after the start date.');
+  const { error } = await sb.from('customer_extras').insert({ customer_id: $('cust').value, extra_code: $('x-code').value,
+    units: parseFloat($('x-units').value || '1'), date_from: $('x-from').value, date_to: $('x-to').value, note: $('x-note').value.trim() || null });
+  if (error) return m(error.message);
+  $('x-note').value = ''; m('Scheduled. It will be billed on the weekly invoice for those dates.', 'ok'); loadExtras();
+};
+
+function showVersion() {
+  const v = versions.find(x => x.id === $('c-ver').value);
+  const lines = (v?.contract_lines || []).slice().sort((a, b) =>
+    SECTION_ORDER.indexOf(a.section) - SECTION_ORDER.indexOf(b.section) || a.sort - b.sort);
+  let html = '', last = '';
+  for (const l of lines) {
+    if (l.section !== last) { html += `<tr><td colspan="6" class="sec">${SECTION[l.section]}</td></tr>`; last = l.section; }
+    html += `<tr><td>${esc(l.description)}</td><td class="num mono">${money(l.rate, 3)}</td><td>${esc(l.basis)}</td>
+      <td>${esc(SOURCES[l.qty_source] || l.qty_source)}</td><td class="num mono">${['fixed', 'manual'].includes(l.qty_source) ? Number(l.fixed_qty) : '–'}</td>
+      <td>${l.cpi_eligible ? 'Yes' : 'No'}</td></tr>`;
+  }
+  if (v?.include_load_charges) html += `<tr><td colspan="6" class="hint">Also bills each load's own linehaul, fuel surcharge and extras from the per-load rate sheet.</td></tr>`;
+  $('c-view').innerHTML = html || '<tr><td colspan="6">No contract for this customer. Open "New contract version" to build one.</td></tr>';
+  // editor starts as a copy
+  $('c-rows').innerHTML = '';
+  (lines.length ? lines : [{ section: 'fixed', description: 'Weekly fixed charge', rate: 0, basis: 'per week', qty_source: 'fixed', fixed_qty: 1, cpi_eligible: true }])
+    .forEach(l => addRow(l));
+  $('c-loads').checked = !!v?.include_load_charges;
+  $('c-neweff').value = todayISO(); $('c-newnote').value = ''; $('c-msg').innerHTML = '';
+}
+
+function addRow(l = { section: 'variable', description: '', rate: 0, basis: 'per mile', qty_source: 'miles', fixed_qty: 0, cpi_eligible: true }) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><select class="r-sec" aria-label="Section">${Object.entries(SECTION).map(([k, t]) => `<option value="${k}" ${k === l.section ? 'selected' : ''}>${t.split(' ')[0].replace('-', ' ')}</option>`).join('')}</select></td>
+    <td><input class="r-desc" value="${esc(l.description)}" aria-label="Description"></td>
+    <td><input class="r-rate" type="number" step="0.0001" value="${Number(l.rate)}" aria-label="Value"></td>
+    <td><input class="r-basis" list="bases" value="${esc(l.basis)}" aria-label="Basis"></td>
+    <td><select class="r-src" aria-label="Volume comes from">${Object.entries(SOURCES).map(([k, t]) => `<option value="${k}" ${k === l.qty_source ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+    <td><input class="r-qty" type="number" step="0.01" value="${Number(l.fixed_qty)}" aria-label="Quantity"></td>
+    <td style="text-align:center"><input class="r-cpi" type="checkbox" ${l.cpi_eligible ? 'checked' : ''} aria-label="Raise with CPI" style="height:auto;width:auto"></td>
+    <td><button class="btn small r-del" type="button" aria-label="Remove line">✕</button></td>`;
+  tr.querySelector('.r-del').onclick = () => tr.remove();
+  tr.querySelector('.r-sec').onchange = (e) => { if (e.target.value === 'extras') { tr.querySelector('.r-src').value = 'extras'; tr.querySelector('.r-qty').value = 0; if (!/day|week/i.test(tr.querySelector('.r-basis').value)) tr.querySelector('.r-basis').value = 'per day'; } };
+  $('c-rows').appendChild(tr);
+}
+$('c-add').onclick = () => addRow();
+
+$('c-savever').onclick = async () => {
+  const msg = (t, c = 'error') => $('c-msg').innerHTML = `<span class="${c}">${esc(t)}</span>`;
+  const rows = [...$('c-rows').querySelectorAll('tr')].map((tr, i) => ({
+    section: tr.querySelector('.r-sec').value, sort: i + 1, description: tr.querySelector('.r-desc').value.trim(),
+    rate: parseFloat(tr.querySelector('.r-rate').value || '0'), basis: tr.querySelector('.r-basis').value.trim() || 'per week',
+    qty_source: tr.querySelector('.r-sec').value === 'extras' ? 'extras' : tr.querySelector('.r-src').value, fixed_qty: parseFloat(tr.querySelector('.r-qty').value || '0'),
+    extra_code: tr.querySelector('.r-sec').value === 'extras' ? slug(tr.querySelector('.r-desc').value) : null,
+    cpi_eligible: tr.querySelector('.r-cpi').checked }));
+  if (!rows.length) return msg('Add at least one line.');
+  if (rows.some(r => !r.description)) return msg('Every line needs a description.');
+  if (!$('c-neweff').value) return msg('Choose the start date.');
+  $('c-savever').disabled = true;
+  const { data: v, error } = await sb.from('contract_versions').insert({
+    customer_id: $('cust').value, effective_from: $('c-neweff').value,
+    note: $('c-newnote').value.trim() || null, include_load_charges: $('c-loads').checked }).select('id').single();
+  if (error) { $('c-savever').disabled = false; return msg(error.message.includes('duplicate') ? 'A version already starts on that date.' : error.message); }
+  const { error: e2 } = await sb.from('contract_lines').insert(rows.map(r => ({ ...r, version_id: v.id })));
+  $('c-savever').disabled = false;
+  if (e2) { await sb.from('contract_versions').delete().eq('id', v.id); return msg(e2.message); }
+  $('c-edit').open = false;
+  await loadContract();
+  $('c-set-msg').innerHTML = '<span class="ok">New contract version saved.</span>';
+};
+
+$('c-save-set').onclick = async () => {
+  const { error } = await sb.from('customers').update({
+    next_cpi_date: $('c-next').value || null, cpi_notice_days: parseInt($('c-notice').value || '60', 10),
+    week_start_dow: parseInt($('c-week').value, 10), cpi_note: $('c-cpinote').value.trim() || null,
+    master_bill: $('b-master').checked, miles_basis: $('b-miles').value,
+    start_name: $('b-sname').value.trim() || null, start_address: $('b-saddr').value.trim() || null, terms_days: $('b-terms').value === '' ? null : parseInt($('b-terms').value, 10),
+    po_number: $('b-po').value.trim() || null, customer_code: $('b-code').value.trim() || null,
+    invoice_format: $('b-fmt').value.trim() || null }).eq('id', $('cust').value);
+  $('c-set-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved.</span>';
+  loadCpiAlerts();
+};
+
+$('c-apply').onclick = async () => {
+  const pct = parseFloat($('c-pct').value);
+  if (isNaN(pct)) { $('c-set-msg').innerHTML = '<span class="error">Enter the CPI percentage.</span>'; return; }
+  if (!confirm(`Create a new contract version starting ${fmtDate($('c-eff').value)} with CPI lines raised ${pct}%?`)) return;
+  const { error } = await sb.rpc('apply_cpi', { p_customer_id: $('cust').value, p_pct: pct, p_effective: $('c-eff').value, p_note: null });
+  if (error) { $('c-set-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  $('c-pct').value = '';
+  await loadContract(); loadCpiAlerts();
+  $('c-set-msg').innerHTML = '<span class="ok">CPI applied. The new version is listed above; the next CPI date moved out one year.</span>';
 };
 
 start();

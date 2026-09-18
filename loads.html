@@ -55,7 +55,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="rates.html">Rates</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -208,7 +208,7 @@ $('day').onchange = () => { $('detail').hidden = true; loadList(); };
 
 async function loadLists() {
   const [c, d, e] = await Promise.all([
-    sb.from('customers').select('id, name').order('name'),
+    sb.from('customers').select('id, name, start_name, start_address').order('name'),
     sb.from('drivers').select('id, full_name').eq('active', true).order('full_name'),
     sb.from('equipment').select('id, unit_no').eq('active', true).order('unit_no')
   ]);
@@ -221,7 +221,7 @@ async function loadLists() {
 
 async function loadList() {
   const { data, error } = await sb.from('loads')
-    .select('id, load_no, status, miles, customers(name), drivers(full_name), equipment(unit_no), stops(id, status, late_reason, issue_type), load_billing(linehaul, fuel_surcharge)')
+    .select('id, load_no, status, miles, customers(name), drivers(full_name), equipment(unit_no), invoice_id, invoices!loads_invoice_id_fkey(invoice_no), stops(id, status, late_reason, issue_type), load_billing(linehaul, fuel_surcharge)')
     .eq('service_date', $('day').value).order('load_no');
   if (error) { $('list').innerHTML = `<tr><td colspan="7" class="error">${esc(error.message)}</td></tr>`; return; }
   $('list').innerHTML = data.map(l => {
@@ -232,7 +232,7 @@ async function loadList() {
       <td>${esc(l.drivers?.full_name || 'Unassigned')} · ${esc(l.equipment?.unit_no || '–')}</td>
       <td class="num mono">${l.stops.length}</td><td class="num mono">${Math.round(l.miles)}</td>
       <td class="num mono">${money(billed)}</td>
-      <td><span class="pill s-${l.status}">${STATUS_LABEL[l.status] || l.status}</span>${problemPill(l.stops)}</td></tr>`;
+      <td><span class="pill s-${l.status}">${STATUS_LABEL[l.status] || l.status}</span>${problemPill(l.stops)}${l.invoices ? ` <span class="pill s-delivered">Invoice ${esc(l.invoices.invoice_no)}</span>` : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="7">No loads on this date. Use New load to add one.</td></tr>';
   document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => showDetail(tr.dataset.id));
 }
@@ -255,13 +255,21 @@ function stopRow(n) {
   return div;
 }
 function renumber() { document.querySelectorAll('#stops .stop .n').forEach((el, i) => el.textContent = `Stop ${i + 1}`); }
+// Dedicated trucks usually start at the customer's facility: use it when the customer has one
+$('f-customer').onchange = () => {
+  const c = lists.customers.find(x => x.id === $('f-customer').value);
+  if ($('f-origin').dataset.auto === '1' || !$('f-origin').value) {
+    $('f-origin').value = c?.start_address || yard; $('f-origin').dataset.auto = '1';
+  }
+};
+$('f-origin').oninput = () => { $('f-origin').dataset.auto = ''; };
 $('add-stop').onclick = () => { $('stops').appendChild(stopRow($('stops').children.length + 1)); };
 
 $('new-btn').onclick = async () => {
   $('form').hidden = false; $('detail').hidden = true; $('form-msg').innerHTML = '';
   $('f-date').value = $('day').value;
   ['f-customer','f-driver','f-truck','f-miles','f-linehaul','f-fsc'].forEach(id => $(id).value = '');
-  $('f-origin').value = yard; $('f-round').checked = true; $('calc-note').hidden = true; priced = null;
+  $('f-origin').value = yard; $('f-origin').dataset.auto = '1'; $('f-round').checked = true; $('calc-note').hidden = true; priced = null;
   $('stops').innerHTML = ''; $('stops').appendChild(stopRow(1));
   // Suggest the next load number
   const { data } = await sb.from('loads').select('load_no').order('created_at', { ascending: false }).limit(50);
@@ -403,7 +411,7 @@ $('save').onclick = async () => {
 // ---------- Load detail ----------
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, origin_address, round_trip, miles_source, customer_id, customers(name), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), stops(id, seq, consignee, address, window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, consignee, address, window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
@@ -422,7 +430,10 @@ async function showDetail(id) {
       <span class="pill s-${l.status}">${STATUS_LABEL[l.status]}</span>${problemPill(l.stops)}</div>
     <p>${esc(l.drivers?.full_name || 'No driver')} · ${esc(l.equipment?.unit_no || 'No truck')} · ${Math.round(l.miles)} miles ·
        Linehaul ${money(b?.linehaul)} + fuel ${money(b?.fuel_surcharge)}</p>
-    <p style="color:var(--muted);font-size:13px;margin-top:-6px">Start: ${esc(l.origin_address || yard || 'not set')}${l.round_trip ? ' (round trip)' : ''} · miles ${l.miles_source === 'google' ? 'from Google' : 'typed in'}</p>
+    <p style="color:var(--muted);font-size:13px;margin-top:-6px">Start: ${esc(l.origin_address || l.customers?.start_address || yard || 'not set')}${l.round_trip ? ' (round trip)' : ''} ·
+      miles ${({ google: 'from Google', hub: 'from hub odometer', adjusted: 'adjusted by office' })[l.miles_source] || 'typed in'}${l.route_miles != null && Number(l.route_miles) !== Number(l.miles) ? ` (planned ${Math.round(l.route_miles)})` : ''}
+      ${l.ask_odometer || l.hub_start != null ? ` · ${l.hub_required ? 'hub miles customer · ' : ''}odometer ${l.hub_start ?? '–'} → ${l.hub_end ?? '–'}${l.hub_start != null && l.hub_end != null ? ` (${(l.hub_end - l.hub_start).toFixed(1)} actual mi)` : ''}${l.deadhead_miles != null ? ` · deadhead ${Number(l.deadhead_miles).toFixed(1)} mi` : ''}${l.ask_odometer && (l.hub_start == null || l.hub_end == null) && l.status !== 'cancelled' ? ' <b style="color:var(--late)">waiting for driver</b>' : ''}` : ''}
+      ${l.miles_note ? ` · note: ${esc(l.miles_note)}` : ''}</p>
     ${b?.pricing_note ? `<div class="note">${esc(b.pricing_note)}</div>` : ''}
     ${stops}
     <div class="actions" style="margin-top:12px">
@@ -430,15 +441,38 @@ async function showDetail(id) {
       ${l.status !== 'cancelled' ? '<button class="btn" id="d-recalc">Recalculate miles &amp; price</button>' : ''}
       ${['planned','dispatched'].includes(l.status) ? '<button class="btn danger" id="d-cancel">Cancel load</button>' : ''}
     </div>
-    <div id="d-msg" class="note" hidden></div>`;
+    <div id="d-msg" class="note" hidden></div>
+    <div class="row" style="margin-top:12px">
+      <label for="d-miles">Adjust miles<input id="d-miles" type="number" min="0" step="0.1" style="width:120px" value="${Number(l.miles)}"></label>
+      <label for="d-mreason" style="flex:1 1 220px">Reason<input id="d-mreason" placeholder="e.g. detour, customer-agreed miles, hub correction"></label>
+      <button class="btn" id="d-miles-save" ${l.invoice_id ? 'disabled title="Already invoiced"' : ''}>Save miles</button>
+      <span id="d-miles-msg"></span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label for="d-tolls">Tolls on this load $<input id="d-tolls" type="number" min="0" step="0.01" style="width:140px"
+        value="${(l.load_costs || []).filter(c => c.cost_type === 'tolls').reduce((a, c) => a + Number(c.amount), 0) || ''}"></label>
+      <button class="btn" id="d-tolls-save" ${l.invoice_id ? 'disabled title="Already invoiced"' : ''}>Save tolls</button>
+      <span class="hint" id="d-tolls-msg">From the toll statement (E-ZPass etc.). Billed on the weekly invoice when the contract has a tolls line.</span>
+    </div>`;
   const setStatus = async (st) => { await sb.from('loads').update({ status: st }).eq('id', id); await loadList(); showDetail(id); };
   if ($('d-dispatch')) $('d-dispatch').onclick = () => setStatus('dispatched');
   if ($('d-cancel')) $('d-cancel').onclick = () => setStatus('cancelled');
+  $('d-miles-save').onclick = async () => {
+    const { error } = await sb.rpc('adjust_load_miles', { p_load_id: id, p_miles: parseFloat($('d-miles').value), p_reason: $('d-mreason').value });
+    if (error) { $('d-miles-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    await loadList(); showDetail(id);
+  };
+  $('d-tolls-save').onclick = async () => {
+    const amt = parseFloat($('d-tolls').value || '0');
+    await sb.from('load_costs').delete().eq('load_id', id).eq('cost_type', 'tolls');
+    const { error } = amt > 0 ? await sb.from('load_costs').insert({ load_id: id, cost_type: 'tolls', amount: amt }) : { error: null };
+    $('d-tolls-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Tolls saved.</span>';
+  };
   if ($('d-recalc')) $('d-recalc').onclick = async () => {
     const m = $('d-msg'); m.hidden = false; m.textContent = 'Working…'; $('d-recalc').disabled = true;
     try {
       const sorted = l.stops.slice().sort((a, b) => a.seq - b.seq);
-      const origin = l.origin_address || yard;
+      const origin = l.origin_address || l.customers?.start_address || yard;
       const r = await getMiles(origin, l.round_trip, sorted.map(s => s.address || ''));
       const items = sorted.flatMap(s => s.stop_items.map(i => ({ unit: i.unit_type, qty: Number(i.qty_ordered) || 0 })));
       const p2 = await getPrice(l.customer_id, l.service_date, Math.round(r.miles), sorted.length, items);

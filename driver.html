@@ -155,7 +155,7 @@ $('refresh').onclick = () => loadStops();
 // ---------- Today's stops ----------
 async function loadStops() {
   const { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, stops(id, seq, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
   if (!loads.length) { $('stops').innerHTML = '<div class="card">No stops assigned to you today.</div>'; return; }
@@ -163,6 +163,17 @@ async function loadStops() {
   let html = '';
   for (const l of loads) {
     html += `<div class="load-head">Load ${esc(l.load_no)}</div>`;
+    if (l.ask_odometer) {
+      const allDone = (l.stops || []).length && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
+      const ask = l.hub_start == null ? 'start' : (allDone && l.hub_end == null ? 'end' : null);
+      html += `<div class="card" style="border-color:${ask ? '#e8c46a' : 'var(--line)'}">
+        <div class="meta"><b>Odometer${l.hub_required ? ' (hub miles)' : ''}</b> · start ${l.hub_start ?? '–'} · end ${l.hub_end ?? '–'}${l.hub_start != null && l.hub_end != null ? ` · <b>${(l.hub_end - l.hub_start).toFixed(1)} mi</b>` : ''}</div>
+        ${ask ? `<div class="row" style="align-items:end">
+          <label for="hub-${l.id}" style="flex:1 1 160px">${ask === 'start' ? 'Odometer at the start (before the first stop)' : 'Odometer now, load finished'}
+            <input id="hub-${l.id}" type="number" inputmode="decimal" step="0.1" min="0" placeholder="e.g. 120450"></label>
+          <button class="btn primary" data-hub="${l.id}" data-which="${ask}">Save reading</button></div>` : ''}
+      </div>`;
+    }
     const stops = l.stops.sort((a, b) => a.seq - b.seq);
     const nextId = (stops.find(s => !['delivered', 'exception'].includes(s.status)) || {}).id;
     for (const s of stops) {
@@ -173,7 +184,9 @@ async function loadStops() {
       let actions = '';
       if (!done && s.id === nextId) {
         actions = s.status === 'pending'
-          ? `<div class="row"><button class="btn primary" data-act="arrive" data-id="${s.id}">Arrived</button></div>`
+          ? (l.ask_odometer && l.hub_start == null
+              ? `<div class="meta" style="margin-top:10px;color:var(--late)">Enter the starting odometer above first.</div>`
+              : `<div class="row"><button class="btn primary" data-act="arrive" data-id="${s.id}">Arrived</button></div>`)
           : `<div class="counts" id="counts-${s.id}">${s.stop_items.map(i => `
                <div class="count"><label for="q-${i.id}" style="font-weight:600">${esc(i.unit_type)} delivered (of ${i.qty_ordered})</label>
                <input id="q-${i.id}" type="number" inputmode="numeric" min="0" value="${s.stop_items.length === 1 && codes.length ? codes.length : i.qty_ordered}" data-item="${i.id}"></div>`).join('')}</div>
@@ -218,6 +231,14 @@ async function loadStops() {
   }
   $('stops').innerHTML = html;
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b));
+  document.querySelectorAll('[data-hub]').forEach(b => b.onclick = async () => {
+    const v = parseFloat($('hub-' + b.dataset.hub).value);
+    if (isNaN(v)) { alert('Enter the odometer reading.'); return; }
+    b.disabled = true;
+    const { error } = await sb.rpc('driver_hub_reading', { p_load_id: b.dataset.hub, p_which: b.dataset.which, p_reading: v });
+    if (error) { alert(error.message); b.disabled = false; return; }
+    loadStops();
+  });
   document.querySelectorAll('[data-scan]').forEach(b => b.onclick = () => openScanner(b.dataset.scan, b.dataset.label));
   document.querySelectorAll('[data-photo]').forEach(b => {
     const input = $('ph-' + b.dataset.photo);

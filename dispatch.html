@@ -53,7 +53,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html" style="color:#fff">Dispatch</a><a href="loads.html" style="color:#d9d5cc">Loads</a><a href="rates.html" style="color:#d9d5cc">Rates</a><a href="driver.html" style="color:#d9d5cc">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html" style="color:#fff">Dispatch</a><a href="loads.html" style="color:#d9d5cc">Loads</a><a href="rates.html" style="color:#d9d5cc">Rates</a><a href="invoices.html" style="color:#d9d5cc">Invoices</a><a href="driver.html" style="color:#d9d5cc">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -81,6 +81,7 @@
       <div class="card kpi late"><small>Running late</small><b id="k-late">–</b></div>
       <div class="card kpi"><small>Delivered loads</small><b id="k-done">–</b></div>
     </div>
+    <div id="cpi-alerts"></div>
     <div id="banners"></div>
     <div class="card">
       <div class="tablewrap">
@@ -148,7 +149,18 @@ async function start() {
   $('signout').hidden = false;
   $('login-view').hidden = true;
   if (data.role === 'driver') { location.href = 'driver.html'; return; }
-  else { $('office-view').hidden = false; $('day').value = todayISO(); loadBoard(); }
+  else { $('office-view').hidden = false; $('day').value = todayISO(); loadBoard(); cpiAlerts(); }
+}
+
+// CPI reminders for customer contracts (set on the Rates page)
+async function cpiAlerts() {
+  const { data } = await sb.from('customers').select('name, next_cpi_date, cpi_notice_days').not('next_cpi_date', 'is', null);
+  const today = new Date(todayISO() + 'T00:00:00');
+  $('cpi-alerts').innerHTML = (data || []).map(c => {
+    const days = Math.round((new Date(c.next_cpi_date + 'T00:00:00') - today) / 86400000);
+    if (days > (c.cpi_notice_days ?? 60)) return '';
+    return `<div class="banner" style="background:#fbeed8;border-color:#f0d9a8;color:#8a4b08"><div><strong>CPI ${days < 0 ? 'overdue' : 'due'}: ${esc(c.name)}</strong> — ${new Date(c.next_cpi_date + 'T00:00:00').toLocaleDateString()} ${days < 0 ? `(${-days} days ago)` : `(in ${days} days)`}.</div><a class="btn small" href="rates.html" style="text-decoration:none;display:inline-flex;align-items:center">Open Rates</a></div>`;
+  }).join('');
 }
 
 function showLogin() {

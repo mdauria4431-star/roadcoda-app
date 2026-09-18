@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadCoda · Invoices</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;
+        --ok-bg:#e3f1e6;--ok:#1e6b34;--info-bg:#e3edf6;--info:#1d4e89;--risk-bg:#fbeed8;--risk:#8a4b08}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
+  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
+  header a{color:#d9d5cc}header a.on{color:#fff}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px}.brand span{color:#5fc2c7}
+  .who{margin-left:auto;font-size:14px;color:#d9d5cc}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:40px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600}
+  .btn.primary{background:var(--accent);color:#fff;border:none}
+  .btn.danger{color:var(--late)}
+  .btn.small{height:32px;padding:0 12px;font-size:13px}
+  .btn:disabled{opacity:.5;cursor:default}
+  main{max-width:1180px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+  input,select,textarea{height:40px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff;min-width:0}
+  textarea{height:70px;padding:8px 10px}
+  .error{color:var(--late);font-size:14px}.ok{color:var(--ok);font-size:14px}
+  h1{font-family:Archivo,sans-serif;font-size:28px;margin:0}
+  h2{font-family:Archivo,sans-serif;font-size:18px;margin:0 0 12px}
+  .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:680px}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
+  td{padding:9px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
+  tr.click{cursor:pointer}tr.click:hover{background:#faf8f4}
+  .mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}.num{text-align:right}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+  .st-draft{background:var(--info-bg);color:var(--info)}.st-approved{background:var(--risk-bg);color:var(--risk)}
+  .st-sent{background:var(--ok-bg);color:var(--ok)}.st-paid{background:#ecebe8;color:#45423d}.st-issue{background:#fbe0db;color:var(--late)}
+  .hint{font-size:13px;color:var(--muted);line-height:1.5}
+  .sub{font-size:13px;color:var(--muted);padding-left:18px}
+  .sub.issue{color:var(--late)}
+  .total{font-family:Archivo,sans-serif;font-size:20px}
+  .sec td{font-weight:700;color:var(--accent);text-transform:uppercase;font-size:12px;letter-spacing:.04em;padding-top:14px}
+  .subt td{font-weight:700;border-top:1px solid var(--ink)}
+  .edit input{height:32px;width:100px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:14px}
+  .edit.need input{background:#fff8e1;border-color:#e8c46a}
+  .banner{padding:12px 14px;border-radius:10px;background:#fbeed8;color:#8a4b08;font-size:14px;margin-bottom:8px}
+  .banner.over{background:#fbe0db;color:var(--late)}
+  @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="rates.html">Rates</a><a class="on" href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
+    <h1>Invoices</h1>
+    <div id="cpi-alerts"></div>
+
+    <section class="card">
+      <h2>New weekly invoice</h2>
+      <p class="hint">One invoice per customer per week: the contract's fixed, variable and pass-through lines, plus a breakdown report of every delivered load.</p>
+      <div class="row">
+        <label for="n-cust" style="min-width:240px">Customer<select id="n-cust"></select></label>
+        <label for="n-day">Any day in the week<input id="n-day" type="date"></label>
+        <button class="btn" id="n-find">Preview</button>
+      </div>
+      <div id="n-result" style="margin-top:14px"></div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h2 style="margin:0">All invoices</h2>
+        <label for="f-status">Show<select id="f-status">
+          <option value="">All</option><option value="draft">Draft</option><option value="approved">Approved</option>
+          <option value="sent">Sent</option><option value="paid">Paid</option></select></label>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Invoice</th><th>Customer</th><th>Week</th><th>Due</th><th class="num">Loads</th><th class="num">Total</th><th>Status</th></tr></thead>
+        <tbody id="list"></tbody></table></div>
+    </section>
+
+    <section class="card" id="detail" hidden></section>
+
+    <section class="card">
+      <details><summary style="cursor:pointer;font-weight:600">Invoice settings (our office, remit-to, default terms)</summary>
+        <p class="hint">Printed on every invoice. Customer-specific terms, PO number and invoice number format are set per customer on the Rates page. Only the owner can change these.</p>
+        <div class="grid">
+          <label for="s-name" style="grid-column:span 2">Company name<input id="s-name"></label>
+          <label for="s-phone">Office phone<input id="s-phone"></label>
+          <label for="s-email">Billing email<input id="s-email" type="email"></label>
+          <label for="s-office" style="grid-column:span 2">Office address<input id="s-office" placeholder="Street, Town, ST 00000"></label>
+          <label for="s-remit" style="grid-column:span 2">Remit-to address (where payments go)<input id="s-remit" placeholder="PO Box or lockbox, Town, ST 00000"></label>
+          <label for="s-terms">Default payment terms (days)<input id="s-terms" type="number" min="0" step="1"></label>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn primary" id="s-save">Save settings</button><span id="s-msg"></span></div>
+      </details>
+    </section>
+  </div>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
+    '<h2 style="margin-top:0">RoadCoda can\'t find its settings</h2>' +
+    (window.RC_CONFIG ? '<p><b>config.js</b> still has the placeholder key. Open it and paste your Publishable key (Supabase &gt; Project Settings &gt; API Keys).</p>'
+                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder (right-click the zip &gt; <b>Extract All</b>), then open the page from that folder.</p>') +
+    '</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const usd = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const val3 = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 4 });
+const dt = (s) => s ? new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US') : '';
+const localISO = (d) => { d = new Date(d); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localISO(d); };
+const STATUS = { draft: 'Draft', approved: 'Approved', sent: 'Sent', paid: 'Paid' };
+let me = null, carrier = null, customers = [];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(*)').eq('user_id', session.user.id).single();
+  if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
+  if (p.role === 'driver') { location.href = 'driver.html'; return; }
+  me = p; carrier = p.carriers || {};
+  $('who').textContent = `${p.full_name || session.user.email} · ${carrier.name || ''} · ${p.role}`;
+  $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  $('n-day').value = addDays(localISO(new Date()), -7);   // last week, by default
+  const { data: cs } = await sb.from('customers').select('id, name, week_start_dow, next_cpi_date, cpi_notice_days, master_bill').order('name');
+  customers = cs || [];
+  $('n-cust').innerHTML = customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  cpiAlerts(); fillSettings(); loadList();
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; }
+  start();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+function cpiAlerts() {
+  const today = new Date(localISO(new Date()) + 'T00:00:00');
+  $('cpi-alerts').innerHTML = customers.filter(c => c.next_cpi_date).map(c => {
+    const days = Math.round((new Date(c.next_cpi_date + 'T00:00:00') - today) / 86400000);
+    if (days > (c.cpi_notice_days ?? 60)) return '';
+    return `<div class="banner ${days < 0 ? 'over' : ''}"><b>CPI ${days < 0 ? 'overdue' : 'due'}: ${esc(c.name)}</b> — ${dt(c.next_cpi_date)}. Apply it on the <a href="rates.html">Rates</a> page before invoicing weeks after that date.</div>`;
+  }).join('');
+}
+
+// ---------- New weekly invoice: preview ----------
+function weekOf(custId, dayISO) {
+  const c = customers.find(x => x.id === custId) || {};
+  const d = new Date(dayISO + 'T00:00:00');
+  const back = (d.getDay() - (c.week_start_dow ?? 0) + 7) % 7;
+  const start = addDays(dayISO, -back);
+  return { start, end: addDays(start, 6) };
+}
+$('n-find').onclick = async () => {
+  const out = $('n-result'), cid = $('n-cust').value;
+  if (!$('n-day').value) return;
+  const wk = weekOf(cid, $('n-day').value);
+  out.innerHTML = '<span class="ok">Looking…</span>';
+  const [ver, loads, open, dup] = await Promise.all([
+    sb.from('contract_versions').select('effective_from, note, include_load_charges, contract_lines(id, qty_source)').eq('customer_id', cid).lte('effective_from', wk.start).order('effective_from', { ascending: false }).limit(1),
+    sb.from('loads').select('id, load_no, service_date, miles, invoice_id, stops(id, status, issue_type)').eq('customer_id', cid).eq('status', 'delivered').gte('service_date', wk.start).lte('service_date', wk.end).order('service_date'),
+    sb.from('loads').select('load_no, status').eq('customer_id', cid).in('status', ['planned', 'dispatched', 'in_progress']).gte('service_date', wk.start).lte('service_date', wk.end),
+    sb.from('invoices').select('invoice_no').eq('customer_id', cid).eq('period_from', wk.start),
+  ]);
+  const { data: xs } = await sb.from('customer_extras').select('extra_code, units, date_from, date_to').eq('customer_id', cid).lte('date_from', wk.end).gte('date_to', wk.start);
+  const { data: pos } = await sb.from('customer_pos').select('po_number, valid_from, valid_to').eq('customer_id', cid);
+  const po = (pos || []).filter(p => p.valid_from <= wk.start && (!p.valid_to || p.valid_to >= wk.start)).sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
+  const v = (ver.data || [])[0];
+  const master = (customers.find(c => c.id === cid) || {}).master_bill !== false;
+  const ready = (loads.data || []).filter(l => !l.invoice_id);
+  const issues = ready.reduce((a, l) => a + (l.stops || []).filter(s => s.status === 'exception').length, 0);
+  const manual = (v?.contract_lines || []).filter(l => l.qty_source === 'manual').length;
+  const warn = [];
+  if (master && dup.data?.length) warn.push(`Invoice ${esc(dup.data[0].invoice_no)} already covers this week.`);
+  if (open.data?.length) warn.push(`${open.data.length} load(s) this week are not delivered yet (${open.data.map(l => esc(l.load_no)).join(', ')}). They won't be on this invoice.`);
+  if ((pos || []).length && !po) warn.push('No PO on file covers this week, so the invoice will have no PO. Add it on the Rates page first if the customer requires one.');
+  if (master && !v) warn.push('This customer has no contract in effect for this week, so only each load\'s own charges will be billed. Set up a contract on the Rates page.');
+  out.innerHTML = `
+    <p><b>Week ${dt(wk.start)} – ${dt(wk.end)}</b>${po ? ` · PO ${esc(po.po_number)}` : ''} · ${v ? `contract from ${dt(v.effective_from)}${v.note ? ' (' + esc(v.note) + ')' : ''}` : 'no contract'}</p>
+    <p>${ready.length} delivered load${ready.length === 1 ? '' : 's'} · ${Math.round(ready.reduce((a, l) => a + Number(l.miles), 0)).toLocaleString()} miles
+      · ${ready.reduce((a, l) => a + l.stops.length, 0)} stops${issues ? ` · <span class="pill st-issue">${issues} OS&amp;D</span>` : ''}</p>
+    ${warn.map(w => `<div class="banner">${w}</div>`).join('')}
+    ${(xs || []).length ? `<p>Extras this week: ${xs.map(x => `${Number(x.units)} × ${esc(x.extra_code.replace(/-/g, ' '))} (${dt(x.date_from)}–${dt(x.date_to)})`).join(', ')}</p>` : ''}
+    ${manual ? `<p class="hint">${manual} line(s) are entered each week (hours, gallons, hotel, tolls). You'll fill them in on the draft.</p>` : ''}
+    ${master ? '' : `<div class="banner">Master bill is off for this customer: this creates <b>${ready.length} separate invoice${ready.length === 1 ? '' : 's'}</b>, one per load, each with that load's own charges.</div>`}
+    <button class="btn primary" id="n-create" ${(master && dup.data?.length) || (!master && !ready.length) ? 'disabled' : ''}>${master ? 'Create draft invoice' : `Create ${ready.length} draft invoice${ready.length === 1 ? '' : 's'}`}</button>
+    <div id="n-msg" style="margin-top:8px"></div>`;
+  $('n-create').onclick = async () => {
+    $('n-create').disabled = true;
+    const { data, error } = master
+      ? await sb.rpc('create_weekly_invoice', { p_customer_id: cid, p_week_start: wk.start })
+      : await sb.rpc('create_load_invoices', { p_customer_id: cid, p_week_start: wk.start });
+    if (error) { $('n-create').disabled = false; $('n-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    if (master) {
+      out.innerHTML = '<span class="ok">Draft created below. Fill in the highlighted lines, check it, then Approve.</span>';
+      await loadList(); showInvoice(data);
+    } else {
+      out.innerHTML = `<span class="ok">${data} draft invoice${data === 1 ? '' : 's'} created. They're at the top of the list below.</span>`;
+      $('f-status').value = 'draft'; await loadList();
+    }
+  };
+};
+
+// ---------- List ----------
+$('f-status').onchange = () => loadList();
+async function loadList() {
+  let q = sb.from('invoices').select('id, invoice_no, status, invoice_date, due_date, period_from, period_to, total, customers(name), breakdown').order('invoice_date', { ascending: false }).order('seq_no', { ascending: false });
+  if ($('f-status').value) q = q.eq('status', $('f-status').value);
+  const { data, error } = await q;
+  if (error) { $('list').innerHTML = `<tr><td colspan="7" class="error">${esc(error.message)}</td></tr>`; return; }
+  const today = localISO(new Date());
+  $('list').innerHTML = data.map(i => {
+    const overdue = ['approved', 'sent'].includes(i.status) && i.due_date < today;
+    return `<tr class="click" data-id="${i.id}"><td class="mono">${esc(i.invoice_no)}</td><td>${esc(i.customers?.name)}</td>
+      <td>${i.period_from ? `${dt(i.period_from)} – ${dt(i.period_to)}` : dt(i.invoice_date)}</td><td>${dt(i.due_date)}${overdue ? ' <span class="pill st-issue">Overdue</span>' : ''}</td>
+      <td class="num mono">${(i.breakdown || []).length}</td><td class="num mono">${usd(i.total)}</td>
+      <td><span class="pill st-${i.status}">${STATUS[i.status]}</span></td></tr>`;
+  }).join('') || '<tr><td colspan="7">No invoices yet.</td></tr>';
+  document.querySelectorAll('#list tr[data-id]').forEach(tr => tr.onclick = () => showInvoice(tr.dataset.id));
+}
+
+// ---------- Detail ----------
+async function getInvoice(id) {
+  const { data, error } = await sb.from('invoices')
+    .select('*, customers(id, name, bill_address, terms_days), invoice_lines(id, seq, section, line_type, description, rate, basis, volume, qty_source, amount, detail)')
+    .eq('id', id).single();
+  if (error) throw error;
+  data.invoice_lines.sort((a, b) => a.seq - b.seq);
+  // Invoices made before weekly billing: rebuild a breakdown from their per-load detail
+  if (!data.breakdown) data.breakdown = data.invoice_lines.filter(l => l.line_type === 'linehaul' && l.detail).map(l => ({ load_no: (l.description.match(/Load (\S+)/) || [])[1], stops: l.detail, miles: 0 }));
+  return data;
+}
+
+async function showInvoice(id) {
+  const box = $('detail');
+  let inv;
+  try { inv = await getInvoice(id); } catch (e) { box.hidden = false; box.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+  const draft = inv.status === 'draft';
+  let rows = '';
+  for (const sec of SECTION_ORDER) {
+    const ls = inv.invoice_lines.filter(l => sectionOf(l) === sec);
+    if (!ls.length) continue;
+    rows += `<tr class="sec"><td colspan="6">${SECTION_TITLE[sec]}</td></tr>`;
+    let sub = 0;
+    for (const l of ls) {
+      sub += Number(l.amount);
+      const canEdit = draft && l.rate != null;
+      const need = l.qty_source === 'manual' && !Number(l.volume) ? ' need' : '';
+      rows += `<tr data-line="${l.id}"><td>${esc(l.description)}${l.line_type === 'adhoc' && draft ? ` <button class="btn small danger l-del" data-id="${l.id}" aria-label="Remove line">✕</button>` : ''}</td>
+        <td class="num ${canEdit ? 'edit' : 'mono'}">${canEdit ? `<input class="l-rate" type="number" step="0.001" value="${Number(l.rate)}" aria-label="Value for ${esc(l.description)}">` : l.rate != null ? val3(l.rate) : ''}</td>
+        <td>${esc(l.basis || '')}</td>
+        <td class="num ${canEdit ? 'edit' + need : 'mono'}">${canEdit ? `<input class="l-vol" type="number" step="0.01" value="${Number(l.volume)}" aria-label="Volume for ${esc(l.description)}">` : l.volume != null ? Number(l.volume).toLocaleString() : ''}</td>
+        <td class="num mono">${usd(l.amount)}</td><td></td></tr>`;
+    }
+    rows += `<tr class="subt"><td colspan="4" class="num">${SECTION_TITLE[sec]}</td><td class="num mono">${usd(sub)}</td><td></td></tr>`;
+  }
+  const bd = inv.breakdown || [];
+  const bdRows = bd.map(l => `<tr><td class="mono">${dt(l.date)}</td><td class="mono">${esc(l.load_no)}</td><td>${esc(l.driver || '')}</td><td>${esc(l.truck || '')}</td>
+      <td class="num mono">${Math.round(Number(l.miles || 0))}</td>
+      <td>${(l.stops || []).map(s => `Stop ${s.seq} · ${esc(s.consignee)}: ${(s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${esc(i.unit)}` : `${i.ordered} ${esc(i.unit)}`).join(', ')}${s.issue ? ` <span class="pill st-issue">${esc(ISSUE_PDF[s.issue] || 'Issue')}</span>${s.note ? ' ' + esc(s.note) : ''}` : ''}`).join('<br>')}</td></tr>`).join('');
+
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Invoice ${esc(inv.invoice_no)} · ${esc(inv.customers?.name)}</h2>
+      <span class="pill st-${inv.status}">${STATUS[inv.status]}</span></div>
+    <p class="hint">Dated ${dt(inv.invoice_date)} · due ${dt(inv.due_date)}${inv.period_from ? ` · week ${dt(inv.period_from)} – ${dt(inv.period_to)}` : ''}${inv.po_number ? ` · PO ${esc(inv.po_number)}` : ''}</p>
+    <div class="grid" style="grid-template-columns:2fr 1fr">
+      <label for="d-bill">Bill-to address (saved to the customer)<textarea id="d-bill" placeholder="Street, Town, ST 00000">${esc(inv.customers?.bill_address || '')}</textarea></label>
+      <label for="d-notes">Note printed on invoice<textarea id="d-notes" ${draft ? '' : 'disabled'}>${esc(inv.notes || '')}</textarea></label>
+    </div>
+    ${draft ? '<p class="hint" style="margin-top:12px">Highlighted lines are entered each week. Any value or volume can be adjusted on a draft; click Save changes to recalculate.</p>' : ''}
+    <div class="tablewrap" style="margin-top:8px"><table>
+      <thead><tr><th>Description</th><th class="num">Value</th><th>Basis</th><th class="num">Volume</th><th class="num">Weekly charges</th><th style="width:10px"></th></tr></thead>
+      <tbody>${rows}<tr><td colspan="4" class="num" style="font-family:Archivo,sans-serif;font-size:18px">Weekly Total Invoice</td><td class="num mono" style="font-size:18px"><b>${usd(inv.total)}</b></td><td></td></tr></tbody></table></div>
+    ${draft ? `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Add a one-off line (detention, extra stop, credit…)</summary>
+      <div class="row" style="margin-top:8px">
+        <label for="a-sec">Section<select id="a-sec"><option value="variable">Variable</option><option value="extras">Additional equipment &amp; drivers</option><option value="pass_through">Pass through</option><option value="fixed">Fixed</option><option value="other">Other</option></select></label>
+        <label for="a-desc" style="flex:1 1 220px">Description<input id="a-desc"></label>
+        <label for="a-rate">Value $<input id="a-rate" type="number" step="0.001" style="width:110px"></label>
+        <label for="a-basis">Basis<input id="a-basis" value="as incurred" style="width:120px"></label>
+        <label for="a-vol">Volume<input id="a-vol" type="number" step="0.01" value="1" style="width:90px"></label>
+        <button class="btn" id="a-add">Add line</button></div></details>` : ''}
+    <div class="row" style="margin-top:14px">
+      ${draft ? '<button class="btn" id="d-save">Save changes</button>' : ''}
+      <button class="btn primary" id="d-pdf">Download PDF</button>
+      <button class="btn" id="d-xlsx">Backup for rebilling (Excel)</button>
+      ${draft ? '<button class="btn" id="d-approve">Approve</button>' : ''}
+      ${inv.status === 'approved' ? '<button class="btn" id="d-sent">Mark sent</button>' : ''}
+      ${['approved', 'sent'].includes(inv.status) ? '<button class="btn" id="d-paid">Mark paid</button>' : ''}
+      <span style="flex-grow:1"></span>
+      ${draft ? '<button class="btn danger" id="d-delete">Delete draft</button>' : ''}
+    </div>
+    <div id="d-msg" style="margin-top:8px"></div>
+    <h2 style="margin-top:22px">Breakdown report</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Date</th><th>Load</th><th>Driver</th><th>Truck</th><th class="num">Miles</th><th>Stops</th></tr></thead>
+      <tbody>${bdRows || '<tr><td colspan="6">No delivered loads this week.</td></tr>'}</tbody></table></div>`;
+
+  const msg = (t, cls = 'error') => $('d-msg').innerHTML = `<span class="${cls}">${esc(t)}</span>`;
+  const saveEdits = async () => {
+    const bill = $('d-bill').value.trim() || null;
+    if (bill !== (inv.customers?.bill_address || null)) {
+      const { error } = await sb.from('customers').update({ bill_address: bill }).eq('id', inv.customers.id);
+      if (error) throw error; inv.customers.bill_address = bill;
+    }
+    if (!draft) return;
+    if (($('d-notes').value.trim() || null) !== (inv.notes || null)) {
+      const { error } = await sb.from('invoices').update({ notes: $('d-notes').value.trim() || null }).eq('id', inv.id);
+      if (error) throw error;
+    }
+    for (const tr of box.querySelectorAll('tr[data-line]')) {
+      const r = tr.querySelector('.l-rate'), v = tr.querySelector('.l-vol');
+      if (!r || !v) continue;
+      const l = inv.invoice_lines.find(x => x.id === tr.dataset.line);
+      const nr = parseFloat(r.value || '0'), nv = parseFloat(v.value || '0');
+      if (nr !== Number(l.rate) || nv !== Number(l.volume)) {
+        const { error } = await sb.from('invoice_lines').update({ rate: nr, volume: nv }).eq('id', l.id);
+        if (error) throw error;
+      }
+    }
+  };
+  const reload = async () => { await loadList(); await showInvoice(inv.id); };
+  if ($('d-save')) $('d-save').onclick = async () => { try { await saveEdits(); await reload(); $('d-msg').innerHTML = '<span class="ok">Saved.</span>'; } catch (e) { msg(e.message); } };
+  const setStatus = async (s) => {
+    try { await saveEdits(); } catch (e) { return msg(e.message); }
+    const { error } = await sb.from('invoices').update({ status: s }).eq('id', inv.id);
+    if (error) return msg(error.message);
+    reload();
+  };
+  if ($('d-approve')) $('d-approve').onclick = () => {
+    const blank = inv.invoice_lines.filter(l => l.qty_source === 'manual' && !Number(l.volume)).map(l => l.description);
+    if (blank.length && !confirm(`These lines are still 0: ${blank.join(', ')}. Approve anyway?`)) return;
+    setStatus('approved');
+  };
+  if ($('d-sent')) $('d-sent').onclick = () => setStatus('sent');
+  if ($('d-paid')) $('d-paid').onclick = () => setStatus('paid');
+  if ($('d-delete')) $('d-delete').onclick = async () => {
+    if (!confirm(`Delete draft invoice ${inv.invoice_no}? Its loads go back to "waiting to be invoiced".`)) return;
+    const { error } = await sb.from('invoices').delete().eq('id', inv.id);
+    if (error) return msg(error.message);
+    box.hidden = true; loadList();
+  };
+  box.querySelectorAll('.l-del').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('invoice_lines').delete().eq('id', b.dataset.id);
+    if (error) return msg(error.message); reload();
+  });
+  if ($('a-add')) $('a-add').onclick = async () => {
+    if (!$('a-desc').value.trim()) return msg('Describe the line.');
+    const seq = Math.max(0, ...inv.invoice_lines.map(l => l.seq)) + 1;
+    const { error } = await sb.from('invoice_lines').insert({ invoice_id: inv.id, seq, section: $('a-sec').value, line_type: 'adhoc',
+      description: $('a-desc').value.trim(), rate: parseFloat($('a-rate').value || '0'), basis: $('a-basis').value.trim() || 'as incurred',
+      volume: parseFloat($('a-vol').value || '0'), qty_source: 'manual', amount: 0 });
+    if (error) return msg(error.message); reload();
+  };
+  const pack = () => ({ ...inv, terms: inv.customers?.terms_days ?? carrier.terms_days ?? 30, carrier, customer: inv.customers || {}, lines: inv.invoice_lines });
+  const fileBase = () => `Invoice-${inv.invoice_no}-${(inv.customers?.name || 'customer').replace(/[^A-Za-z0-9]+/g, '-')}`;
+  $('d-pdf').onclick = async () => {
+    try {
+      await saveEdits(); if (draft) { inv = await getInvoice(inv.id); }
+      if (!window.jspdf) throw new Error('The PDF tool did not load. Check your internet connection and refresh.');
+      buildInvoicePdf(window.jspdf.jsPDF, pack()).save(fileBase() + '.pdf');
+    } catch (e) { msg(e.message); }
+  };
+  $('d-xlsx').onclick = async () => {
+    try {
+      await saveEdits(); if (draft) { inv = await getInvoice(inv.id); }
+      if (!window.ExcelJS) throw new Error('The Excel tool did not load. Check your internet connection and refresh.');
+      await buildRebillWorkbook(pack(), fileBase() + '-rebill-backup.xlsx');
+    } catch (e) { msg(e.message); }
+  };
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- Rebill backup (Excel) ----------
+// For customers who rebill their own customers per load or per delivery point.
+// Our weekly total is spread over the week's loads by miles (plus each load's own
+// charges, if billed), then evenly over each load's stops. The customer types their
+// markup into the yellow cell in their own copy; RoadCoda never sees it.
+async function buildRebillWorkbook(inv, filename) {
+  const bd = inv.breakdown || [];
+  if (!bd.length) throw new Error('This invoice has no loads to break out.');
+  const total = Number(inv.total);
+  const own = bd.map(l => inv.lines.some(x => x.section === 'loads') ? Number(l.linehaul || 0) + Number(l.fuel || 0) + Number(l.extras || 0) : 0);
+  const pool = total - own.reduce((a, b) => a + b, 0);
+  const miles = bd.map(l => Number(l.miles || 0)), mTot = miles.reduce((a, b) => a + b, 0);
+  let cents = bd.map((l, i) => Math.round((own[i] + pool * (mTot ? miles[i] / mTot : 1 / bd.length)) * 100));
+  cents[cents.length - 1] += Math.round(total * 100) - cents.reduce((a, b) => a + b, 0);   // exact to the penny
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = inv.carrier.remit_name || inv.carrier.name || 'Carrier';
+  const ws = wb.addWorksheet('Rebill by delivery point', { views: [{ state: 'frozen', ySplit: 7 }] });
+  const money = '"$"#,##0.00';
+  ws.columns = [{ width: 12 }, { width: 11 }, { width: 38 }, { width: 28 }, { width: 16 }, { width: 14 }, { width: 18 }];
+  ws.getCell('A1').value = `Backup for invoice ${inv.invoice_no} - ${inv.customer.name}`; ws.getCell('A1').font = { bold: true, size: 14 };
+  ws.getCell('A2').value = `Service week ${dt(inv.period_from)} to ${dt(inv.period_to)} - invoice total ${usd(total)}`;
+  ws.getCell('A3').value = 'Our weekly charges are spread across the loads by miles, then evenly across each load\'s delivery points.';
+  ws.getCell('A3').font = { italic: true, color: { argb: 'FF5B5750' } };
+  ws.getCell('A5').value = 'Your markup %'; ws.getCell('A5').font = { bold: true };
+  const mk = ws.getCell('C5'); mk.value = 0; mk.numFmt = '0.00"%"';
+  mk.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2B3' } }; mk.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  ws.getCell('D5').value = 'Type your markup here (or per row in column F). This file is yours; your markup is not sent anywhere.';
+  ws.getCell('D5').font = { color: { argb: 'FF5B5750' }, size: 9 };
+  const head = ws.getRow(7);
+  head.values = ['Date', 'Load', 'Delivery point', 'Units delivered', 'Our charge', 'Row markup %', 'Your rebill price'];
+  head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  head.eachCell(c => c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F5E63' } });
+  let r = 8;
+  bd.forEach((l, li) => {
+    const stops = (l.stops || []).length ? l.stops : [{ seq: 1, consignee: '(load total)', items: [] }];
+    const per = Math.floor(cents[li] / stops.length);
+    stops.forEach((s, si) => {
+      const c = si === stops.length - 1 ? cents[li] - per * (stops.length - 1) : per;
+      const row = ws.getRow(r);
+      row.getCell(1).value = l.date ? new Date(String(l.date).slice(0, 10) + 'T00:00:00') : null; row.getCell(1).numFmt = 'mm/dd/yyyy';
+      row.getCell(2).value = String(l.load_no || '');
+      row.getCell(3).value = `Stop ${s.seq} - ${s.consignee}`;
+      row.getCell(4).value = (s.items || []).map(i => `${i.delivered ?? i.ordered} ${i.unit}`).join(', ') + (s.issue ? ` (${ISSUE_PDF[s.issue] || 'issue'})` : '');
+      row.getCell(5).value = c / 100; row.getCell(5).numFmt = money;
+      row.getCell(6).numFmt = '0.00"%"';
+      row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBE6' } };
+      row.getCell(7).value = { formula: `ROUND(E${r}*(1+IF(F${r}="",$C$5,F${r})/100),2)` }; row.getCell(7).numFmt = money;
+      r++;
+    });
+  });
+  const t = ws.getRow(r + 1);
+  t.getCell(4).value = 'Totals'; t.getCell(4).font = { bold: true };
+  t.getCell(5).value = { formula: `SUM(E8:E${r - 1})` }; t.getCell(5).numFmt = money; t.getCell(5).font = { bold: true };
+  t.getCell(7).value = { formula: `SUM(G8:G${r - 1})` }; t.getCell(7).numFmt = money; t.getCell(7).font = { bold: true };
+
+  // One row per load, with the same markup
+  const ws2 = wb.addWorksheet('Rebill by load');
+  ws2.columns = [{ header: 'Date', width: 12 }, { header: 'Load', width: 11 }, { header: 'Stops', width: 8 }, { header: 'Miles', width: 9 }, { header: 'Our charge', width: 16 }, { header: 'Your rebill price', width: 18 }];
+  ws2.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  ws2.getRow(1).eachCell(c => c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F5E63' } });
+  bd.forEach((l, i) => {
+    const row = ws2.addRow([l.date ? new Date(String(l.date).slice(0, 10) + 'T00:00:00') : null, String(l.load_no || ''), (l.stops || []).length, Math.round(Number(l.miles || 0)), cents[i] / 100, null]);
+    row.getCell(1).numFmt = 'mm/dd/yyyy'; row.getCell(5).numFmt = money;
+    row.getCell(6).value = { formula: `ROUND(E${row.number}*(1+'Rebill by delivery point'!$C$5/100),2)` }; row.getCell(6).numFmt = money;
+  });
+  const last = ws2.rowCount;
+  const tr = ws2.addRow(['', '', '', 'Totals', { formula: `SUM(E2:E${last})` }, { formula: `SUM(F2:F${last})` }]);
+  tr.font = { bold: true }; tr.getCell(5).numFmt = money; tr.getCell(6).numFmt = money;
+
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// ---------- Settings ----------
+function fillSettings() {
+  $('s-name').value = carrier.remit_name || carrier.name || '';
+  $('s-office').value = carrier.office_address || '';
+  $('s-phone').value = carrier.office_phone || carrier.remit_phone || '';
+  $('s-email').value = carrier.remit_email || '';
+  $('s-remit').value = carrier.remit_address || '';
+  $('s-terms').value = carrier.terms_days ?? 30;
+  if (me.role !== 'owner') ['s-name', 's-office', 's-phone', 's-email', 's-remit', 's-terms', 's-save'].forEach(id => $(id).disabled = true);
+}
+$('s-save').onclick = async () => {
+  const upd = { remit_name: $('s-name').value.trim() || null, office_address: $('s-office').value.trim() || null,
+    office_phone: $('s-phone').value.trim() || null, remit_email: $('s-email').value.trim() || null,
+    remit_address: $('s-remit').value.trim() || null, terms_days: parseInt($('s-terms').value || '30', 10) };
+  const { data, error } = await sb.from('carriers').update(upd).eq('id', me.carrier_id).select('*');
+  if (error || !data.length) { $('s-msg').innerHTML = `<span class="error">${esc(error?.message || 'Not saved. Only the owner can change these.')}</span>`; return; }
+  carrier = data[0]; $('s-msg').innerHTML = '<span class="ok">Saved.</span>';
+};
+
+// ---------- Invoice PDF: page 1 = weekly invoice, then the breakdown report ----------
+const SECTION_TITLE = { fixed: 'Fixed Components', variable: 'Variable Components', extras: 'Additional Equipment & Drivers', pass_through: 'Pass Through Expense', loads: 'Load Charges', other: 'Other Charges' };
+const SECTION_ORDER = ['fixed', 'variable', 'extras', 'pass_through', 'loads', 'other'];
+const ISSUE_PDF = { damaged: 'OS&D - Damaged', short: 'OS&D - Short', over: 'OS&D - Over', refused: 'Refused', closed: 'Closed / no access', other: 'Delivery issue' };
+const sectionOf = (ln) => SECTION_ORDER.includes(ln.section) ? ln.section : (ln.section ? 'other' : 'loads');
+const splitAddr = (a) => String(a || '').split(/\n|,\s*(?=[^,]*,[^,]*$)/).map(t => t.trim()).filter(Boolean);
+
+function buildInvoicePdf(jsPDF, inv) {
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 44;
+  const teal = [15, 94, 99], ink = [28, 31, 36], muted = [91, 87, 80], red = [143, 35, 24];
+  const usd = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const val = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const vol = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const d = (s) => s ? new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US') : '';
+  const C = inv.carrier || {};
+  const footer = () => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...muted);
+    doc.text(`${C.remit_name || C.name || ''} - Invoice ${inv.invoice_no} - page ${doc.internal.getNumberOfPages()}`, W - M, H - 22, { align: 'right' });
+  };
+
+  // ----- Header: our office on the left, invoice facts on the right -----
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...ink);
+  doc.text(C.remit_name || C.name || '', M, 56);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...muted);
+  const office = [...splitAddr(C.office_address), C.office_phone, C.remit_email].filter(Boolean);
+  office.forEach((t, i) => doc.text(String(t), M, 71 + i * 11.5));
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...teal);
+  doc.text('INVOICE', W - M, 58, { align: 'right' });
+  const meta = [['Invoice no.', inv.invoice_no], ['Invoice date', d(inv.invoice_date)], ['Terms', `Net ${inv.terms}`], ['Due date', d(inv.due_date)]];
+  if (inv.period_from) meta.push(['Service week', `${d(inv.period_from)} - ${d(inv.period_to)}`]);
+  if (inv.po_number) meta.push(['PO / reference', inv.po_number]);
+  doc.setFontSize(9);
+  meta.forEach(([k, v], i) => {
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...muted); doc.text(k, W - M - 205, 76 + i * 12.5);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...ink); doc.text(String(v || ''), W - M, 76 + i * 12.5, { align: 'right' });
+  });
+  let y = 76 + meta.length * 12.5;
+  if (inv.status === 'draft') {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...red);
+    doc.text('DRAFT - NOT YET APPROVED', W - M, y + 4, { align: 'right' }); y += 12;
+  }
+
+  // ----- Bill to / Remit to -----
+  y = Math.max(y, 71 + office.length * 11.5) + 18;
+  doc.setDrawColor(226, 221, 211); doc.setLineWidth(0.8); doc.line(M, y - 10, W - M, y - 10);
+  const block = (title, name, addr, x) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...muted); doc.text(title, x, y + 4);
+    doc.setFontSize(10.5); doc.setTextColor(...ink); doc.text(name || '', x, y + 18);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...muted);
+    const lines = splitAddr(addr); lines.forEach((t, i) => doc.text(t, x, y + 30 + i * 11.5));
+    return lines.length;
+  };
+  const n1 = block('BILL TO', inv.customer?.name, inv.customer?.bill_address, M);
+  const n2 = block('REMIT PAYMENT TO', C.remit_name || C.name, C.remit_address, W / 2 + 10);
+  y += 38 + Math.max(n1, n2) * 11.5;
+
+  // ----- Charges, by section: Description | Value | Basis | Volume | Weekly Charges -----
+  const body = [];
+  for (const sec of SECTION_ORDER) {
+    const rows = inv.lines.filter(ln => sectionOf(ln) === sec);
+    if (!rows.length) continue;
+    body.push([{ content: SECTION_TITLE[sec], colSpan: 5, styles: { fontStyle: 'bold', textColor: teal, cellPadding: { top: 9, bottom: 3, left: 6, right: 6 } } }]);
+    let sub = 0;
+    for (const ln of rows) {
+      sub += Number(ln.amount || 0);
+      body.push([ln.description,
+        { content: ln.rate != null ? val(ln.rate) : '', styles: { halign: 'right' } },
+        ln.basis || '',
+        { content: ln.volume != null ? vol(ln.volume) : '', styles: { halign: 'right' } },
+        { content: usd(ln.amount), styles: { halign: 'right' } }]);
+    }
+    body.push([{ content: SECTION_TITLE[sec], colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fontSize: 8.5, textColor: muted } },
+      { content: usd(sub), styles: { halign: 'right', fontStyle: 'bold', lineWidth: { top: 0.8 }, lineColor: ink } }]);
+  }
+  doc.autoTable({
+    startY: y, margin: { left: M, right: M, bottom: 44 },
+    head: [['Description', { content: 'Value', styles: { halign: 'right' } }, 'Basis', { content: 'Volume', styles: { halign: 'right' } }, { content: 'Weekly Charges', styles: { halign: 'right' } }]],
+    body, theme: 'plain',
+    styles: { font: 'helvetica', fontSize: 9, textColor: ink, cellPadding: { top: 3.5, bottom: 3.5, left: 6, right: 6 } },
+    headStyles: { fillColor: teal, textColor: [255, 255, 255], fontStyle: 'bold' },
+    columnStyles: { 1: { cellWidth: 72 }, 2: { cellWidth: 74 }, 3: { cellWidth: 74 }, 4: { cellWidth: 92 } },
+    didDrawPage: footer
+  });
+  y = doc.lastAutoTable.finalY + 8;
+  if (y > H - 110) { doc.addPage(); footer(); y = 60; }
+  doc.setDrawColor(...teal); doc.setLineWidth(1.4); doc.line(W - M - 240, y, W - M, y);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...ink);
+  doc.text('Weekly Total Invoice', W - M - 240, y + 19); doc.text(usd(inv.total), W - M, y + 19, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...muted);
+  doc.text(`Please pay by ${d(inv.due_date)} and reference invoice ${inv.invoice_no}${inv.po_number ? ' / ' + inv.po_number : ''}. A load-by-load breakdown follows.`, M, y + 44);
+  if (inv.notes) doc.text(doc.splitTextToSize(inv.notes, W - 2 * M), M, y + 58);
+
+  // ----- Breakdown report -----
+  const bd = inv.breakdown || [];
+  doc.addPage();
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...ink);
+  doc.text('Breakdown report', M, 52);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...muted);
+  doc.text(`Invoice ${inv.invoice_no} - ${inv.customer?.name || ''} - week of ${d(inv.period_from)} to ${d(inv.period_to)}`, M, 66);
+  const tot = bd.reduce((a, l) => ({ loads: a.loads + 1, miles: a.miles + Number(l.miles || 0), stops: a.stops + (l.stops || []).length }), { loads: 0, miles: 0, stops: 0 });
+  doc.text(`${tot.loads} loads - ${Math.round(tot.miles).toLocaleString('en-US')} miles - ${tot.stops} stops`, M, 78);
+  const rows = [];
+  for (const l of bd) {
+    rows.push([{ content: `${d(l.date)}  Load ${l.load_no}`, styles: { fontStyle: 'bold' } }, l.driver || '', l.truck || '',
+      { content: Math.round(Number(l.miles || 0)).toLocaleString('en-US'), styles: { halign: 'right' } },
+      { content: String((l.stops || []).length), styles: { halign: 'right' } }]);
+    for (const s of l.stops || []) {
+      const items = (s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${i.unit}` : `${i.ordered} ${i.unit}`).join(', ');
+      rows.push([{ content: `   Stop ${s.seq} - ${s.consignee}: ${items}`, colSpan: 5, styles: { fontSize: 8, textColor: muted, cellPadding: { top: 1, bottom: 1, left: 6, right: 6 } } }]);
+      if (s.issue) rows.push([{ content: `      ${ISSUE_PDF[s.issue] || 'Delivery issue'}${s.note ? ': ' + s.note : ''}`, colSpan: 5,
+        styles: { fontSize: 8, textColor: red, cellPadding: { top: 0, bottom: 2, left: 6, right: 6 } } }]);
+    }
+  }
+  if (!rows.length) rows.push([{ content: 'No loads were delivered for this customer during the week.', colSpan: 5 }]);
+  doc.autoTable({
+    startY: 90, margin: { left: M, right: M, bottom: 44 },
+    head: [['Date / load', 'Driver', 'Truck', { content: 'Miles', styles: { halign: 'right' } }, { content: 'Stops', styles: { halign: 'right' } }]],
+    body: rows, theme: 'plain',
+    styles: { font: 'helvetica', fontSize: 8.5, textColor: ink, cellPadding: { top: 4, bottom: 2, left: 6, right: 6 } },
+    headStyles: { fillColor: teal, textColor: [255, 255, 255], fontStyle: 'bold' },
+    columnStyles: { 1: { cellWidth: 100 }, 2: { cellWidth: 60 }, 3: { cellWidth: 55 }, 4: { cellWidth: 45 } },
+    didDrawPage: footer
+  });
+  return doc;
+}
+
+start();
+</script>
+</body>
+</html>
