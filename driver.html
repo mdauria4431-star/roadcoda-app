@@ -43,6 +43,14 @@
   select,textarea{border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;font-family:inherit;width:100%}
   select{height:52px}textarea{height:80px;padding:10px 12px}
   .issue{margin-top:12px;padding:12px;border:1px solid #f0c9c2;border-radius:12px;background:#fdf6f4;display:flex;flex-direction:column;gap:10px}
+  .instr{margin-top:10px}
+  .instr summary{list-style:none;cursor:pointer;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#f7f5f0;font-weight:700;font-size:16px}
+  .instr summary::-webkit-details-marker{display:none}
+  .instr summary span{font-weight:500;font-size:13px;color:var(--muted);text-align:right}
+  .instr summary::after{content:'▾';color:var(--muted)}
+  .instr[open] summary{border-bottom-left-radius:0;border-bottom-right-radius:0}
+  .instr[open] summary::after{content:'▴'}
+  .instr .access{margin-top:0;border:1px solid var(--line);border-top:0;border-top-left-radius:0;border-top-right-radius:0}
   .access{margin-top:10px;padding:10px 12px;background:#f7f5f0;border-radius:10px;font-size:15px;line-height:1.5;display:flex;flex-direction:column;gap:6px}
   .small-btn{min-height:44px;font-size:15px;align-self:flex-start}
   .codelist{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:10px}
@@ -164,25 +172,27 @@ async function loadStops() {
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
   if (!loads.length) { $('stops').innerHTML = '<div class="card">No stops assigned to you today.</div>'; return; }
   // Delivery instructions, door/gate codes and after-hours contacts: only for my dispatched / in-progress loads
-  const access = {};
-  await Promise.all(loads.filter(l => ['dispatched', 'in_progress'].includes(l.status)).map(async l => {
-    const { data } = await sb.rpc('driver_stop_access', { p_load_id: l.id });
+  const access = {}; let accessErr = '';
+  await Promise.all(loads.filter(l => ['planned', 'dispatched', 'in_progress'].includes(l.status)).map(async l => {
+    const { data, error } = await sb.rpc('driver_stop_access', { p_load_id: l.id });
+    if (error) accessErr = error.message;
     (data || []).forEach(a => { access[a.stop_id] = a; });
   }));
   const tel = (n) => `<a href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">${esc(n)}</a>`;
-  // Delivery instructions card: everything comes from the stop customer record (Customers tab)
-  const accessBox = (s, active) => {
+  // Delivery instructions: one button per stop; the driver taps it to open (codes included)
+  const accessBox = (s) => {
     const a = access[s.id];
-    if (!a) return active ? '<div class="access"><b>Delivery instructions</b><div class="meta">None on file for this stop. Call dispatch if you need help.</div></div>' : '';
+    if (!a) return `<details class="instr" data-stop="${s.id}"><summary>Delivery instructions <span>tap to open</span></summary>
+      <div class="access"><div class="meta">${accessErr ? 'Couldn\'t load them (' + esc(accessErr) + '). Call dispatch.' : 'None on file for this stop. Call dispatch if you need help.'}</div></div></details>`;
     const codes = [a.door_code && ['Door code', a.door_code], a.gate_code && ['Gate code', a.gate_code], a.other_code && [a.other_code_name || 'Other code', a.other_code]].filter(Boolean);
-    return `<div class="access">
-      <b>Delivery instructions</b>
-      <div>${a.delivery_instructions ? esc(a.delivery_instructions) : '<span class="meta">None on file. Call dispatch if you need help.</span>'}</div>
+    const has = [a.delivery_instructions && 'instructions', codes.length && 'codes', (a.after_hours_phone || a.after_hours_contact) && 'after hours'].filter(Boolean);
+    return `<details class="instr" data-stop="${s.id}"><summary>Delivery instructions <span>${has.length ? esc(has.join(' · ')) : 'tap to open'}</span></summary>
+      <div class="access">
+      <div>${a.delivery_instructions ? esc(a.delivery_instructions) : '<span class="meta">No written instructions on file. Call dispatch if you need help.</span>'}</div>
       ${a.contact || a.phone ? `<div>Receiving: ${esc(a.contact || '')}${a.contact && a.phone ? ' · ' : ''}${a.phone ? tel(a.phone) : ''}</div>` : ''}
       ${a.after_hours_phone || a.after_hours_contact ? `<div>After hours: ${esc(a.after_hours_contact || '')}${a.after_hours_contact && a.after_hours_phone ? ' · ' : ''}${a.after_hours_phone ? tel(a.after_hours_phone) : ''}</div>` : ''}
-      ${codes.length ? `<button class="btn small-btn" type="button" data-codes="${s.id}" aria-expanded="false">Show access codes (${codes.map(c => esc(c[0].replace(' code', ''))).join(', ')})</button>
-        <dl class="codelist" id="codes-${s.id}" hidden>${codes.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="mono">${esc(v)}</dd>`).join('')}</dl>` : ''}
-    </div>`;
+      ${codes.length ? `<dl class="codelist">${codes.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="mono">${esc(v)}</dd>`).join('')}</dl>` : ''}
+    </div></details>`;
   };
 
   let html = '';
@@ -254,7 +264,7 @@ async function loadStops() {
         ${s.added_by === 'office' && !done ? `<div class="meta" style="color:#8a4b08;font-weight:600">New stop added by dispatch${s.added_note ? ': ' + esc(s.added_note) : ''}</div>` : ''}
         <div class="meta">${esc(s.address || '')}<br>
           Window <span class="mono">${time(s.window_start)}–${time(s.window_end)}</span><br>${items}</div>
-        ${done ? '' : accessBox(s, ['dispatched', 'in_progress'].includes(l.status))}
+        ${done ? '' : accessBox(s)}
         <span class="badge b-${s.status}">${s.status === 'exception' ? ISSUE[s.issue_type] || 'Issue reported' : (pu && s.status === 'delivered' ? 'Picked up' : STATUS[s.status] || esc(s.status))}${s.arrived_at ? ' · arrived ' + time(s.arrived_at) : ''}${s.departed_at ? ' · left ' + time(s.departed_at) : ''}${s.odometer != null ? ` · odometer ${s.odometer} (${s.leg_miles} mi)` : ''}</span>
         ${s.status === 'exception' && s.late_reason ? `<div class="meta" style="color:var(--late);margin-top:6px">${esc(s.late_reason)}</div>` : ''}
         ${actions}</div>`;
@@ -262,12 +272,11 @@ async function loadStops() {
     html += `<div class="card meta" style="padding:12px 16px">Found freight for someone not on this load, or a stop needs to change?
       <b>Call dispatch</b>${officePhone ? ` · <a href="tel:${esc(officePhone.replace(/[^\d+]/g, ''))}">${esc(officePhone)}</a>` : ''}. Dispatch adds or removes the stop and it shows up here.</div>`;
   }
+  // keep open instructions open across the 60-second refresh
+  const wasOpen = new Set([...document.querySelectorAll('details.instr[open]')].map(d => d.dataset.stop));
   $('stops').innerHTML = html;
+  document.querySelectorAll('details.instr').forEach(d => { if (wasOpen.has(d.dataset.stop)) d.open = true; });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b));
-  document.querySelectorAll('[data-codes]').forEach(b => b.onclick = () => {
-    const box = $('codes-' + b.dataset.codes), show = box.hidden;
-    box.hidden = !show; b.setAttribute('aria-expanded', show); b.textContent = show ? 'Hide access codes' : 'Show access codes';
-  });
   document.querySelectorAll('[data-hub]').forEach(b => b.onclick = async () => {
     const v = parseFloat($('hub-' + b.dataset.hub).value);
     if (isNaN(v)) { alert('Enter the odometer reading.'); return; }
