@@ -8,11 +8,13 @@
 <!-- Supabase JavaScript library -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
+<script src="new-customer.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;
         --late-bg:#fdf1ef;--late-line:#f0c9c2;--late:#8f2318;--ok-bg:#e3f1e6;--ok:#1e6b34;--risk-bg:#fbeed8;--risk:#8a4b08;--info-bg:#e3edf6;--info:#1d4e89}
   *{box-sizing:border-box}
   [hidden]{display:none!important}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
   body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
   header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
   .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px}.brand span{color:#5fc2c7}
@@ -75,7 +77,11 @@
       <h1>Dispatch board</h1>
       <label for="day">Service date<input id="day" type="date"></label>
       <button class="btn" id="refresh">Refresh</button>
+      <span style="flex-grow:1"></span>
+      <button class="btn" id="nc-btn">+ New customer</button>
+      <a class="btn primary" href="loads.html?new=1" style="display:inline-flex;align-items:center;text-decoration:none">New load</a>
     </div>
+    <div class="card" id="nc-done" hidden role="status" style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"></div>
     <div class="kpis">
       <div class="card kpi"><small>Loads</small><b id="k-loads">–</b></div>
       <div class="card kpi"><small>Stops</small><b id="k-stops">–</b></div>
@@ -86,7 +92,7 @@
     <div class="card">
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Load</th><th>Customer</th><th>Driver · Truck</th><th>Next stop</th><th>Window</th><th>ETA</th><th>Status</th></tr></thead>
+          <thead><tr><th>Load</th><th>Customer</th><th>Driver · Truck</th><th>Next stop</th><th>Window</th><th>ETA</th><th>Status</th><th><span class="sr">Actions</span></th></tr></thead>
           <tbody id="loads-body"></tbody>
         </table>
       </div>
@@ -165,6 +171,13 @@ $('login-btn').onclick = async () => {
 };
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 $('refresh').onclick = () => loadBoard();
+$('nc-btn').onclick = () => RCNewCustomer.open(sb, (c) => {
+  const box = $('nc-done'), id = encodeURIComponent(c.id);
+  box.innerHTML = `<span style="flex-grow:1"><b>${esc(c.name)}</b> added as a customer.</span>
+    <a class="btn small" href="rates.html?customer=${id}" style="display:inline-flex;align-items:center;text-decoration:none">Set rates &amp; contract</a>
+    <a class="btn small primary" href="loads.html?new=1&customer=${id}" style="display:inline-flex;align-items:center;text-decoration:none">New load for them</a>`;
+  box.hidden = false;
+});
 $('day').onchange = () => loadBoard();
 
 const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Delivery issue' };
@@ -178,9 +191,9 @@ function stopState(s) {
 async function loadBoard() {
   const day = $('day').value;
   const { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, miles, customers(name), drivers(full_name), equipment(unit_no), stops(seq, consignee, window_start, window_end, eta, status, late_reason, issue_type)')
+    .select('id, load_no, status, miles, invoice_id, customers(name), drivers(full_name), equipment(unit_no), stops(seq, consignee, window_start, window_end, eta, status, late_reason, issue_type)')
     .eq('service_date', day).order('load_no');
-  if (error) { $('loads-body').innerHTML = `<tr><td colspan="7" class="error">${esc(error.message)}</td></tr>`; return; }
+  if (error) { $('loads-body').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}</td></tr>`; return; }
 
   let stopCount = 0, lateCount = 0, doneCount = 0, banners = '', rows = '';
   for (const l of loads) {
@@ -210,9 +223,10 @@ async function loadBoard() {
       <td>${next ? `Stop ${next.seq} of ${stops.length} · ${esc(next.consignee)}` : `Complete · ${stops.length} stops`}</td>
       <td class="mono">${next ? `${time(next.window_start)}–${time(next.window_end)}` : '–'}</td>
       <td class="mono">${next ? time(next.eta) : '–'}</td>
-      <td>${pill}${probTag}</td></tr>`;
+      <td>${pill}${probTag}</td>
+      <td>${l.status !== 'cancelled' && !l.invoice_id ? `<a class="btn small" data-addstop="${l.id}" href="loads.html?load=${l.id}&day=${day}&addstop=1" style="display:inline-flex;align-items:center;text-decoration:none;white-space:nowrap">+ Stop</a>` : ''}</td></tr>`;
   }
-  $('loads-body').innerHTML = rows || '<tr><td colspan="7">No loads on this date.</td></tr>';
+  $('loads-body').innerHTML = rows || '<tr><td colspan="8">No loads on this date.</td></tr>';
   $('banners').innerHTML = banners;
   $('k-loads').textContent = loads.length; $('k-stops').textContent = stopCount;
   $('k-late').textContent = lateCount; $('k-done').textContent = doneCount;
@@ -227,6 +241,7 @@ async function loadBoard() {
       }).join('') || '<tr><td colspan="6">No loads on this date.</td></tr>');
   // Click a load to open it on the Loads page
   document.querySelectorAll('tr[data-load]').forEach(tr => tr.onclick = () => { location.href = `loads.html?load=${tr.dataset.load}&day=${day}`; });
+  document.querySelectorAll('a[data-addstop]').forEach(a => a.onclick = (e) => e.stopPropagation());
 }
 
 async function loadDriver() {

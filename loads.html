@@ -9,11 +9,13 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="config.js"></script>
+<script src="new-customer.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;
         --ok-bg:#e3f1e6;--ok:#1e6b34;--info-bg:#e3edf6;--info:#1d4e89;--risk-bg:#fbeed8;--risk:#8a4b08}
   *{box-sizing:border-box}
   [hidden]{display:none!important}
+  #as-box summary::-webkit-details-marker{display:none}
   body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
   header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
   header a{color:#d9d5cc}header a.on{color:#fff}
@@ -52,6 +54,7 @@
   .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.thumbs img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#eee}
   .stop.pu{background:#f6f9fb;border-color:#c9dbe8}
   .tag-pu{background:#e3edf6;color:#1d4e89;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700}
+  .hint{font-size:13px;color:var(--muted);line-height:1.5}
   .s-hint{grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:-4px}
   .s-hint.new{color:#8a4b08}
   .imp-tbl td,.imp-tbl th{font-size:13px;padding:6px 5px}
@@ -82,6 +85,7 @@
     <div class="toolbar">
       <h1>Loads</h1>
       <label for="day">Service date<input id="day" type="date"></label>
+      <button class="btn" id="nc-btn">+ New customer</button>
       <button class="btn" id="imp-btn">Import delivery list</button>
       <button class="btn primary" id="new-btn">New load</button>
     </div>
@@ -241,8 +245,11 @@ async function start() {
   $('day').value = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('day') || '') ? qs.get('day') : todayISO();
   await loadLists();
   await loadList();
-  if (qs.get('load')) showDetail(qs.get('load'));
-  if (qs.get('new')) $('new-btn').click();
+  if (qs.get('load')) { await showDetail(qs.get('load')); if (qs.get('addstop') && $('d-addstop')) $('d-addstop').click(); }
+  if (qs.get('new')) {
+    await $('new-btn').onclick();
+    if (lists.customers.some(c => c.id === qs.get('customer'))) { $('f-customer').value = qs.get('customer'); $('f-customer').onchange(); }
+  }
   if (qs.get('import')) $('imp-btn').click();
 }
 $('login-btn').onclick = async () => {
@@ -253,6 +260,29 @@ $('login-btn').onclick = async () => {
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 $('day').onchange = () => { $('detail').hidden = true; loadList(); };
 
+// ---------- New bill-to customer ----------
+const NEW_OPT = '<option value="__new">+ Add a new customer…</option>';
+function addCustomer(selectId) {
+  const sel = selectId ? $(selectId) : null;
+  if (sel) sel.value = '';
+  RCNewCustomer.open(sb, async (c) => {
+    const keepF = $('f-customer').value, keepI = $('imp-cust').value;
+    await loadLists();
+    $('f-customer').value = keepF;
+    if ($('imp-cust').options.length) { $('imp-cust').innerHTML = '<option value="">Choose…</option>' + lists.customers.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('') + NEW_OPT; $('imp-cust').value = keepI; }
+    if (sel) { sel.value = c.id; sel.onchange(); }
+    flash(`${c.name} added. Set their rates and contract on the Rates page.`);
+  });
+}
+function flash(t) {
+  let el = $('nc-flash');
+  if (!el) { el = document.createElement('div'); el.id = 'nc-flash'; el.setAttribute('role', 'status');
+    el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;z-index:50;max-width:calc(100vw - 32px);font-size:14px';
+    document.body.appendChild(el); }
+  el.textContent = t; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => el.hidden = true, 5000);
+}
+$('nc-btn').onclick = () => addCustomer(null);
+
 async function loadLists() {
   const [c, d, e] = await Promise.all([
     sb.from('customers').select('id, name, start_name, start_address').order('name'),
@@ -261,7 +291,7 @@ async function loadLists() {
   ]);
   lists = { customers: c.data || [], drivers: d.data || [], equipment: e.data || [] };
   const opts = (rows, label) => '<option value="">Choose…</option>' + rows.map(r => `<option value="${r.id}">${esc(r[label])}</option>`).join('');
-  $('f-customer').innerHTML = opts(lists.customers, 'name');
+  $('f-customer').innerHTML = opts(lists.customers, 'name') + NEW_OPT;
   $('f-driver').innerHTML = opts(lists.drivers, 'full_name');
   $('f-truck').innerHTML = opts(lists.equipment, 'unit_no');
 }
@@ -290,7 +320,7 @@ function stopRow(n) {
   div.className = 'stop';
   div.innerHTML = `
     <div><div class="n">Stop ${n}</div><select class="s-type" aria-label="Pickup or delivery" style="height:32px;font-size:13px;margin-top:4px"><option value="delivery">Delivery</option><option value="pickup">Pickup</option></select></div>
-    <label>Delivery customer<input class="s-consignee" list="loc-list" placeholder="Start typing to pick from the list" autocomplete="off"></label>
+    <label>Delivery customer<input class="s-consignee" list="loc-list" placeholder="Pick from the list or type a new one" autocomplete="off"></label>
     <label>Code<input class="s-code" placeholder="Store #"></label>
     <label>Address<input class="s-address"></label>
     <label>Window opens<input class="s-start" type="time" value="08:00"></label>
@@ -325,6 +355,7 @@ function stopRow(n) {
 function renumber() { document.querySelectorAll('#stops .stop .n').forEach((el, i) => el.textContent = `Stop ${i + 1}`); }
 // Dedicated trucks usually start at the customer's facility: use it when the customer has one
 $('f-customer').onchange = () => {
+  if ($('f-customer').value === '__new') return addCustomer('f-customer');
   loadLocs($('f-customer').value);
   const c = lists.customers.find(x => x.id === $('f-customer').value);
   if ($('f-origin').dataset.auto === '1' || !$('f-origin').value) {
@@ -495,15 +526,24 @@ $('save').onclick = async () => {
 // ---------- Load detail ----------
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, stop_type, consignee, address, location_id, delivery_locations(id, name, address), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
-  const stops = l.stops.sort((a, b) => a.seq - b.seq).map(s => {
+  const editable = !l.invoice_id && l.status !== 'cancelled';
+  const sortedStops = l.stops.sort((a, b) => a.seq - b.seq);
+  const stops = sortedStops.map(s => {
     const pu = s.stop_type === 'pickup';
+    const open = editable && s.status === 'pending' && !s.arrived_at;
     const items = s.stop_items.map(i => `${i.qty_delivered != null ? `${pu ? 'Picked up' : 'Delivered'} ${i.qty_delivered} of ${i.qty_ordered}` : `${i.qty_ordered} ${pu ? 'to pick up' : 'ordered'}`} ${esc(i.unit_type)} · billed ${Number(i.billed_amount) ? '$' + Number(i.billed_amount).toFixed(2) : '–'}`).join('<br>');
     return `<div class="detail-stop">
-      <div><strong>Stop ${s.seq} · ${pu ? '<span class="tag-pu">Pickup</span> ' : ''}${esc(s.consignee)}</strong><br><span style="color:var(--muted)">${esc(s.address || '')}</span><br>${items}${scanInfo(s)}</div>
+      <div><strong>Stop ${s.seq} · ${pu ? '<span class="tag-pu">Pickup</span> ' : ''}${esc(s.consignee)}</strong>
+        ${s.added_by ? ` <span class="tag-new">Added by ${s.added_by === 'driver' ? 'driver' : 'office'}</span>` : ''}${s.needs_review ? ' <span class="pill s-cancelled">Needs review</span>' : ''}
+        <br><span style="color:var(--muted)">${esc(s.address || '')}</span><br>${items}${s.added_note ? `<br><span class="hint">Note: ${esc(s.added_note)}</span>` : ''}${scanInfo(s)}
+        ${open || s.needs_review ? `<div class="row" style="margin-top:6px;gap:6px">
+          ${open ? `<button class="btn small" data-mv="${s.id}" data-dir="-1" aria-label="Move stop ${s.seq} up">▲</button><button class="btn small" data-mv="${s.id}" data-dir="1" aria-label="Move stop ${s.seq} down">▼</button>
+          <button class="btn small danger" data-rm="${s.id}" data-seq="${s.seq}">Remove stop</button>` : ''}
+          ${s.needs_review ? `<button class="btn small" data-rv="${s.id}">Mark reviewed</button>` : ''}</div>` : ''}</div>
       <div class="mono" style="text-align:right">Window ${time(s.window_start)}–${time(s.window_end)}<br>
         Arrived ${time(s.arrived_at)} · Departed ${time(s.departed_at)}<br>${s.odometer != null ? `Odometer ${s.odometer} · ${s.leg_miles} mi from previous<br>` : l.hub_required && s.status === 'pending' ? '<span style="color:var(--muted)">Odometer due on arrival</span><br>' : ''}
         <span class="pill s-${s.status === 'pending' ? 'planned' : s.status === 'arrived' ? 'in_progress' : s.status === 'exception' ? 'cancelled' : 'delivered'}">${s.status === 'exception' ? esc(issueLabel(s)) : ({pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered'}[s.status] || esc(s.status))}</span>
@@ -512,7 +552,8 @@ async function showDetail(id) {
   $('detail').hidden = false;
   $('detail').innerHTML = `
     <div class="toolbar"><h2 style="flex-grow:1;margin:0">Load ${esc(l.load_no)} · ${esc(l.customers?.name)}</h2>
-      <span class="pill s-${l.status}">${STATUS_LABEL[l.status]}</span>${problemPill(l.stops)}</div>
+      <span class="pill s-${l.status}">${STATUS_LABEL[l.status]}</span>${problemPill(l.stops)}
+      ${editable ? '<button class="btn primary" id="d-addstop" type="button">+ Add stop / pickup</button>' : ''}</div>
     <p>${esc(l.drivers?.full_name || 'No driver')} · ${esc(l.equipment?.unit_no || 'No truck')} · ${Math.round(l.miles)} miles ·
        Linehaul ${money(b?.linehaul)} + fuel ${money(b?.fuel_surcharge)}</p>
     <p style="color:var(--muted);font-size:13px;margin-top:-6px">Start: ${esc(l.origin_address || l.customers?.start_address || yard || 'not set')}${l.round_trip ? ' (round trip)' : ''} ·
@@ -521,6 +562,21 @@ async function showDetail(id) {
       ${l.miles_note ? ` · note: ${esc(l.miles_note)}` : ''}</p>
     ${b?.pricing_note ? `<div class="note">${esc(b.pricing_note)}</div>` : ''}
     ${stops}
+    ${editable ? `<details id="as-box" style="margin-top:10px"><summary class="btn" style="display:inline-flex;align-items:center;cursor:pointer;list-style:none">+ Add stop / pickup to this load</summary>
+      <div class="grid" style="margin-top:10px">
+        <label for="as-type">Type<select id="as-type"><option value="delivery">Delivery</option><option value="pickup">Pickup</option></select></label>
+        <label for="as-after">Place it<select id="as-after">${sortedStops.map(s => `<option value="${s.seq}" ${s.seq === sortedStops[sortedStops.length - 1].seq ? 'selected' : ''}>after stop ${s.seq} · ${esc(s.consignee).slice(0, 30)}</option>`).join('')}<option value="0">first</option></select></label>
+        <label for="as-name" style="grid-column:span 2">Delivery customer / supplier<input id="as-name" list="loc-list" autocomplete="off" placeholder="pick from the list or type a new one"></label>
+        <label for="as-code">Code / store #<input id="as-code"></label>
+        <label for="as-addr" style="grid-column:span 2">Address<input id="as-addr" placeholder="blank = address on file"></label>
+        <label for="as-ws">Window opens<input id="as-ws" type="time"></label>
+        <label for="as-we">Window closes<input id="as-we" type="time"></label>
+        <label for="as-unit">Unit<select id="as-unit">${UNITS.map(u => `<option>${u}</option>`).join('')}</select></label>
+        <label for="as-qty">Quantity<input id="as-qty" type="number" min="0" step="1" value="1"></label>
+        <label for="as-note" style="grid-column:span 2">Note (who asked, why)<input id="as-note" placeholder="e.g. customer called 10:15, PO 4471"></label>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="as-save">Add stop</button><span class="hint">Stops can't be placed before stops already worked. New delivery customers are added to the list.</span></div>
+      <div id="as-msg"></div></details>` : ''}
     <div class="actions" style="margin-top:12px">
       ${l.status === 'planned' ? '<button class="btn primary" id="d-dispatch">Mark dispatched</button>' : ''}
       ${l.status !== 'cancelled' ? '<button class="btn" id="d-recalc">Recalculate miles &amp; price</button>' : ''}
@@ -539,6 +595,39 @@ async function showDetail(id) {
       <button class="btn" id="d-tolls-save" ${l.invoice_id ? 'disabled title="Already invoiced"' : ''}>Save tolls</button>
       <span class="hint" id="d-tolls-msg">From the toll statement (E-ZPass etc.). Billed on the weekly invoice when the contract has a tolls line.</span>
     </div>`;
+  // ---- change stops mid-trip ----
+  const stopMsg = (t, ok) => { const m = $('d-msg'); m.hidden = false; m.innerHTML = ok ? `<span class="ok">${esc(t)}</span>` : `<span class="error">${esc(t)}</span>`; };
+  const afterChange = async (t) => { await loadList(); await showDetail(id); stopMsg(t + (l.hub_required ? '' : ' Click Recalculate miles & price to update miles and billing.'), true); };
+  document.querySelectorAll('[data-mv]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.rpc('office_move_stop', { p_stop_id: b.dataset.mv, p_dir: parseInt(b.dataset.dir, 10) });
+    if (error) return stopMsg(error.message); afterChange('Stop order changed.');
+  });
+  document.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+    if (!confirm(`Remove stop ${b.dataset.seq} from this load?`)) return;
+    const { error } = await sb.rpc('office_remove_stop', { p_stop_id: b.dataset.rm });
+    if (error) return stopMsg(error.message); afterChange('Stop removed.');
+  });
+  document.querySelectorAll('[data-rv]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.rpc('office_review_stop', { p_stop_id: b.dataset.rv });
+    if (error) return stopMsg(error.message); afterChange('Marked reviewed.');
+  });
+  if ($('as-box')) {
+    $('as-box').ontoggle = () => { if ($('as-box').open) loadLocs(l.customer_id); };
+    $('d-addstop').onclick = () => { $('as-box').open = true; $('as-box').scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => $('as-name').focus(), 300); };
+    $('as-name').onchange = () => { const x = findLoc({ name: $('as-name').value }); if (x) { $('as-code').value = x.code || ''; if (x.window_start) $('as-ws').value = x.window_start.slice(0, 5); if (x.window_end) $('as-we').value = x.window_end.slice(0, 5); } };
+    $('as-save').onclick = async () => {
+      if (!$('as-name').value.trim() && !$('as-code').value.trim()) { $('as-msg').innerHTML = '<span class="error">Enter the delivery customer or supplier.</span>'; return; }
+      const ts = (t) => t ? new Date(`${l.service_date}T${t}`).toISOString() : null;
+      $('as-save').disabled = true;
+      const { error } = await sb.rpc('office_add_stop', { p_load_id: id, p_after_seq: parseInt($('as-after').value, 10), p_type: $('as-type').value,
+        p_name: $('as-name').value.trim() || null, p_code: $('as-code').value.trim() || null, p_address: $('as-addr').value.trim() || null,
+        p_window_start: ts($('as-ws').value), p_window_end: ts($('as-we').value), p_unit: $('as-unit').value, p_qty: parseInt($('as-qty').value || '0', 10),
+        p_note: $('as-note').value.trim() || null });
+      $('as-save').disabled = false;
+      if (error) { $('as-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+      afterChange(`${$('as-type').value === 'pickup' ? 'Pickup' : 'Delivery'} added. The driver sees it on the next refresh.`);
+    };
+  }
   const setStatus = async (st) => { await sb.from('loads').update({ status: st }).eq('id', id); await loadList(); showDetail(id); };
   if ($('d-dispatch')) $('d-dispatch').onclick = () => setStatus('dispatched');
   if ($('d-cancel')) $('d-cancel').onclick = () => setStatus('cancelled');
@@ -623,7 +712,7 @@ let imp = { rows: [], header: 0, map: {} };
 
 $('imp-btn').onclick = () => {
   $('imp').hidden = false; $('form').hidden = true; $('detail').hidden = true;
-  $('imp-cust').innerHTML = '<option value="">Choose…</option>' + lists.customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('imp-cust').innerHTML = '<option value="">Choose…</option>' + lists.customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') + NEW_OPT;
   const t = new Date(); t.setDate(t.getDate() + 1); $('imp-date').value = localDate(t);
   $('imp-body').innerHTML = ''; $('imp-file').value = '';
 };
@@ -778,7 +867,7 @@ async function drawImport() {
   };
 }
 const dt2 = (s) => new Date(s + 'T00:00:00').toLocaleDateString();
-$('imp-cust').onchange = () => { if (imp.rows.length) drawImport(); };
+$('imp-cust').onchange = () => { if ($('imp-cust').value === '__new') return addCustomer('imp-cust'); if (imp.rows.length) drawImport(); };
 
 start();
 </script>

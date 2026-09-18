@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="config.js"></script>
+<script src="new-customer.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
   *{box-sizing:border-box}
@@ -88,7 +89,8 @@
     <section class="card">
       <div class="row" style="justify-content:space-between">
         <h2 style="margin:0">Customer pricing</h2>
-        <label for="cust" style="min-width:260px">Customer<select id="cust"></select></label>
+        <div class="row" style="align-items:end"><label for="cust" style="min-width:260px">Customer<select id="cust"></select></label>
+          <button class="btn" id="nc-btn" type="button">+ New customer</button></div>
       </div>
 
       <h3>Dedicated contract (weekly invoice)</h3>
@@ -318,8 +320,9 @@ async function start() {
   if (p.role !== 'owner') { $('yard').disabled = true; $('odo-all').disabled = true; $('yard-save').disabled = true; }
   $('f-series').innerHTML = Object.entries(REGIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
   ['r-eff', 'f-eff', 't-date'].forEach(id => $(id).value = todayISO());
-  const { data: cs } = await sb.from('customers').select('id, name').order('name');
-  $('cust').innerHTML = (cs || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  await loadCustList();
+  const qc = new URLSearchParams(location.search).get('customer');
+  if (qc && [...$('cust').options].some(o => o.value === qc)) $('cust').value = qc;
   loadCustomer(); loadContract(); loadCpiAlerts(); loadDoe();
 }
 $('login-btn').onclick = async () => {
@@ -338,6 +341,14 @@ $('yard-save').onclick = async () => {
 
 // ---------- Rate sheets and fuel rules ----------
 $('cust').onchange = () => { loadCustomer(); loadContract(); };
+async function loadCustList() {
+  const { data: cs } = await sb.from('customers').select('id, name').order('name');
+  $('cust').innerHTML = (cs || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+$('nc-btn').onclick = () => RCNewCustomer.open(sb, async (c) => {
+  await loadCustList(); $('cust').value = c.id; $('cust').onchange();
+  $('cust').closest('section').scrollIntoView({ behavior: 'smooth' });
+});
 async function loadCustomer() {
   const cid = $('cust').value; if (!cid) return;
   const [r, f] = await Promise.all([
