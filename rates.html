@@ -655,6 +655,10 @@ $('dl-save').onclick = async () => {
   const row = { name: $('dl-name').value.trim(), code: $('dl-code').value.trim() || null, contact: $('dl-contact').value.trim() || null,
     address: $('dl-addr').value.trim() || null, window_start: $('dl-ws').value || null, window_end: $('dl-we').value || null,
     notes: $('dl-notes').value.trim() || null, active: $('dl-active').checked };
+  if (dlEditing && row.address) {   // open stops for this delivery customer with no address pick it up
+    const { data: open } = await sb.from('stops').select('id, loads!inner(invoice_id)').eq('location_id', dlEditing).is('address', null).is('loads.invoice_id', null);
+    if (open?.length) await sb.from('stops').update({ address: row.address }).in('id', open.map(x => x.id));
+  }
   const { error } = dlEditing ? await sb.from('delivery_locations').update(row).eq('id', dlEditing)
                               : await sb.from('delivery_locations').insert({ ...row, customer_id: $('cust').value });
   if (error) { $('dl-msg').innerHTML = `<span class="error">${esc(/duplicate|unique/i.test(error.message) ? 'A delivery customer with that name or code already exists for this customer.' : error.message)}</span>`; return; }

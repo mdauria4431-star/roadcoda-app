@@ -349,7 +349,8 @@ $('cancel-form').onclick = () => { $('form').hidden = true; };
 // ---------- Miles (Google, through the route-miles server function) and price (rate sheet) ----------
 async function getMiles(origin, roundTrip, stopAddresses) {
   if (!origin) throw new Error('Enter a start address (set your yard address on the Rates page).');
-  if (stopAddresses.some(a => !a)) throw new Error('Every stop needs an address to work out miles.');
+  const missing = stopAddresses.map((a, i) => a ? null : i + 1).filter(Boolean);
+  if (missing.length) throw new Error(`Stop ${missing.join(', ')} ${missing.length === 1 ? 'has' : 'have'} no address. Add it on the stop, or on the delivery customer (Rates > Delivery customers), to work out miles.`);
   const addresses = [origin, ...stopAddresses, ...(roundTrip ? [origin] : [])];
   const { data, error } = await sb.functions.invoke('route-miles', { body: { addresses } });
   if (error) {
@@ -489,7 +490,7 @@ $('save').onclick = async () => {
 // ---------- Load detail ----------
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, consignee, address, window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, consignee, address, location_id, delivery_locations(id, name, address), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
@@ -551,7 +552,28 @@ async function showDetail(id) {
     try {
       const sorted = l.stops.slice().sort((a, b) => a.seq - b.seq);
       const origin = l.origin_address || l.customers?.start_address || yard;
-      const r = await getMiles(origin, l.round_trip, sorted.map(s => s.address || ''));
+      // Address: the stop's own, else the delivery customer's address on file
+      sorted.forEach(s => { s.addr = s.address || s.delivery_locations?.address || ''; });
+      const missing = sorted.filter(s => !s.addr);
+      if (missing.length) {
+        m.innerHTML = `<b>These delivery customers have no address on file.</b> Enter them once; they're saved to the delivery customer list for every future load.
+          ${missing.map(s => `<div class="row" style="margin-top:8px;align-items:end"><label style="flex:1 1 320px">Stop ${s.seq} · ${esc(s.consignee)}
+            <input class="fix-addr" data-stop="${s.id}" data-loc="${s.location_id || ''}" placeholder="Street, Town, ST 00000"></label></div>`).join('')}
+          <div class="row" style="margin-top:8px"><button class="btn primary" id="fix-save">Save addresses and recalculate</button></div>`;
+        $('d-recalc').disabled = false;
+        $('fix-save').onclick = async () => {
+          const ins = [...document.querySelectorAll('.fix-addr')];
+          if (ins.some(i => !i.value.trim())) { alert('Enter every address.'); return; }
+          for (const i of ins) {
+            const a = i.value.trim();
+            if (i.dataset.loc) { const e = (await sb.from('delivery_locations').update({ address: a }).eq('id', i.dataset.loc)).error; if (e) { alert(e.message); return; } }
+            const e2 = (await sb.from('stops').update({ address: a }).eq('id', i.dataset.stop)).error; if (e2) { alert(e2.message); return; }
+          }
+          await showDetail(id); $('d-recalc').click();
+        };
+        return;
+      }
+      const r = await getMiles(origin, l.round_trip, sorted.map(s => s.addr));
       const items = sorted.flatMap(s => s.stop_items.map(i => ({ unit: i.unit_type, qty: Number(i.qty_ordered) || 0 })));
       const p2 = await getPrice(l.customer_id, l.service_date, Math.round(r.miles), sorted.length, items);
       const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: 'google', origin_address: origin }).eq('id', id)).error;
