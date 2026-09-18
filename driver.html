@@ -43,6 +43,11 @@
   select,textarea{border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;font-family:inherit;width:100%}
   select{height:52px}textarea{height:80px;padding:10px 12px}
   .issue{margin-top:12px;padding:12px;border:1px solid #f0c9c2;border-radius:12px;background:#fdf6f4;display:flex;flex-direction:column;gap:10px}
+  .loadpick{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;position:sticky;top:0;z-index:5;background:var(--ground);padding-top:6px}
+  .loadpick button{flex:0 0 auto;min-height:56px;padding:6px 16px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:17px;color:var(--ink);display:flex;flex-direction:column;align-items:flex-start;justify-content:center}
+  .loadpick button small{font-weight:500;font-size:13px;color:var(--muted)}
+  .loadpick button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .loadpick button.on small{color:#d7eeee}
   .instr{margin-top:10px}
   .instr summary{list-style:none;cursor:pointer;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:#f7f5f0;font-weight:700;font-size:16px}
   .instr summary::-webkit-details-marker{display:none}
@@ -128,6 +133,8 @@ const STATUS = { pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered' 
 const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Issue reported' };
 const MOVING_MPS = 2.2;
 let me = null, lastPos = null, officePhone = '';
+// the load the driver is looking at (one at a time)
+let curLoad = (() => { try { return localStorage.getItem('rc-driver-load'); } catch (_) { return null; } })();
 let movingSince = null;
 function watchMotion() {
   if (!('geolocation' in navigator)) return;
@@ -166,11 +173,25 @@ $('refresh').onclick = () => loadStops();
 
 // ---------- Today's stops ----------
 async function loadStops() {
-  const { data: loads, error } = await sb.from('loads')
+  let { data: loads, error } = await sb.from('loads')
     .select('id, load_no, status, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
-  if (!loads.length) { $('stops').innerHTML = '<div class="card">No stops assigned to you today.</div>'; return; }
+  // Delivered loads drop off; the driver sees one open load at a time
+  const all = loads;
+  loads = loads.filter(l => l.status !== 'delivered');
+  if (!loads.length) {
+    $('stops').innerHTML = `<div class="card">${all.length ? `All done for today: ${all.length} load${all.length === 1 ? '' : 's'} delivered.` : 'No stops assigned to you today.'} Tap Refresh if dispatch just sent you a load.</div>`;
+    return;
+  }
+  if (!loads.some(l => l.id === curLoad)) curLoad = loads[0].id;
+  try { localStorage.setItem('rc-driver-load', curLoad); } catch (_) {}
+  const picker = loads.length > 1 ? `<div class="loadpick" role="tablist" aria-label="Your loads">${loads.map(l => {
+      const left = (l.stops || []).filter(x => !['delivered', 'exception'].includes(x.status)).length;
+      return `<button type="button" role="tab" aria-selected="${l.id === curLoad}" class="${l.id === curLoad ? 'on' : ''}" data-pick="${l.id}">Load ${esc(l.load_no)}<small>${left} stop${left === 1 ? '' : 's'} left</small></button>`;
+    }).join('')}</div>` : '';
+  const others = loads.length - 1;
+  loads = loads.filter(l => l.id === curLoad);
   // Delivery instructions, door/gate codes and after-hours contacts: only for my dispatched / in-progress loads
   const access = {}; let accessErr = '';
   await Promise.all(loads.filter(l => ['planned', 'dispatched', 'in_progress'].includes(l.status)).map(async l => {
@@ -195,9 +216,9 @@ async function loadStops() {
     </div></details>`;
   };
 
-  let html = '';
+  let openHtml = '';
   for (const l of loads) {
-    html += `<div class="load-head">Load ${esc(l.load_no)}</div>`;
+    let html = `<div class="load-head">Load ${esc(l.load_no)}</div>`;
     if (l.ask_odometer) {
       const allDone = (l.stops || []).length && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
       const ask = l.hub_start == null ? 'start' : (allDone && l.hub_end == null ? 'end' : null);
@@ -271,11 +292,17 @@ async function loadStops() {
     }
     html += `<div class="card meta" style="padding:12px 16px">Found freight for someone not on this load, or a stop needs to change?
       <b>Call dispatch</b>${officePhone ? ` · <a href="tel:${esc(officePhone.replace(/[^\d+]/g, ''))}">${esc(officePhone)}</a>` : ''}. Dispatch adds or removes the stop and it shows up here.</div>`;
+    openHtml += html;
   }
+  const html = picker + openHtml;
   // keep open instructions open across the 60-second refresh
   const wasOpen = new Set([...document.querySelectorAll('details.instr[open]')].map(d => d.dataset.stop));
   $('stops').innerHTML = html;
   document.querySelectorAll('details.instr').forEach(d => { if (wasOpen.has(d.dataset.stop)) d.open = true; });
+  document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+    curLoad = b.dataset.pick; try { localStorage.setItem('rc-driver-load', curLoad); } catch (_) {}
+    loadStops(); window.scrollTo({ top: 0 });
+  });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b));
   document.querySelectorAll('[data-hub]').forEach(b => b.onclick = async () => {
     const v = parseFloat($('hub-' + b.dataset.hub).value);
