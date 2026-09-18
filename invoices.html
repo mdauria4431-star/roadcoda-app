@@ -62,7 +62,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a class="on" href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a class="on" href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -81,13 +81,22 @@
     <div id="cpi-alerts"></div>
 
     <section class="card">
-      <h2>New weekly invoice</h2>
-      <p class="hint">One invoice per customer per week: the contract's fixed, variable and pass-through lines, plus a breakdown report of every delivered load.</p>
+      <h2>New invoice</h2>
+      <p class="hint">One invoice per customer per billing window: the contract's fixed, variable and pass-through lines, plus a breakdown report of every delivered load.
+        Each customer's window (start day, start time, and whether loads count when delivered, started or by service date) is set on the Rates page and filled in here.</p>
       <div class="row">
         <label for="n-cust" style="min-width:240px">Customer<select id="n-cust"></select></label>
-        <label for="n-day">Any day in the week<input id="n-day" type="date"></label>
-        <button class="btn" id="n-find">Preview</button>
+        <label for="n-from">From<input id="n-from" type="datetime-local"></label>
+        <label for="n-thru">Through<input id="n-thru" type="datetime-local"></label>
+        <label for="n-basis">Count loads by<select id="n-basis">
+          <option value="delivered">Delivered (last stop finished)</option><option value="started">Started (first stop reached)</option><option value="service_date">Service date</option></select></label>
       </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="n-prev" type="button">◀ Previous window</button><button class="btn" id="n-next" type="button">Next window ▶</button>
+        <button class="btn" id="n-reset" type="button">Customer's default</button>
+        <button class="btn primary" id="n-find">Preview</button>
+      </div>
+      <p class="hint" id="n-rule" style="margin:8px 0 0"></p>
       <div id="n-result" style="margin-top:14px"></div>
     </section>
 
@@ -151,10 +160,10 @@ async function start() {
   me = p; carrier = p.carriers || {};
   $('who').textContent = `${p.full_name || session.user.email} · ${carrier.name || ''} · ${p.role}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
-  $('n-day').value = addDays(localISO(new Date()), -7);   // last week, by default
-  const { data: cs } = await sb.from('customers').select('id, name, week_start_dow, next_cpi_date, cpi_notice_days, master_bill').order('name');
+  const { data: cs } = await sb.from('customers').select('id, name, week_start_dow, bill_start_time, bill_basis, next_cpi_date, cpi_notice_days, master_bill').order('name');
   customers = cs || [];
   $('n-cust').innerHTML = customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  fillWindow();
   cpiAlerts(); fillSettings(); loadList();
 }
 $('login-btn').onclick = async () => {
@@ -179,53 +188,76 @@ async function cpiAlerts() {
   }).join('');
 }
 
-// ---------- New weekly invoice: preview ----------
-function weekOf(custId, dayISO) {
-  const c = customers.find(x => x.id === custId) || {};
-  const d = new Date(dayISO + 'T00:00:00');
-  const back = (d.getDay() - (c.week_start_dow ?? 0) + 7) % 7;
-  const start = addDays(dayISO, -back);
-  return { start, end: addDays(start, 6) };
+// ---------- New invoice: the customer's billing window ----------
+const BASIS = { delivered: 'delivered', started: 'started', service_date: 'by service date' };
+const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// 'YYYY-MM-DDTHH:MM' local strings, shifted by minutes
+const shiftLocal = (v, min) => { const d = new Date(v); d.setMinutes(d.getMinutes() + min); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+const fmtLocal = (v) => new Date(v).toLocaleString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const hm = (t) => { const [h, m] = String(t || '00:00').split(':').map(Number); return new Date(2000, 0, 1, h, m).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); };
+async function fillWindow() {
+  const cid = $('n-cust').value, c = customers.find(x => x.id === cid); if (!c) return;
+  const { data, error } = await sb.rpc('bill_window', { p_customer_id: cid });
+  if (error) { $('n-rule').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  $('n-from').value = data.from; $('n-thru').value = shiftLocal(data.to, -1); $('n-basis').value = data.basis;
+  const start = String(c.bill_start_time || '00:00').slice(0, 5), endT = shiftLocal('2000-01-01T' + start, -1).slice(11);
+  $('n-rule').innerHTML = `Default for ${esc(c.name)}: loads <b>${BASIS[c.bill_basis] || 'by service date'}</b> from <b>${DOW[c.week_start_dow ?? 0]} ${hm(start)}</b> through
+    <b>${DOW[((c.week_start_dow ?? 0) + (start === '00:00' ? 6 : 7)) % 7]} ${hm(endT)}</b>${start === '00:00' ? '' : ' the next week'}. Filled in with the last finished window; change it here for this invoice only.`;
+  $('n-result').innerHTML = '';
 }
+$('n-cust').onchange = fillWindow;
+$('n-reset').onclick = fillWindow;
+$('n-prev').onclick = () => { $('n-from').value = shiftLocal($('n-from').value, -7 * 1440); $('n-thru').value = shiftLocal($('n-thru').value, -7 * 1440); $('n-result').innerHTML = ''; };
+$('n-next').onclick = () => { $('n-from').value = shiftLocal($('n-from').value, 7 * 1440); $('n-thru').value = shiftLocal($('n-thru').value, 7 * 1440); $('n-result').innerHTML = ''; };
+const periodText = (inv) => inv.period_start
+  ? `${fmtLocal(inv.period_start)} – ${fmtLocal(new Date(new Date(inv.period_end) - 60000))}${inv.period_basis && inv.period_basis !== 'service_date' ? ` (loads ${BASIS[inv.period_basis]})` : ''}`
+  : inv.period_from ? `${dt(inv.period_from)} – ${dt(inv.period_to)}` : '';
+
 $('n-find').onclick = async () => {
   const out = $('n-result'), cid = $('n-cust').value;
-  if (!$('n-day').value) return;
-  const wk = weekOf(cid, $('n-day').value);
+  const from = $('n-from').value, thru = $('n-thru').value, basis = $('n-basis').value;
+  if (!from || !thru) return;
+  const to = shiftLocal(thru, 1);   // window ends just after the "through" minute
+  if (to <= from) { out.innerHTML = '<span class="error">Through must be after From.</span>'; return; }
+  const wk = { start: from.slice(0, 10), end: thru.slice(0, 10) };
   out.innerHTML = '<span class="ok">Looking…</span>';
-  const [ver, loads, open, dup] = await Promise.all([
+  const [ver, pv] = await Promise.all([
     sb.from('contract_versions').select('effective_from, note, include_load_charges, contract_lines(id, qty_source)').eq('customer_id', cid).lte('effective_from', wk.start).order('effective_from', { ascending: false }).limit(1),
-    sb.from('loads').select('id, load_no, service_date, miles, invoice_id, stops(id, status, issue_type)').eq('customer_id', cid).eq('status', 'delivered').gte('service_date', wk.start).lte('service_date', wk.end).order('service_date'),
-    sb.from('loads').select('load_no, status').eq('customer_id', cid).in('status', ['planned', 'dispatched', 'in_progress']).gte('service_date', wk.start).lte('service_date', wk.end),
-    sb.from('invoices').select('invoice_no').eq('customer_id', cid).eq('period_from', wk.start),
+    sb.rpc('bill_window_preview', { p_customer_id: cid, p_from: from, p_to: to, p_basis: basis }),
   ]);
+  if (pv.error) { out.innerHTML = `<span class="error">${esc(pv.error.message)}</span>`; return; }
+  const P = pv.data;
   const { data: xs } = await sb.from('customer_extras').select('extra_code, units, date_from, date_to').eq('customer_id', cid).lte('date_from', wk.end).gte('date_to', wk.start);
   const { data: pos } = await sb.from('customer_pos').select('po_number, valid_from, valid_to').eq('customer_id', cid);
   const po = (pos || []).filter(p => p.valid_from <= wk.start && (!p.valid_to || p.valid_to >= wk.start)).sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
   const v = (ver.data || [])[0];
   const master = (customers.find(c => c.id === cid) || {}).master_bill !== false;
-  const ready = (loads.data || []).filter(l => !l.invoice_id);
-  const issues = ready.reduce((a, l) => a + (l.stops || []).filter(s => s.status === 'exception').length, 0);
+  const ready = P.ready;
+  const issues = ready.reduce((a, l) => a + Number(l.issues || 0), 0);
   const manual = (v?.contract_lines || []).filter(l => l.qty_source === 'manual').length;
   const warn = [];
-  if (master && dup.data?.length) warn.push(`Invoice ${esc(dup.data[0].invoice_no)} already covers this week.`);
-  if (open.data?.length) warn.push(`${open.data.length} load(s) this week are not delivered yet (${open.data.map(l => esc(l.load_no)).join(', ')}). They won't be on this invoice.`);
+  const dup = master && P.overlap.length;
+  if (dup) warn.push(`Invoice ${P.overlap.map(esc).join(', ')} already covers part of this window. Change the dates, or delete that draft first.`);
+  if (P.open.length) warn.push(`${P.open.length} load(s) around this window are not delivered yet (${P.open.map(esc).join(', ')}). They won't be on this invoice.`);
+  if (P.invoiced) warn.push(`${P.invoiced} load(s) in this window are already on another invoice and are left off.`);
   if ((pos || []).length && !po) warn.push('No PO on file covers this week, so the invoice will have no PO. Add it on the Rates page first if the customer requires one.');
   if (master && !v) warn.push('This customer has no contract in effect for this week, so only each load\'s own charges will be billed. Set up a contract on the Rates page.');
   out.innerHTML = `
-    <p><b>Week ${dt(wk.start)} – ${dt(wk.end)}</b>${po ? ` · PO ${esc(po.po_number)}` : ''} · ${v ? `contract from ${dt(v.effective_from)}${v.note ? ' (' + esc(v.note) + ')' : ''}` : 'no contract'}</p>
+    <p><b>${fmtLocal(from)} – ${fmtLocal(thru)}</b> · loads ${BASIS[basis]}${po ? ` · PO ${esc(po.po_number)}` : ''} · ${v ? `contract from ${dt(v.effective_from)}${v.note ? ' (' + esc(v.note) + ')' : ''}` : 'no contract'}</p>
     <p>${ready.length} delivered load${ready.length === 1 ? '' : 's'} · ${Math.round(ready.reduce((a, l) => a + Number(l.miles), 0)).toLocaleString()} miles
-      · ${ready.reduce((a, l) => a + l.stops.length, 0)} stops${issues ? ` · <span class="pill st-issue">${issues} OS&amp;D</span>` : ''}</p>
+      · ${ready.reduce((a, l) => a + Number(l.stops), 0)} stops${issues ? ` · <span class="pill st-issue">${issues} OS&amp;D</span>` : ''}</p>
+    ${ready.length ? `<p class="hint">${ready.map(l => `${esc(l.load_no)} (${basis === 'service_date' ? dt(l.service_date) : new Date(l.bill_time).toLocaleString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })})`).join(' · ')}</p>` : ''}
     ${warn.map(w => `<div class="banner">${w}</div>`).join('')}
     ${(xs || []).length ? `<p>Extras this week: ${xs.map(x => `${Number(x.units)} × ${esc(x.extra_code.replace(/-/g, ' '))} (${dt(x.date_from)}–${dt(x.date_to)})`).join(', ')}</p>` : ''}
     ${manual ? `<p class="hint">${manual} line(s) are entered each week (hours, gallons, hotel, tolls). You'll fill them in on the draft.</p>` : ''}
     ${master ? '' : `<div class="banner">Master bill is off for this customer: this creates <b>${ready.length} separate invoice${ready.length === 1 ? '' : 's'}</b>, one per load, each with that load's own charges.</div>`}
-    <button class="btn primary" id="n-create" ${(master && dup.data?.length) || (!master && !ready.length) ? 'disabled' : ''}>${master ? 'Create draft invoice' : `Create ${ready.length} draft invoice${ready.length === 1 ? '' : 's'}`}</button>
+    <button class="btn primary" id="n-create" ${dup || (!master && !ready.length) ? 'disabled' : ''}>${master ? 'Create draft invoice' : `Create ${ready.length} draft invoice${ready.length === 1 ? '' : 's'}`}</button>
     <div id="n-msg" style="margin-top:8px"></div>`;
   $('n-create').onclick = async () => {
     $('n-create').disabled = true;
     const { data, error } = master
-      ? await sb.rpc('create_weekly_invoice', { p_customer_id: cid, p_week_start: wk.start })
-      : await sb.rpc('create_load_invoices', { p_customer_id: cid, p_week_start: wk.start });
+      ? await sb.rpc('create_window_invoice', { p_customer_id: cid, p_from: from, p_to: to, p_basis: basis })
+      : await sb.rpc('create_window_load_invoices', { p_customer_id: cid, p_from: from, p_to: to, p_basis: basis });
     if (error) { $('n-create').disabled = false; $('n-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
     if (master) {
       out.innerHTML = '<span class="ok">Draft created below. Fill in the highlighted lines, check it, then Approve.</span>';
@@ -300,7 +332,7 @@ async function showInvoice(id) {
     <div class="row" style="justify-content:space-between">
       <h2 style="margin:0">Invoice ${esc(inv.invoice_no)} · ${esc(inv.customers?.name)}</h2>
       <span class="pill st-${inv.status}">${STATUS[inv.status]}</span></div>
-    <p class="hint">Dated ${dt(inv.invoice_date)} · due ${dt(inv.due_date)}${inv.period_from ? ` · week ${dt(inv.period_from)} – ${dt(inv.period_to)}` : ''}${inv.po_number ? ` · PO ${esc(inv.po_number)}` : ''}</p>
+    <p class="hint">Dated ${dt(inv.invoice_date)} · due ${dt(inv.due_date)}${inv.period_from ? ` · billing window ${periodText(inv)}` : ''}${inv.po_number ? ` · PO ${esc(inv.po_number)}` : ''}</p>
     <div class="grid" style="grid-template-columns:2fr 1fr">
       <label for="d-bill">Bill-to address (saved to the customer)<textarea id="d-bill" placeholder="Street, Town, ST 00000">${esc(inv.customers?.bill_address || '')}</textarea></label>
       <label for="d-notes">Note printed on invoice<textarea id="d-notes" ${draft ? '' : 'disabled'}>${esc(inv.notes || '')}</textarea></label>
@@ -429,7 +461,7 @@ async function buildRebillWorkbook(inv, filename) {
   const money = '"$"#,##0.00';
   ws.columns = [{ width: 12 }, { width: 11 }, { width: 38 }, { width: 28 }, { width: 16 }, { width: 14 }, { width: 18 }];
   ws.getCell('A1').value = `Backup for invoice ${inv.invoice_no} - ${inv.customer.name}`; ws.getCell('A1').font = { bold: true, size: 14 };
-  ws.getCell('A2').value = `Service week ${dt(inv.period_from)} to ${dt(inv.period_to)} - invoice total ${usd(total)}`;
+  ws.getCell('A2').value = `Billing window ${periodText(inv)} - invoice total ${usd(total)}`;
   ws.getCell('A3').value = 'Our weekly charges are spread across the loads by miles, then across each load\'s delivery points (by each stop\'s hub miles where recorded, otherwise evenly).';
   ws.getCell('A3').font = { italic: true, color: { argb: 'FF5B5750' } };
   ws.getCell('A5').value = 'Your markup %'; ws.getCell('A5').font = { bold: true };
@@ -558,7 +590,7 @@ function buildInvoicePdf(jsPDF, inv) {
   doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(...teal);
   doc.text('INVOICE', W - M, 58, { align: 'right' });
   const meta = [['Invoice no.', inv.invoice_no], ['Invoice date', d(inv.invoice_date)], ['Terms', `Net ${inv.terms}`], ['Due date', d(inv.due_date)]];
-  if (inv.period_from) meta.push(['Service week', `${d(inv.period_from)} - ${d(inv.period_to)}`]);
+  if (inv.period_from) meta.push(['Billing window', periodText(inv).replace(/[–]/g, '-')]);
   if (inv.po_number) meta.push(['PO / reference', inv.po_number]);
   doc.setFontSize(9);
   meta.forEach(([k, v], i) => {
@@ -627,7 +659,7 @@ function buildInvoicePdf(jsPDF, inv) {
   doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...ink);
   doc.text('Breakdown report', M, 52);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...muted);
-  doc.text(`Invoice ${inv.invoice_no} - ${inv.customer?.name || ''} - week of ${d(inv.period_from)} to ${d(inv.period_to)}`, M, 66);
+  doc.text(`Invoice ${inv.invoice_no} - ${inv.customer?.name || ''} - ${periodText(inv).replace(/[–]/g, '-')}`, M, 66);
   const tot = bd.reduce((a, l) => ({ loads: a.loads + 1, miles: a.miles + Number(l.miles || 0), stops: a.stops + (l.stops || []).length }), { loads: 0, miles: 0, stops: 0 });
   doc.text(`${tot.loads} loads - ${Math.round(tot.miles).toLocaleString('en-US')} miles - ${tot.stops} stops`, M, 78);
   const rows = [];

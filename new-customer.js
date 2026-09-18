@@ -40,9 +40,14 @@
       <legend>How you run and bill them</legend>
       <div class="g">
         <label class="full chk"><input type="checkbox" name="master_bill" checked> Master bill: one combined weekly invoice (untick for one invoice per load)</label>
-        <label>Week starts on<select name="week_start_dow">
+        <label>Billing window starts on<select name="week_start_dow">
           <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
           <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>
+        <label>At (time)<input name="bill_start_time" type="time" value="00:00"></label>
+        <label class="full">Invoice counts a load when it is<select name="bill_basis">
+          <option value="delivered">Delivered (last stop finished), e.g. Mon 7:00 AM to next Mon 6:59 AM</option>
+          <option value="started">Started (first stop reached)</option>
+          <option value="service_date" selected>In the window by service date, e.g. Sun 12:00 AM to Sat 11:59 PM</option></select></label>
         <label>Miles billed by<select name="miles_basis"><option value="route">Route miles (Google)</option><option value="hub">Hub miles (driver odometer)</option></select></label>
         <label>Trucks start at (name)<input name="start_name" placeholder="e.g. ABC Route 9 DC"></label>
         <label>Start address<input name="start_address" placeholder="Blank = your yard"></label>
@@ -77,6 +82,7 @@
           bill_address: v('bill_address') || null,
           master_bill: f.elements.master_bill.checked, week_start_dow: parseInt(f.elements.week_start_dow.value, 10),
           miles_basis: f.elements.miles_basis.value,
+          bill_start_time: f.elements.bill_start_time.value || '00:00', bill_basis: f.elements.bill_basis.value,
           start_name: v('start_name') || null, start_address: v('start_address') || null
         };
         const { data, error } = await sbc.from('customers').insert(row).select('id, name, start_name, start_address').single();

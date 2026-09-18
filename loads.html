@@ -68,7 +68,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -163,6 +163,7 @@ const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY)
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+const money2 = (n) => '$' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const time = (t) => t ? new Date(t).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '–';
 const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const UNITS = ['pallets', 'boxes', 'cages', 'parts', 'totes', 'other'];
@@ -211,7 +212,10 @@ function allocate(total, stops) {
 }
 const STATUS_LABEL = {planned:'Planned', dispatched:'Dispatched', in_progress:'In progress', delivered:'Delivered', cancelled:'Cancelled'};
 let lists = {customers: [], drivers: [], equipment: []};
-let yard = '';
+let yard = '', tollFactor = 1;
+// Google prices tolls for a car; the carrier's truck factor (set on the Tolls page) scales it
+const tollEst = (r) => r && r.tolls_car != null ? Math.round(r.tolls_car * tollFactor * 100) / 100 : null;
+const tollLine = (r) => r.tolls_car != null ? `Tolls estimate: ${money2(tollEst(r))}${r.tolls_car ? ` (Google car price ${money2(r.tolls_car)} × truck factor ${tollFactor})` : ' (no tolls on this route)'}` : (r.toll_note ? `Tolls estimate: none (${esc(r.toll_note)})` : '');
 // Delivery customers (stores, DCs...) for each bill-to customer
 let locs = [];
 const nameKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -235,12 +239,13 @@ let priced = null;   // what the last 'Get miles & price' returned
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { $('login-view').hidden = false; return; }
-  const { data: p } = await sb.from('profiles').select('role, full_name, carriers(name, yard_address)').eq('user_id', session.user.id).single();
+  const { data: p } = await sb.from('profiles').select('role, full_name, carriers(name, yard_address, toll_estimate_factor)').eq('user_id', session.user.id).single();
   if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
   if (p.role === 'driver') { location.href = 'driver.html'; return; }
   $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
   yard = p.carriers?.yard_address || '';
+  tollFactor = Number(p.carriers?.toll_estimate_factor) || 1;
   // Opened from the dispatch board: loads.html?load=<id>&day=<date>
   const qs = new URLSearchParams(location.search);
   $('day').value = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('day') || '') ? qs.get('day') : todayISO();
@@ -423,6 +428,8 @@ $('calc').onclick = async () => {
       priced.miles_source = 'google';
       lines.push(`Miles from Google (${r.mode === 'truck' ? 'truck route' : 'car route'}): ${r.miles} (${r.legs.join(' + ')}) · about ${Math.floor(r.drive_minutes / 60)} h ${r.drive_minutes % 60} min driving`);
       if (r.warning) lines.push(`<span class="error">${esc(r.warning)}</span>`);
+      priced.toll_estimate = tollEst(r);
+      if (tollLine(r)) lines.push(tollLine(r));
     } catch (e) {
       lines.push(`<span class="error">${esc(e.message)}</span> Using the miles typed in.`);
     }
@@ -473,7 +480,7 @@ $('save').onclick = async () => {
       truck_id: $('f-truck').value || null, miles: parseFloat($('f-miles').value || '0'),
       status: $('f-driver').value ? 'dispatched' : 'planned',
       origin_address: $('f-origin').value.trim() || null, round_trip: $('f-round').checked,
-      miles_source: priced?.miles_source || 'manual'
+      miles_source: priced?.miles_source || 'manual', toll_estimate: priced?.toll_estimate ?? null
     }).select('id').single();
     if (e1) throw e1;
     loadId = load.id;
@@ -535,11 +542,12 @@ function accessLine(d) {
 }
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
   const editable = !l.invoice_id && l.status !== 'cancelled';
+  const tollRows = l.toll_transactions || [];
   const sortedStops = l.stops.sort((a, b) => a.seq - b.seq);
   const stops = sortedStops.map(s => {
     const pu = s.stop_type === 'pickup';
@@ -601,9 +609,12 @@ async function showDetail(id) {
     <div class="row" style="margin-top:12px">
       <label for="d-tolls">Tolls on this load $<input id="d-tolls" type="number" min="0" step="0.01" style="width:140px"
         value="${(l.load_costs || []).filter(c => c.cost_type === 'tolls').reduce((a, c) => a + Number(c.amount), 0) || ''}"></label>
-      <button class="btn" id="d-tolls-save" ${l.invoice_id ? 'disabled title="Already invoiced"' : ''}>Save tolls</button>
-      <span class="hint" id="d-tolls-msg">From the toll statement (E-ZPass etc.). Billed on the weekly invoice when the contract has a tolls line.</span>
-    </div>`;
+      <button class="btn" id="d-tolls-save" ${l.invoice_id || tollRows.length ? `disabled title="${tollRows.length ? 'Set by the toll statement' : 'Already invoiced'}"` : ''}>Save tolls</button>
+      <span class="hint" id="d-tolls-msg">${l.toll_estimate != null ? `Estimate ${money2(l.toll_estimate)}. ` : ''}${tollRows.length
+        ? `From the toll statement: ${tollRows.filter(t => t.status === 'matched').length} transaction(s)${tollRows.some(t => t.status !== 'matched') ? ', others set aside' : ''}. Change them on the <a href="tolls.html">Tolls</a> page.`
+        : 'Filled in automatically when the toll statement is uploaded on the Tolls page. Billed on the weekly invoice when the contract has a tolls line.'}</span>
+    </div>
+    ${tollRows.length ? `<div class="hint" style="margin-top:6px">${tollRows.sort((a, b) => a.txn_at.localeCompare(b.txn_at)).map(t => `<span class="mono">${time(t.txn_at)}</span> ${esc([t.agency, t.exit_plaza].filter(Boolean).join(' '))} ${money2(t.amount)}${t.status !== 'matched' ? ' (' + ({ non_billable: 'not billable', disputed: 'disputed' })[t.status] + ')' : ''}`).join(' · ')}</div>` : ''}`;
   // ---- change stops mid-trip ----
   const stopMsg = (t, ok) => { const m = $('d-msg'); m.hidden = false; m.innerHTML = ok ? `<span class="ok">${esc(t)}</span>` : `<span class="error">${esc(t)}</span>`; };
   const afterChange = async (t) => { await loadList(); await showDetail(id); stopMsg(t + (l.hub_required ? '' : ' Click Recalculate miles & price to update miles and billing.'), true); };
@@ -680,7 +691,7 @@ async function showDetail(id) {
       const r = await getMiles(origin, l.round_trip, sorted.map(s => s.addr));
       const items = sorted.flatMap(s => s.stop_items.map(i => ({ unit: i.unit_type, qty: Number(i.qty_ordered) || 0 })));
       const p2 = await getPrice(l.customer_id, l.service_date, Math.round(r.miles), sorted.length, items);
-      const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: 'google', origin_address: origin }).eq('id', id)).error;
+      const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: 'google', origin_address: origin, toll_estimate: tollEst(r) }).eq('id', id)).error;
       if (e1) throw e1;
       const upd = { pricing_note: p2.note, customer_rate_id: p2.customer_rate_id, fsc_rule_id: p2.fsc_rule_id, doe_price: p2.doe_price, doe_week: p2.doe_week };
       if (p2.linehaul != null) upd.linehaul = p2.linehaul;

@@ -75,7 +75,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a class="on" href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a class="on" href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -207,7 +207,7 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 
 // ---------- Bill-to customers ----------
 async function loadCustList() {
-  const { data } = await sb.from('customers').select('id, name, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name').order('name');
+  const { data } = await sb.from('customers').select('id, name, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name');
   customers = data || [];
   $('cust').innerHTML = customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') || '<option value="">No customers yet</option>';
 }
@@ -215,7 +215,8 @@ function pickCustomer() {
   const c = customers.find(x => x.id === $('cust').value);
   $('rates-link').href = c ? `rates.html?customer=${encodeURIComponent(c.id)}` : 'rates.html';
   $('cust-info').innerHTML = c ? [c.customer_code && `Code ${esc(c.customer_code)}`, c.contact_name && esc(c.contact_name), c.contact_phone && esc(c.contact_phone), c.contact_email && esc(c.contact_email),
-    c.master_bill ? 'Weekly master bill' : 'Invoice per load', c.miles_basis === 'hub' ? 'Hub miles' : 'Route miles', c.start_name && `Trucks start at ${esc(c.start_name)}`].filter(Boolean).join(' · ') : '';
+    c.master_bill ? 'Weekly master bill' : 'Invoice per load',
+    `Bills ${({ delivered: 'loads delivered', started: 'loads started', service_date: 'by service date' })[c.bill_basis] || 'by service date'} from ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][c.week_start_dow ?? 0]} ${String(c.bill_start_time || '00:00').slice(0, 5)}`, c.miles_basis === 'hub' ? 'Hub miles' : 'Route miles', c.start_name && `Trucks start at ${esc(c.start_name)}`].filter(Boolean).join(' · ') : '';
   if (c) loadDl();
 }
 $('cust').onchange = () => { dlFilter = 'all'; $('dl-edit').open = false; pickCustomer(); };

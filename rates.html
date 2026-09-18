@@ -56,7 +56,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -124,9 +124,21 @@
         <div class="row">
           <label for="c-next">Next CPI date<input id="c-next" type="date"></label>
           <label for="c-notice">Remind me (days before)<input id="c-notice" type="number" min="0" style="width:120px"></label>
-          <label for="c-week">Billing week starts<select id="c-week">
-            <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
-            <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>
+        </div>
+        <div class="cpi" style="margin:10px 0">
+          <b>Billing window</b> <span class="hint">· what each invoice covers (7 days)</span>
+          <div class="row" style="margin-top:8px">
+            <label for="c-week">Starts on<select id="c-week">
+              <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
+              <option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>
+            <label for="c-btime">At<input id="c-btime" type="time" value="00:00"></label>
+            <label for="c-basis" style="flex:1 1 220px">Count a load when it is<select id="c-basis">
+              <option value="delivered">Delivered (last stop finished)</option><option value="started">Started (first stop reached)</option>
+              <option value="service_date">In the window by service date</option></select></label>
+          </div>
+          <p class="hint" id="c-wtext" style="margin:6px 0 0"></p>
+        </div>
+        <div class="row">
           <label for="c-cpinote" style="flex:1 1 240px">CPI terms (index, cap…)<input id="c-cpinote" placeholder="e.g. CPI-U 12-month change, capped at 4%"></label>
           <button class="btn primary" id="c-save-set">Save billing &amp; CPI settings</button>
         </div>
@@ -447,13 +459,16 @@ async function loadCpiAlerts() {
 async function loadContract() {
   const cid = $('cust').value; if (!cid) return;
   const [cu, vs] = await Promise.all([
-    sb.from('customers').select('id, week_start_dow, next_cpi_date, cpi_notice_days, cpi_note, master_bill, terms_days, po_number, customer_code, invoice_format, miles_basis, start_name, start_address').eq('id', cid).single(),
+    sb.from('customers').select('id, week_start_dow, bill_start_time, bill_basis, next_cpi_date, cpi_notice_days, cpi_note, master_bill, terms_days, po_number, customer_code, invoice_format, miles_basis, start_name, start_address').eq('id', cid).single(),
     sb.from('contract_versions').select('*, contract_lines(*)').eq('customer_id', cid).order('effective_from', { ascending: false })
   ]);
   custInfo = cu.data || {};
   $('c-next').value = custInfo.next_cpi_date || '';
   $('c-notice').value = custInfo.cpi_notice_days ?? 60;
   $('c-week').value = custInfo.week_start_dow ?? 0;
+  $('c-btime').value = String(custInfo.bill_start_time || '00:00').slice(0, 5);
+  $('c-basis').value = custInfo.bill_basis || 'service_date';
+  windowText();
   $('c-cpinote').value = custInfo.cpi_note || '';
   $('b-master').checked = custInfo.master_bill !== false;
   $('b-miles').value = custInfo.miles_basis || 'route';
@@ -599,10 +614,21 @@ $('c-savever').onclick = async () => {
   $('c-set-msg').innerHTML = '<span class="ok">New contract version saved.</span>';
 };
 
+// Plain-English billing window, e.g. "loads delivered from Monday 7:00 AM through the next Monday 6:59 AM"
+function windowText() {
+  const D = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dow = parseInt($('c-week').value, 10), t = $('c-btime').value || '00:00';
+  const [h, m] = t.split(':').map(Number), end = new Date(2000, 0, 2, h, m - 1);
+  const f = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const endDow = (dow + (t === '00:00' ? 6 : 7)) % 7;
+  const what = { delivered: 'Loads delivered (last stop finished)', started: 'Loads started (first stop reached)', service_date: 'Loads with a service date' }[$('c-basis').value];
+  $('c-wtext').textContent = `${what} from ${D[dow]} ${f(new Date(2000, 0, 1, h, m))} through ${t === '00:00' ? '' : 'the next '}${D[endDow]} ${f(end)}. The Invoices page fills this in; it can be changed there for one invoice.`;
+}
+['c-week', 'c-btime', 'c-basis'].forEach(id => $(id).addEventListener('input', windowText));
 $('c-save-set').onclick = async () => {
   const { error } = await sb.from('customers').update({
     next_cpi_date: $('c-next').value || null, cpi_notice_days: parseInt($('c-notice').value || '60', 10),
-    week_start_dow: parseInt($('c-week').value, 10), cpi_note: $('c-cpinote').value.trim() || null,
+    week_start_dow: parseInt($('c-week').value, 10), bill_start_time: $('c-btime').value || '00:00', bill_basis: $('c-basis').value, cpi_note: $('c-cpinote').value.trim() || null,
     master_bill: $('b-master').checked, miles_basis: $('b-miles').value,
     start_name: $('b-sname').value.trim() || null, start_address: $('b-saddr').value.trim() || null, terms_days: $('b-terms').value === '' ? null : parseInt($('b-terms').value, 10),
     po_number: $('b-po').value.trim() || null, customer_code: $('b-code').value.trim() || null,
