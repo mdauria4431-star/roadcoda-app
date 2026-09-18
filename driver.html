@@ -170,16 +170,18 @@ async function loadStops() {
     (data || []).forEach(a => { access[a.stop_id] = a; });
   }));
   const tel = (n) => `<a href="tel:${esc(String(n).replace(/[^\d+]/g, ''))}">${esc(n)}</a>`;
-  const accessBox = (s) => {
-    const a = access[s.id]; if (!a) return '';
+  // Delivery instructions card: everything comes from the stop customer record (Customers tab)
+  const accessBox = (s, active) => {
+    const a = access[s.id];
+    if (!a) return active ? '<div class="access"><b>Delivery instructions</b><div class="meta">None on file for this stop. Call dispatch if you need help.</div></div>' : '';
     const codes = [a.door_code && ['Door code', a.door_code], a.gate_code && ['Gate code', a.gate_code], a.other_code && [a.other_code_name || 'Other code', a.other_code]].filter(Boolean);
-    if (!a.delivery_instructions && !codes.length && !a.after_hours_phone && !a.phone) return '';
     return `<div class="access">
-      ${a.delivery_instructions ? `<div><b>Instructions:</b> ${esc(a.delivery_instructions)}</div>` : ''}
+      <b>Delivery instructions</b>
+      <div>${a.delivery_instructions ? esc(a.delivery_instructions) : '<span class="meta">None on file. Call dispatch if you need help.</span>'}</div>
+      ${a.contact || a.phone ? `<div>Receiving: ${esc(a.contact || '')}${a.contact && a.phone ? ' · ' : ''}${a.phone ? tel(a.phone) : ''}</div>` : ''}
+      ${a.after_hours_phone || a.after_hours_contact ? `<div>After hours: ${esc(a.after_hours_contact || '')}${a.after_hours_contact && a.after_hours_phone ? ' · ' : ''}${a.after_hours_phone ? tel(a.after_hours_phone) : ''}</div>` : ''}
       ${codes.length ? `<button class="btn small-btn" type="button" data-codes="${s.id}" aria-expanded="false">Show access codes (${codes.map(c => esc(c[0].replace(' code', ''))).join(', ')})</button>
         <dl class="codelist" id="codes-${s.id}" hidden>${codes.map(([k, v]) => `<dt>${esc(k)}</dt><dd class="mono">${esc(v)}</dd>`).join('')}</dl>` : ''}
-      ${a.after_hours_phone ? `<div>After hours: ${a.after_hours_contact ? esc(a.after_hours_contact) + ' · ' : ''}${tel(a.after_hours_phone)}</div>` : ''}
-      ${a.phone ? `<div>Location phone: ${tel(a.phone)}</div>` : ''}
     </div>`;
   };
 
@@ -202,7 +204,6 @@ async function loadStops() {
     for (const s of stops) {
       const done = ['delivered', 'exception'].includes(s.status);
       const items = s.stop_items.map(i => `${i.qty_delivered != null ? i.qty_delivered + ' of ' : ''}${i.qty_ordered} ${esc(i.unit_type)}`).join(', ');
-      const maps = s.address ? `<a href="https://maps.google.com/?q=${encodeURIComponent(s.address)}" target="_blank" rel="noopener">Directions</a>` : '';
       const pu = s.stop_type === 'pickup';
       const codes = (s.scans || []).filter(c => c.barcode), photos = (s.scans || []).filter(c => c.photo_path);
       let actions = '';
@@ -251,9 +252,9 @@ async function loadStops() {
       html += `<div class="card stop ${done ? 'done' : ''}">
         <h2>Stop ${s.seq} · ${pu ? 'PICKUP · ' : ''}${esc(s.consignee)}</h2>
         ${s.added_by === 'office' && !done ? `<div class="meta" style="color:#8a4b08;font-weight:600">New stop added by dispatch${s.added_note ? ': ' + esc(s.added_note) : ''}</div>` : ''}
-        <div class="meta">${esc(s.address || '')} ${maps}<br>
+        <div class="meta">${esc(s.address || '')}<br>
           Window <span class="mono">${time(s.window_start)}–${time(s.window_end)}</span><br>${items}</div>
-        ${done ? '' : accessBox(s)}
+        ${done ? '' : accessBox(s, ['dispatched', 'in_progress'].includes(l.status))}
         <span class="badge b-${s.status}">${s.status === 'exception' ? ISSUE[s.issue_type] || 'Issue reported' : (pu && s.status === 'delivered' ? 'Picked up' : STATUS[s.status] || esc(s.status))}${s.arrived_at ? ' · arrived ' + time(s.arrived_at) : ''}${s.departed_at ? ' · left ' + time(s.departed_at) : ''}${s.odometer != null ? ` · odometer ${s.odometer} (${s.leg_miles} mi)` : ''}</span>
         ${s.status === 'exception' && s.late_reason ? `<div class="meta" style="color:var(--late);margin-top:6px">${esc(s.late_reason)}</div>` : ''}
         ${actions}</div>`;

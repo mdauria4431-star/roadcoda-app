@@ -67,7 +67,7 @@
   #dl-list .mono{white-space:nowrap}
   fieldset.acc{border:1px solid var(--line);border-radius:10px;padding:10px 12px 12px;margin:12px 0 0;background:#fff}
   fieldset.acc legend{font-weight:700;font-size:14px;padding:0 6px}
-  #dl-instr{height:64px;font-family:inherit;font-size:15px}
+  #dl-instr{height:96px;font-family:inherit;font-size:15px}
   .p-acc{background:#f1ece2;color:#5b5750}.fix input{flex:1;height:34px;font-size:14px}
   @media (max-width:560px){main{padding:16px}.grid{grid-template-columns:1fr}}
 </style>
@@ -134,10 +134,12 @@
           <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;height:40px"><input type="checkbox" id="dl-active" checked style="height:auto"> Active</label>
         </div>
         <fieldset class="acc">
-          <legend>Delivery instructions and after-hours access</legend>
-          <p class="hint" style="margin:0 0 8px">Drivers see these on their phone only while this stop is on a load dispatched to them. Codes disappear once the load is delivered.</p>
+          <legend>What the driver sees: delivery instructions, contacts and codes</legend>
+          <p class="hint" style="margin:0 0 8px">This is the only place stop instructions come from; the driver app has no map directions. Put everything the driver needs here:
+            truck entrance and approach, dock, receiving hours, where to leave freight, check-in steps. The driver also sees the contact name and phone above.
+            Shown only while this stop is on a load dispatched to them; codes disappear once the load is delivered. Office notes are never shown.</p>
           <div class="grid">
-            <label for="dl-instr" style="grid-column:1/-1">Delivery instructions (for the driver)<textarea id="dl-instr" rows="2" placeholder="e.g. After hours: back door by dumpsters, leave totes in the cage, lock it"></textarea></label>
+            <label for="dl-instr" style="grid-column:1/-1">Delivery instructions (for the driver)<textarea id="dl-instr" rows="4" placeholder="e.g. Truck entrance on Route 1 South only, no trucks on Main St. Dock 3, back in. Receiving 6-10 AM. After hours: back door by dumpsters, leave totes in the cage, lock it, text a photo."></textarea></label>
             <label for="dl-door">Door code<input id="dl-door" autocomplete="off"></label>
             <label for="dl-gate">Gate code<input id="dl-gate" autocomplete="off"></label>
             <label for="dl-oname">Other code: name it<input id="dl-oname" placeholder="e.g. Alarm, Lock box, Key safe"></label>
