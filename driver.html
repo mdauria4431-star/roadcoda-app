@@ -115,7 +115,7 @@ const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.g
 const STATUS = { pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered' };
 const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Issue reported' };
 const MOVING_MPS = 2.2;
-let me = null, lastPos = null;
+let me = null, lastPos = null, officePhone = '';
 let movingSince = null;
 function watchMotion() {
   if (!('geolocation' in navigator)) return;
@@ -135,10 +135,10 @@ function watchMotion() {
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { $('login-view').hidden = false; return; }
-  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name, office_phone)').eq('user_id', session.user.id).single();
   if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
   if (p.role !== 'driver') { $('login-error').textContent = 'This page is for driver logins. Office users: open dispatch.html.'; $('login-view').hidden = false; return; }
-  me = p;
+  me = p; officePhone = p.carriers?.office_phone || '';
   $('who').innerHTML = `${esc(p.full_name)}<br>${esc(p.carriers?.name || '')}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
   watchMotion();
@@ -155,7 +155,7 @@ $('refresh').onclick = () => loadStops();
 // ---------- Today's stops ----------
 async function loadStops() {
   const { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
   if (!loads.length) { $('stops').innerHTML = '<div class="card">No stops assigned to you today.</div>'; return; }
@@ -227,12 +227,15 @@ async function loadStops() {
       }
       html += `<div class="card stop ${done ? 'done' : ''}">
         <h2>Stop ${s.seq} · ${pu ? 'PICKUP · ' : ''}${esc(s.consignee)}</h2>
+        ${s.added_by === 'office' && !done ? `<div class="meta" style="color:#8a4b08;font-weight:600">New stop added by dispatch${s.added_note ? ': ' + esc(s.added_note) : ''}</div>` : ''}
         <div class="meta">${esc(s.address || '')} ${maps}<br>
           Window <span class="mono">${time(s.window_start)}–${time(s.window_end)}</span><br>${items}</div>
         <span class="badge b-${s.status}">${s.status === 'exception' ? ISSUE[s.issue_type] || 'Issue reported' : (pu && s.status === 'delivered' ? 'Picked up' : STATUS[s.status] || esc(s.status))}${s.arrived_at ? ' · arrived ' + time(s.arrived_at) : ''}${s.departed_at ? ' · left ' + time(s.departed_at) : ''}${s.odometer != null ? ` · odometer ${s.odometer} (${s.leg_miles} mi)` : ''}</span>
         ${s.status === 'exception' && s.late_reason ? `<div class="meta" style="color:var(--late);margin-top:6px">${esc(s.late_reason)}</div>` : ''}
         ${actions}</div>`;
     }
+    html += `<div class="card meta" style="padding:12px 16px">Found freight for someone not on this load, or a stop needs to change?
+      <b>Call dispatch</b>${officePhone ? ` · <a href="tel:${esc(officePhone.replace(/[^\d+]/g, ''))}">${esc(officePhone)}</a>` : ''}. Dispatch adds or removes the stop and it shows up here.</div>`;
   }
   $('stops').innerHTML = html;
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b));
@@ -357,6 +360,12 @@ async function uploadPhoto(stopId, loadId, file, btn) {
   loadStops();
 }
 
+// Pick up stops dispatch adds mid-trip: refresh every minute unless the driver is typing or scanning
+setInterval(() => {
+  const busy = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+  const openForm = [...document.querySelectorAll('details')].some(d => d.open) || [...document.querySelectorAll('.issue')].some(d => !d.hidden);
+  if (!busy && !openForm && $('scanner').hidden && !$('app').hidden) loadStops();
+}, 60000);
 start();
 </script>
 </body>
