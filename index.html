@@ -162,7 +162,7 @@ async function load() {
   const day = $('day').value, tomorrow = addDays(day, 1), today = localISO(new Date());
   $('title').textContent = day === today ? 'Today' : new Date(day + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const sel = 'id, load_no, status, miles, driver_id, invoice_id, hub_required, hub_start, hub_end, drivers(full_name), equipment(unit_no), customers(name), ' +
-              'stops(id, seq, consignee, status, window_start, window_end, eta, arrived_at, departed_at, issue_type, late_reason)';
+              'stops(id, seq, stop_type, consignee, status, window_start, window_end, eta, arrived_at, departed_at, issue_type, late_reason)';
   const [L, T, P, I] = await Promise.all([
     sb.from('loads').select(sel).eq('service_date', day).neq('status', 'cancelled').order('load_no'),
     sb.from('loads').select('id, load_no, driver_id, status, customers(name), stops(id)').eq('service_date', tomorrow).neq('status', 'cancelled'),
@@ -210,7 +210,7 @@ async function load() {
   const ev = [];
   stops.forEach(s => {
     if (s.arrived_at) ev.push([s.arrived_at, `${esc(s.load.drivers?.full_name || 'Driver')} arrived at ${esc(s.consignee)}`, s.load]);
-    if (s.departed_at) ev.push([s.departed_at, `${esc(s.load.drivers?.full_name || 'Driver')} ${s.status === 'exception' ? 'reported ' + esc(ISSUE[s.issue_type] || 'an issue') + ' at' : 'delivered'} ${esc(s.consignee)}`, s.load]);
+    if (s.departed_at) ev.push([s.departed_at, `${esc(s.load.drivers?.full_name || 'Driver')} ${s.status === 'exception' ? 'reported ' + esc(ISSUE[s.issue_type] || 'an issue') + ' at' : s.stop_type === 'pickup' ? 'picked up at' : 'delivered'} ${esc(s.consignee)}`, s.load]);
   });
   ev.sort((a, b) => new Date(b[0]) - new Date(a[0]));
   $('activity').innerHTML = ev.slice(0, 10).map(([t, txt, l]) => `<li><span class="mono" style="min-width:70px;color:var(--muted)">${time(t)}</span><span>${txt} · <a href="${loadLink(l, day)}">load ${esc(l.load_no)}</a></span></li>`).join('')

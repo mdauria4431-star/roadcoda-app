@@ -293,7 +293,7 @@ async function showInvoice(id) {
   const bd = inv.breakdown || [];
   const bdRows = bd.map(l => `<tr><td class="mono">${dt(l.date)}</td><td class="mono">${esc(l.load_no)}</td><td>${esc(l.driver || '')}</td><td>${esc(l.truck || '')}</td>
       <td class="num mono">${Math.round(Number(l.miles || 0))}</td>
-      <td>${(l.stops || []).map(s => `Stop ${s.seq} · ${esc(s.consignee)}${s.code ? ' #' + esc(s.code) : ''}${s.leg_miles != null ? ` (${Number(s.leg_miles).toFixed(1)} mi)` : ''}: ${(s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${esc(i.unit)}` : `${i.ordered} ${esc(i.unit)}`).join(', ')}${s.issue ? ` <span class="pill st-issue">${esc(ISSUE_PDF[s.issue] || 'Issue')}</span>${s.note ? ' ' + esc(s.note) : ''}` : ''}`).join('<br>')}</td></tr>`).join('');
+      <td>${(l.stops || []).map(s => `${s.type === 'pickup' ? '<b>Pickup</b>' : 'Stop ' + s.seq} · ${esc(s.consignee)}${s.code ? ' #' + esc(s.code) : ''}${s.leg_miles != null ? ` (${Number(s.leg_miles).toFixed(1)} mi)` : ''}: ${(s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${esc(i.unit)}` : `${i.ordered} ${esc(i.unit)}`).join(', ')}${s.issue ? ` <span class="pill st-issue">${esc(ISSUE_PDF[s.issue] || 'Issue')}</span>${s.note ? ' ' + esc(s.note) : ''}` : ''}`).join('<br>')}</td></tr>`).join('');
 
   box.hidden = false;
   box.innerHTML = `
@@ -444,7 +444,8 @@ async function buildRebillWorkbook(inv, filename) {
   let r = 8;
   const byCust = new Map();   // delivery customer -> { name, code, stops, cents }
   bd.forEach((l, li) => {
-    const stops = (l.stops || []).length ? l.stops : [{ seq: 1, consignee: '(load total)', items: [] }];
+    const dstops = (l.stops || []).filter(s => s.type !== 'pickup');   // pickups aren't rebilled; deliveries are
+    const stops = dstops.length ? dstops : [{ seq: 1, consignee: '(load total)', items: [] }];
     const per = Math.floor(cents[li] / stops.length);
     // Hub-mile loads: split by each stop's leg miles when every stop has a reading
     const legs = stops.map(s => Number(s.leg_miles)), useLegs = legs.every(x => x > 0);
@@ -636,7 +637,7 @@ function buildInvoicePdf(jsPDF, inv) {
       { content: String((l.stops || []).length), styles: { halign: 'right' } }]);
     for (const s of l.stops || []) {
       const items = (s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${i.unit}` : `${i.ordered} ${i.unit}`).join(', ');
-      rows.push([{ content: `   Stop ${s.seq} - ${s.consignee}${s.code ? ' #' + s.code : ''}: ${items}${s.leg_miles != null ? ` - ${Number(s.leg_miles).toFixed(1)} mi (odometer ${s.odometer})` : ''}`, colSpan: 5, styles: { fontSize: 8, textColor: muted, cellPadding: { top: 1, bottom: 1, left: 6, right: 6 } } }]);
+      rows.push([{ content: `   ${s.type === 'pickup' ? 'PICKUP' : 'Stop ' + s.seq} - ${s.consignee}${s.code ? ' #' + s.code : ''}: ${items}${s.leg_miles != null ? ` - ${Number(s.leg_miles).toFixed(1)} mi (odometer ${s.odometer})` : ''}`, colSpan: 5, styles: { fontSize: 8, textColor: muted, cellPadding: { top: 1, bottom: 1, left: 6, right: 6 } } }]);
       if (s.issue) rows.push([{ content: `      ${ISSUE_PDF[s.issue] || 'Delivery issue'}${s.note ? ': ' + s.note : ''}`, colSpan: 5,
         styles: { fontSize: 8, textColor: red, cellPadding: { top: 0, bottom: 2, left: 6, right: 6 } } }]);
     }

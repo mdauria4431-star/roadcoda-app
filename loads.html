@@ -44,12 +44,14 @@
   .s-planned{background:var(--info-bg);color:var(--info)}.s-dispatched{background:var(--risk-bg);color:var(--risk)}
   .s-in_progress{background:var(--ok-bg);color:var(--ok)}.s-delivered{background:#ecebe8;color:#45423d}.s-cancelled{background:#fbe0db;color:var(--late)}
   .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-  .stop{border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;grid-template-columns:2fr .8fr 2fr 1fr 1fr 1fr .8fr .9fr auto;gap:10px;align-items:end;margin-bottom:10px}
+  .stop{border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;grid-template-columns:.9fr 2fr .8fr 2fr 1fr 1fr 1fr .8fr .9fr auto;gap:10px;align-items:end;margin-bottom:10px}
   .stop .n{font-family:Archivo,sans-serif;font-weight:800;align-self:center}
   #app{display:flex;flex-direction:column;gap:16px}
   .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .note{margin-top:10px;padding:10px 12px;background:#f7f5f0;border-radius:8px;font-size:13px;color:var(--muted);line-height:1.5}
   .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.thumbs img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#eee}
+  .stop.pu{background:#f6f9fb;border-color:#c9dbe8}
+  .tag-pu{background:#e3edf6;color:#1d4e89;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700}
   .s-hint{grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:-4px}
   .s-hint.new{color:#8a4b08}
   .imp-tbl td,.imp-tbl th{font-size:13px;padding:6px 5px}
@@ -287,7 +289,7 @@ function stopRow(n) {
   const div = document.createElement('div');
   div.className = 'stop';
   div.innerHTML = `
-    <div class="n">Stop ${n}</div>
+    <div><div class="n">Stop ${n}</div><select class="s-type" aria-label="Pickup or delivery" style="height:32px;font-size:13px;margin-top:4px"><option value="delivery">Delivery</option><option value="pickup">Pickup</option></select></div>
     <label>Delivery customer<input class="s-consignee" list="loc-list" placeholder="Start typing to pick from the list" autocomplete="off"></label>
     <label>Code<input class="s-code" placeholder="Store #"></label>
     <label>Address<input class="s-address"></label>
@@ -299,6 +301,7 @@ function stopRow(n) {
     <button class="btn small danger s-remove" type="button" aria-label="Remove stop ${n}">Remove</button>`;
   div.insertAdjacentHTML('beforeend', '<div class="s-hint"></div>');
   div.querySelector('.s-remove').onclick = () => { div.remove(); renumber(); };
+  div.querySelector('.s-type').onchange = (e) => { div.classList.toggle('pu', e.target.value === 'pickup'); div.querySelector('.s-consignee').closest('label').firstChild.textContent = e.target.value === 'pickup' ? 'Pick up at (supplier)' : 'Delivery customer'; };
   const fill = (loc) => {
     const hint = div.querySelector('.s-hint');
     if (loc) {
@@ -410,6 +413,7 @@ $('save').onclick = async () => {
   const date = $('f-date').value;
   const stops = [...document.querySelectorAll('#stops .stop')].map((el, i) => ({
     seq: i + 1,
+    type: el.querySelector('.s-type').value,
     consignee: el.querySelector('.s-consignee').value.trim(),
     code: el.querySelector('.s-code').value.trim(),
     loc: el.dataset.loc || null,
@@ -459,7 +463,7 @@ $('save').onclick = async () => {
     await loadLocs($('f-customer').value);
     stops.forEach(s => { const l = locs.find(x => x.id === s.loc); if (l) { s.consignee = l.name; s.address = s.address || l.address; } });
     const { data: stopRows, error: e3 } = await sb.from('stops').insert(stops.map(s => ({
-      load_id: loadId, seq: s.seq, consignee: s.consignee, address: s.address, location_id: s.loc,
+      load_id: loadId, seq: s.seq, consignee: s.consignee, address: s.address, location_id: s.loc, stop_type: s.type,
       window_start: toTs(s.start), window_end: toTs(s.end), eta: toTs(s.start)
     }))).select('id, seq');
     if (e3) throw e3;
@@ -467,8 +471,9 @@ $('save').onclick = async () => {
     const bySeq = Object.fromEntries(stopRows.map(r => [r.seq, r.id]));
     if (stops.every(s => !s.billed)) {
       const total = parseFloat($('f-linehaul').value || '0') + parseFloat($('f-fsc').value || '0');
-      const split = allocate(total, stops.map(s => ({ items: [{ qty: s.qty }] })));
-      stops.forEach((s, i) => s.billed = split[i][0]);
+      const dels = stops.filter(s => s.type !== 'pickup');   // pickups aren't billed; the delivery is
+      const split = dels.length ? allocate(total, dels.map(s => ({ items: [{ qty: s.qty }] }))) : [];
+      dels.forEach((s, i) => s.billed = split[i][0]);
     }
     const { error: e4 } = await sb.from('stop_items').insert(stops.map(s => ({
       stop_id: bySeq[s.seq], unit_type: s.unit, qty_ordered: s.qty, billed_amount: s.billed
@@ -490,14 +495,15 @@ $('save').onclick = async () => {
 // ---------- Load detail ----------
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, consignee, address, location_id, delivery_locations(id, name, address), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), stops(id, seq, stop_type, consignee, address, location_id, delivery_locations(id, name, address), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
   const stops = l.stops.sort((a, b) => a.seq - b.seq).map(s => {
-    const items = s.stop_items.map(i => `${i.qty_delivered != null ? `Delivered ${i.qty_delivered} of ${i.qty_ordered}` : `${i.qty_ordered} ordered`} ${esc(i.unit_type)} · billed ${Number(i.billed_amount) ? '$' + Number(i.billed_amount).toFixed(2) : '–'}`).join('<br>');
+    const pu = s.stop_type === 'pickup';
+    const items = s.stop_items.map(i => `${i.qty_delivered != null ? `${pu ? 'Picked up' : 'Delivered'} ${i.qty_delivered} of ${i.qty_ordered}` : `${i.qty_ordered} ${pu ? 'to pick up' : 'ordered'}`} ${esc(i.unit_type)} · billed ${Number(i.billed_amount) ? '$' + Number(i.billed_amount).toFixed(2) : '–'}`).join('<br>');
     return `<div class="detail-stop">
-      <div><strong>Stop ${s.seq} · ${esc(s.consignee)}</strong><br><span style="color:var(--muted)">${esc(s.address || '')}</span><br>${items}${scanInfo(s)}</div>
+      <div><strong>Stop ${s.seq} · ${pu ? '<span class="tag-pu">Pickup</span> ' : ''}${esc(s.consignee)}</strong><br><span style="color:var(--muted)">${esc(s.address || '')}</span><br>${items}${scanInfo(s)}</div>
       <div class="mono" style="text-align:right">Window ${time(s.window_start)}–${time(s.window_end)}<br>
         Arrived ${time(s.arrived_at)} · Departed ${time(s.departed_at)}<br>${s.odometer != null ? `Odometer ${s.odometer} · ${s.leg_miles} mi from previous<br>` : l.hub_required && s.status === 'pending' ? '<span style="color:var(--muted)">Odometer due on arrival</span><br>' : ''}
         <span class="pill s-${s.status === 'pending' ? 'planned' : s.status === 'arrived' ? 'in_progress' : s.status === 'exception' ? 'cancelled' : 'delivered'}">${s.status === 'exception' ? esc(issueLabel(s)) : ({pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered'}[s.status] || esc(s.status))}</span>
@@ -584,9 +590,11 @@ async function showDetail(id) {
       const e2 = (await sb.from('load_billing').update(upd).eq('load_id', id)).error;
       if (e2) throw e2;
       const total = Number(upd.linehaul ?? b?.linehaul ?? 0) + Number(upd.fuel_surcharge ?? b?.fuel_surcharge ?? 0);
-      const split = allocate(total, sorted.map(s => ({ items: s.stop_items.map(i => ({ qty: Number(i.qty_ordered) || 0 })) })));
-      for (const [si, s] of sorted.entries()) for (const [ii, it] of s.stop_items.entries()) {
-        const e3 = (await sb.from('stop_items').update({ billed_amount: split[si][ii] }).eq('id', it.id)).error;
+      const dels = sorted.filter(s => s.stop_type !== 'pickup');
+      const split = dels.length ? allocate(total, dels.map(s => ({ items: s.stop_items.map(i => ({ qty: Number(i.qty_ordered) || 0 })) }))) : [];
+      for (const s of sorted) for (const [ii, it] of s.stop_items.entries()) {
+        const di = dels.indexOf(s), amt = di >= 0 ? split[di][ii] : 0;
+        const e3 = (await sb.from('stop_items').update({ billed_amount: amt }).eq('id', it.id)).error;
         if (e3) throw e3;
       }
       await loadList(); showDetail(id);
@@ -609,6 +617,7 @@ const FIELDS = [
   ['qty', 'Quantity', /qty|quantity|pallets?|cases|pieces|pcs|units|count|plts?|cages?|totes?|boxes/i],
   ['unit', 'Unit', /unit|uom|type/i],
   ['route', 'Route / load no.', /route|load|trip|run|truck/i],
+  ['type', 'Pickup or delivery', /^type$|stop ?type|p\/?u|pu ?\/ ?del|pick|action|activity/i],
 ];
 let imp = { rows: [], header: 0, map: {} };
 
@@ -678,7 +687,7 @@ function guessMap() {
   imp.map = {};
   const used = new Set();
   // most specific first, so "Store #" goes to code and "Store name" to name
-  for (const key of ['code', 'route', 'qty', 'unit', 'zip', 'state', 'city', 'address', 'wend', 'wstart', 'name']) {
+  for (const key of ['type', 'code', 'route', 'qty', 'unit', 'zip', 'state', 'city', 'address', 'wend', 'wstart', 'name']) {
     const [, , re] = FIELDS.find(f => f[0] === key);
     const i = head.findIndex((h, j) => h && !used.has(j) && re.test(h));
     if (i >= 0) { imp.map[key] = i; used.add(i); }
@@ -708,7 +717,7 @@ function importRows() {
     const unit = UNITS.find(u => unitRaw.startsWith(u.replace(/e?s$/, ''))) || unitDefault;
     const row = { i, name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address: addr,
       window_start: toTime(ws), window_end: toTime(we), qty: parseFloat(String(g(r, 'qty')).replace(/[^\d.]/g, '')) || 0, unit,
-      route: String(g(r, 'route')).trim() };
+      route: String(g(r, 'route')).trim(), type: /^\s*p/i.test(String(g(r, 'type'))) ? 'pickup' : 'delivery' };
     row.ok = !!(row.name || row.code);
     row.loc = row.ok ? findLoc(row) : null;
     return row;
@@ -743,7 +752,7 @@ async function drawImport() {
     <div class="tablewrap" style="max-height:360px;overflow:auto"><table class="imp-tbl">
       <thead><tr><th>Row</th><th>Load</th><th>Delivery customer</th><th>Code</th><th>Address</th><th>Window</th><th class="num">Qty</th><th></th></tr></thead>
       <tbody>${rows.map(r => `<tr style="${r.ok ? '' : 'opacity:.45'}"><td class="mono">${imp.header + r.i + 2}</td><td class="mono">${esc(groupBy === 'route' ? r.route : groupBy === 'all' ? 'one load' : 'own load')}</td>
-        <td>${esc(r.loc ? r.loc.name : r.name)}</td><td class="mono">${esc(r.code)}</td><td>${esc(r.address || r.loc?.address || '')}</td>
+        <td>${r.type === 'pickup' ? '<span class="tag-pu">Pickup</span> ' : ''}${esc(r.loc ? r.loc.name : r.name)}</td><td class="mono">${esc(r.code)}</td><td>${esc(r.address || r.loc?.address || '')}</td>
         <td class="mono">${esc([r.window_start, r.window_end].filter(Boolean).join('–'))}</td><td class="num mono">${r.qty} ${esc(r.unit)}</td>
         <td>${!r.ok ? 'skipped' : r.loc ? '<span class="tag-old">On file</span>' : '<span class="tag-new">New – will be added</span>'}</td></tr>`).join('')}</tbody></table></div>
     <div class="row" style="margin-top:12px"><button class="btn primary" id="imp-go" ${$('imp-cust').value && rows.some(r => r.ok) ? '' : 'disabled'}>Create loads</button>
@@ -758,7 +767,7 @@ async function drawImport() {
     const g = $('imp-group').value, groups = new Map();
     ok.forEach((r, n) => { const k = g === 'route' ? (r.route || '(no route)') : g === 'all' ? 'all' : 'row' + n; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
     const payload = [...groups.entries()].map(([k, list]) => ({ load_no: g === 'route' && k !== '(no route)' ? k : null,
-      stops: list.map(r => ({ name: r.name, code: r.code, address: r.address, window_start: r.window_start, window_end: r.window_end, unit: r.unit, qty: r.qty })) }));
+      stops: list.map(r => ({ type: r.type, name: r.name, code: r.code, address: r.address, window_start: r.window_start, window_end: r.window_end, unit: r.unit, qty: r.qty })) }));
     $('imp-go').disabled = true;
     const { data, error } = await sb.rpc('create_loads_from_import', { p_customer_id: $('imp-cust').value, p_date: $('imp-date').value,
       p_loads: payload, p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York' });

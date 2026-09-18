@@ -170,7 +170,7 @@
       </div>
       <div id="x-msg" style="margin-top:6px"></div>
 
-      <h3>Delivery customers</h3>
+      <h3>Delivery customers and pickup points</h3>
       <p class="hint">The stores, DCs and job sites this customer's loads deliver to, with their contacts and notification emails. Stops are picked from this list; new ones are added automatically when a load is saved or a delivery list is imported.</p>
       <div class="row" style="margin-bottom:10px">
         <button class="btn" id="dl-tpl" type="button">Download template (with this customer's list)</button>
@@ -181,12 +181,13 @@
       <div class="row" style="margin-bottom:8px"><label for="dl-q" style="flex:1 1 240px">Search<input id="dl-q" placeholder="name, code or town"></label>
         <label style="flex-direction:row;align-items:center;gap:8px;height:40px"><input type="checkbox" id="dl-inactive" style="height:auto"> Show inactive</label></div>
       <div class="tablewrap" style="max-height:320px;overflow:auto"><table style="min-width:760px">
-        <thead><tr><th>Name</th><th>Code</th><th>Address</th><th>Window</th><th>Phone</th><th>Email</th><th>Notices</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Type</th><th>Code</th><th>Address</th><th>Window</th><th>Phone</th><th>Email</th><th>Notices</th><th></th></tr></thead>
         <tbody id="dl-list"></tbody></table></div>
       <details id="dl-edit" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600" id="dl-title">Add a delivery customer</summary>
         <div class="grid" style="margin-top:10px">
           <label for="dl-name" style="grid-column:span 2">Name<input id="dl-name" placeholder="e.g. XYZ Retail - Store 212"></label>
           <label for="dl-code">Code / store #<input id="dl-code"></label>
+          <label for="dl-kind">Type<select id="dl-kind"><option value="delivery">Delivery point</option><option value="pickup">Pickup point (supplier)</option><option value="both">Both</option></select></label>
           <label for="dl-contact">Contact name<input id="dl-contact"></label>
           <label for="dl-phone">Phone<input id="dl-phone" type="tel"></label>
           <label for="dl-email">Email<input id="dl-email" type="email"></label>
@@ -437,7 +438,7 @@ $('doe-check').onclick = async () => {
 const SECTION = { fixed: 'Fixed components', variable: 'Variable components', extras: 'Extras on request (extra tractor, trailer, truck, driver)', pass_through: 'Pass-through expense' };
 const SECTION_ORDER = ['fixed', 'variable', 'extras', 'pass_through'];
 const slug = (t) => String(t || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const SOURCES = { fixed: 'Fixed quantity', manual: 'Entered each week', miles: 'Total miles (loads)', loads: 'Number of loads', stops: 'Number of stops', tolls: 'Tolls on the loads ($)', extras: 'Scheduled extras',
+const SOURCES = { fixed: 'Fixed quantity', manual: 'Entered each week', miles: 'Total miles (loads)', loads: 'Number of loads', stops: 'Number of stops (all)', deliveries: 'Number of deliveries', pickups: 'Number of pickups', tolls: 'Tolls on the loads ($)', extras: 'Scheduled extras',
   'unit:pallets': 'Pallets delivered', 'unit:boxes': 'Boxes delivered', 'unit:cages': 'Cages delivered', 'unit:totes': 'Totes delivered', 'unit:parts': 'Parts delivered' };
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString() : '';
 let versions = [], custInfo = null;
@@ -647,14 +648,15 @@ async function loadDl() {
 function drawDl() {
   const q = $('dl-q').value.trim().toLowerCase(), inact = $('dl-inactive').checked;
   const rows = dlRows.filter(d => (inact || d.active) && (!q || [d.name, d.code, d.address].join(' ').toLowerCase().includes(q)));
-  $('dl-list').innerHTML = rows.map(d => `<tr style="${d.active ? '' : 'opacity:.5'}"><td>${esc(d.name)}</td><td class="mono">${esc(d.code || '')}</td><td>${esc(d.address || '')}</td>
+  $('dl-list').innerHTML = rows.map(d => `<tr style="${d.active ? '' : 'opacity:.5'}"><td>${esc(d.name)}</td><td>${({ delivery: 'Delivery', pickup: 'Pickup', both: 'Both' })[d.kind] || 'Delivery'}</td><td class="mono">${esc(d.code || '')}</td><td>${esc(d.address || '')}</td>
     <td class="mono">${d.window_start ? d.window_start.slice(0, 5) + '–' + (d.window_end || '').slice(0, 5) : ''}</td>
     <td class="mono">${esc(d.phone || '')}</td><td>${esc(d.email || '')}</td>
     <td>${d.notify ? `<span class="current" title="${esc(d.notify_email || d.email || '')}">On</span>` : ''}</td>
-    <td><button class="btn small" data-dl="${d.id}">Edit</button></td></tr>`).join('') || `<tr><td colspan="8" class="hint">${dlRows.length ? 'No matches.' : 'None yet. They are added as loads are entered or lists imported, or add one below.'}</td></tr>`;
+    <td><button class="btn small" data-dl="${d.id}">Edit</button></td></tr>`).join('') || `<tr><td colspan="9" class="hint">${dlRows.length ? 'No matches.' : 'None yet. They are added as loads are entered or lists imported, or add one below.'}</td></tr>`;
   document.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
     const d = dlRows.find(x => x.id === b.dataset.dl); dlEditing = d.id;
     $('dl-name').value = d.name; $('dl-code').value = d.code || ''; $('dl-contact').value = d.contact || ''; $('dl-addr').value = d.address || '';
+    $('dl-kind').value = d.kind || 'delivery';
     $('dl-phone').value = d.phone || ''; $('dl-email').value = d.email || ''; $('dl-notify').checked = !!d.notify; $('dl-nemail').value = d.notify_email || '';
     $('dl-ws').value = (d.window_start || '').slice(0, 5); $('dl-we').value = (d.window_end || '').slice(0, 5); $('dl-notes').value = d.notes || ''; $('dl-active').checked = d.active;
     $('dl-title').textContent = 'Edit ' + d.name; $('dl-edit').open = true; $('dl-msg').innerHTML = '';
@@ -662,7 +664,7 @@ function drawDl() {
 }
 function clearDl() {
   dlEditing = null; ['dl-name', 'dl-code', 'dl-contact', 'dl-phone', 'dl-email', 'dl-nemail', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes'].forEach(id => $(id).value = '');
-  $('dl-notify').checked = false;
+  $('dl-notify').checked = false; $('dl-kind').value = 'delivery';
   $('dl-active').checked = true; $('dl-title').textContent = 'Add a delivery customer';
 }
 $('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; };
@@ -671,6 +673,7 @@ $('dl-save').onclick = async () => {
   const row = { name: $('dl-name').value.trim(), code: $('dl-code').value.trim() || null, contact: $('dl-contact').value.trim() || null,
     address: $('dl-addr').value.trim() || null, window_start: $('dl-ws').value || null, window_end: $('dl-we').value || null,
     notes: $('dl-notes').value.trim() || null, active: $('dl-active').checked,
+    kind: $('dl-kind').value,
     phone: $('dl-phone').value.trim() || null, email: $('dl-email').value.trim().toLowerCase() || null,
     notify: $('dl-notify').checked, notify_email: $('dl-nemail').value.trim().toLowerCase() || null };
   if (row.notify && !row.email && !row.notify_email) { $('dl-msg').innerHTML = '<span class="error">Add an email to send notifications to.</span>'; return; }
