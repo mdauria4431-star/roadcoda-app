@@ -6,6 +6,8 @@
 <title>RoadCoda · Rates</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
@@ -169,17 +171,27 @@
       <div id="x-msg" style="margin-top:6px"></div>
 
       <h3>Delivery customers</h3>
-      <p class="hint">The stores, DCs and job sites this customer's loads deliver to. Stops are picked from this list; new ones are added automatically when a load is saved or a delivery list is imported.</p>
+      <p class="hint">The stores, DCs and job sites this customer's loads deliver to, with their contacts and notification emails. Stops are picked from this list; new ones are added automatically when a load is saved or a delivery list is imported.</p>
+      <div class="row" style="margin-bottom:10px">
+        <button class="btn" id="dl-tpl" type="button">Download template (with this customer's list)</button>
+        <label for="dl-file" class="btn" style="flex-direction:row;align-items:center;cursor:pointer;color:var(--ink);font-size:15px">Upload list (Excel, CSV or PDF)
+          <input id="dl-file" type="file" accept=".xlsx,.xls,.csv,.pdf,.txt" style="display:none"></label>
+      </div>
+      <div id="dl-up" hidden class="cpi" style="margin-bottom:12px"></div>
       <div class="row" style="margin-bottom:8px"><label for="dl-q" style="flex:1 1 240px">Search<input id="dl-q" placeholder="name, code or town"></label>
         <label style="flex-direction:row;align-items:center;gap:8px;height:40px"><input type="checkbox" id="dl-inactive" style="height:auto"> Show inactive</label></div>
       <div class="tablewrap" style="max-height:320px;overflow:auto"><table style="min-width:760px">
-        <thead><tr><th>Name</th><th>Code</th><th>Address</th><th>Window</th><th>Notes</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Code</th><th>Address</th><th>Window</th><th>Phone</th><th>Email</th><th>Notices</th><th></th></tr></thead>
         <tbody id="dl-list"></tbody></table></div>
       <details id="dl-edit" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600" id="dl-title">Add a delivery customer</summary>
         <div class="grid" style="margin-top:10px">
           <label for="dl-name" style="grid-column:span 2">Name<input id="dl-name" placeholder="e.g. XYZ Retail - Store 212"></label>
           <label for="dl-code">Code / store #<input id="dl-code"></label>
-          <label for="dl-contact">Contact<input id="dl-contact"></label>
+          <label for="dl-contact">Contact name<input id="dl-contact"></label>
+          <label for="dl-phone">Phone<input id="dl-phone" type="tel"></label>
+          <label for="dl-email">Email<input id="dl-email" type="email"></label>
+          <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;height:40px"><input type="checkbox" id="dl-notify" style="height:auto"> Send delivery notifications</label>
+          <label for="dl-nemail">Notification email (if different)<input id="dl-nemail" type="email" placeholder="blank = email"></label>
           <label for="dl-addr" style="grid-column:span 2">Address<input id="dl-addr" placeholder="Street, Town, ST 00000"></label>
           <label for="dl-ws">Window opens<input id="dl-ws" type="time"></label>
           <label for="dl-we">Window closes<input id="dl-we" type="time"></label>
@@ -636,17 +648,21 @@ function drawDl() {
   const q = $('dl-q').value.trim().toLowerCase(), inact = $('dl-inactive').checked;
   const rows = dlRows.filter(d => (inact || d.active) && (!q || [d.name, d.code, d.address].join(' ').toLowerCase().includes(q)));
   $('dl-list').innerHTML = rows.map(d => `<tr style="${d.active ? '' : 'opacity:.5'}"><td>${esc(d.name)}</td><td class="mono">${esc(d.code || '')}</td><td>${esc(d.address || '')}</td>
-    <td class="mono">${d.window_start ? d.window_start.slice(0, 5) + '–' + (d.window_end || '').slice(0, 5) : ''}</td><td>${esc(d.notes || '')}</td>
-    <td><button class="btn small" data-dl="${d.id}">Edit</button></td></tr>`).join('') || `<tr><td colspan="6" class="hint">${dlRows.length ? 'No matches.' : 'None yet. They are added as loads are entered or lists imported, or add one below.'}</td></tr>`;
+    <td class="mono">${d.window_start ? d.window_start.slice(0, 5) + '–' + (d.window_end || '').slice(0, 5) : ''}</td>
+    <td class="mono">${esc(d.phone || '')}</td><td>${esc(d.email || '')}</td>
+    <td>${d.notify ? `<span class="current" title="${esc(d.notify_email || d.email || '')}">On</span>` : ''}</td>
+    <td><button class="btn small" data-dl="${d.id}">Edit</button></td></tr>`).join('') || `<tr><td colspan="8" class="hint">${dlRows.length ? 'No matches.' : 'None yet. They are added as loads are entered or lists imported, or add one below.'}</td></tr>`;
   document.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => {
     const d = dlRows.find(x => x.id === b.dataset.dl); dlEditing = d.id;
     $('dl-name').value = d.name; $('dl-code').value = d.code || ''; $('dl-contact').value = d.contact || ''; $('dl-addr').value = d.address || '';
+    $('dl-phone').value = d.phone || ''; $('dl-email').value = d.email || ''; $('dl-notify').checked = !!d.notify; $('dl-nemail').value = d.notify_email || '';
     $('dl-ws').value = (d.window_start || '').slice(0, 5); $('dl-we').value = (d.window_end || '').slice(0, 5); $('dl-notes').value = d.notes || ''; $('dl-active').checked = d.active;
     $('dl-title').textContent = 'Edit ' + d.name; $('dl-edit').open = true; $('dl-msg').innerHTML = '';
   });
 }
 function clearDl() {
-  dlEditing = null; ['dl-name', 'dl-code', 'dl-contact', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes'].forEach(id => $(id).value = '');
+  dlEditing = null; ['dl-name', 'dl-code', 'dl-contact', 'dl-phone', 'dl-email', 'dl-nemail', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes'].forEach(id => $(id).value = '');
+  $('dl-notify').checked = false;
   $('dl-active').checked = true; $('dl-title').textContent = 'Add a delivery customer';
 }
 $('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; };
@@ -654,16 +670,173 @@ $('dl-save').onclick = async () => {
   if (!$('dl-name').value.trim()) { $('dl-msg').innerHTML = '<span class="error">Enter the name.</span>'; return; }
   const row = { name: $('dl-name').value.trim(), code: $('dl-code').value.trim() || null, contact: $('dl-contact').value.trim() || null,
     address: $('dl-addr').value.trim() || null, window_start: $('dl-ws').value || null, window_end: $('dl-we').value || null,
-    notes: $('dl-notes').value.trim() || null, active: $('dl-active').checked };
+    notes: $('dl-notes').value.trim() || null, active: $('dl-active').checked,
+    phone: $('dl-phone').value.trim() || null, email: $('dl-email').value.trim().toLowerCase() || null,
+    notify: $('dl-notify').checked, notify_email: $('dl-nemail').value.trim().toLowerCase() || null };
+  if (row.notify && !row.email && !row.notify_email) { $('dl-msg').innerHTML = '<span class="error">Add an email to send notifications to.</span>'; return; }
   if (dlEditing && row.address) {   // open stops for this delivery customer with no address pick it up
     const { data: open } = await sb.from('stops').select('id, loads!inner(invoice_id)').eq('location_id', dlEditing).is('address', null).is('loads.invoice_id', null);
     if (open?.length) await sb.from('stops').update({ address: row.address }).in('id', open.map(x => x.id));
   }
   const { error } = dlEditing ? await sb.from('delivery_locations').update(row).eq('id', dlEditing)
                               : await sb.from('delivery_locations').insert({ ...row, customer_id: $('cust').value });
-  if (error) { $('dl-msg').innerHTML = `<span class="error">${esc(/duplicate|unique/i.test(error.message) ? 'A delivery customer with that name or code already exists for this customer.' : error.message)}</span>`; return; }
+  if (error) { $('dl-msg').innerHTML = `<span class="error">${esc(/email_check/i.test(error.message) ? 'That email address does not look right.' : /duplicate|unique/i.test(error.message) ? 'A delivery customer with that name or code already exists for this customer.' : error.message)}</span>`; return; }
   await loadDl(); $('dl-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
+
+async function pdfRows(buf) {
+  const lib = window['pdfjs-dist/build/pdf'];
+  if (!lib) throw new Error('The PDF reader did not load. Check your internet connection and refresh.');
+  lib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const pdf = await lib.getDocument({ data: buf }).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    const byY = {};
+    tc.items.filter(i => i.str.trim()).forEach(i => { const y = Math.round(i.transform[5] / 3); (byY[y] = byY[y] || []).push({ x: i.transform[4], w: i.width, t: i.str }); });
+    Object.keys(byY).map(Number).sort((a, b) => b - a).forEach(y => {
+      const items = byY[y].sort((a, b) => a.x - b.x), cells = [];
+      for (const it of items) {
+        const last = cells[cells.length - 1];
+        if (last && it.x - (last.x + last.w) < 6) { last.t += (it.x - (last.x + last.w) > 1 ? ' ' : '') + it.t; last.w = it.x + it.w - last.x; }
+        else cells.push({ ...it });
+      }
+      lines.push(cells);
+    });
+  }
+  // Use the header line's column positions to line up every other row
+  const hi = Math.max(0, lines.slice(0, 20).reduce((best, l, i) => (l.filter(c => /[A-Za-z]/.test(c.t)).length > (lines[best]?.filter(c => /[A-Za-z]/.test(c.t)).length || 0) ? i : best), 0));
+  const cols = lines[hi].map(c => c.x);
+  return lines.slice(hi).map(l => {
+    const row = cols.map(() => '');
+    l.forEach(c => { let k = 0; cols.forEach((x, j) => { if (c.x + 4 >= x) k = j; }); row[k] = row[k] ? row[k] + ' ' + c.t : c.t; });
+    return row;
+  });
+}
+
+// "6:00 AM", "0600", "6am", 0.25 (Excel) -> "06:00"
+function toTime(v) {
+  if (v === '' || v == null) return '';
+  if (typeof v === 'number') { const m = Math.round((v % 1) * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+  const t = String(v).trim().toLowerCase().match(/^(\d{1,2}):?(\d{2})?\s*(a|p)?/);
+  if (!t) return '';
+  let h = parseInt(t[1], 10), m = parseInt(t[2] || '0', 10);
+  if (String(v).replace(/\D/g, '').length === 4 && !String(v).includes(':')) { h = parseInt(String(v).slice(0, 2), 10); m = parseInt(String(v).slice(2, 4), 10); }
+  if (t[3] === 'p' && h < 12) h += 12; if (t[3] === 'a' && h === 12) h = 0;
+  return h < 24 && m < 60 ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : '';
+}
+
+
+// ---------- Delivery customer template and upload ----------
+const DL_HEAD = ['Name', 'Store #', 'Address', 'City', 'State', 'Zip', 'Window Opens', 'Window Closes', 'Contact', 'Phone', 'Email', 'Notify (Y/N)', 'Notification Email', 'Notes', 'Active (Y/N)'];
+$('dl-tpl').onclick = () => {
+  if (!window.XLSX) { alert('The spreadsheet tool did not load. Check your internet connection and refresh.'); return; }
+  const cust = $('cust').selectedOptions[0]?.textContent || 'customer';
+  const rows = dlRows.map(d => [d.name, d.code || '', d.address || '', '', '', '', (d.window_start || '').slice(0, 5), (d.window_end || '').slice(0, 5),
+    d.contact || '', d.phone || '', d.email || '', d.notify ? 'Y' : 'N', d.notify_email || '', d.notes || '', d.active ? 'Y' : 'N']);
+  const ws = XLSX.utils.aoa_to_sheet([DL_HEAD, ...(rows.length ? rows : [['XYZ Retail - Store 212', '212', '500 Farmington Ave', 'Hartford', 'CT', '06105', '06:00', '08:00', 'Pat Lee', '(860) 555-0212', 'store212@example.com', 'Y', '', 'Dock 2, ring bell', 'Y']])]);
+  ws['!cols'] = [34, 9, 30, 16, 7, 8, 13, 13, 18, 16, 28, 12, 28, 30, 12].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Delivery customers');
+  XLSX.writeFile(wb, `Delivery-customers-${cust.replace(/[^A-Za-z0-9]+/g, '-')}.xlsx`);
+};
+
+const DL_FIELDS = [   // matched in this order, so the specific ones win
+  ['notify_email', 'Notification email', /notif.*mail|alert.*mail|notice.*mail/i],
+  ['email', 'Email', /e-?mail/i],
+  ['notify', 'Notify (Y/N)', /notify|notification|alerts?|notices?/i],
+  ['contact', 'Contact name', /contact|attn|attention|manager/i],
+  ['phone', 'Phone', /phone|tel|mobile|cell/i],
+  ['code', 'Store # / code', /store ?(#|no|num)|code|site ?(#|no|id)|loc(ation)? ?(#|no|id)|acct|account ?(#|no)|^#$/i],
+  ['address', 'Address', /address|street|addr/i],
+  ['city', 'City', /city|town/i],
+  ['state', 'State', /^st$|state|prov/i],
+  ['zip', 'Zip', /zip|postal/i],
+  ['wstart', 'Window opens', /open|start|from|earliest|window|hours/i],
+  ['wend', 'Window closes', /close|end|latest|until/i],
+  ['notes', 'Notes', /note|instruction|dock|gate|comment/i],
+  ['active', 'Active (Y/N)', /active|status/i],
+  ['name', 'Name', /name|consignee|customer|location|store|ship ?to|deliver/i],
+];
+let dlUp = { rows: [], header: 0, map: {} };
+const yn = (v) => /^(y|yes|true|1|x|on)$/i.test(String(v).trim()) ? true : /^(n|no|false|0|off)$/i.test(String(v).trim()) ? false : null;
+const nkey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+$('dl-file').onchange = async () => {
+  const f = $('dl-file').files[0]; if (!f) return;
+  const box = $('dl-up'); box.hidden = false; box.innerHTML = '<span class="ok">Reading the file…</span>';
+  try {
+    const buf = await f.arrayBuffer();
+    let rows;
+    if (/\.pdf$/i.test(f.name)) rows = await pdfRows(buf);
+    else {
+      if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Check your internet connection and refresh.');
+      const wb = XLSX.read(buf, { type: 'array', raw: /\.(csv|txt)$/i.test(f.name) });
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+    }
+    rows = rows.map(r => r.map(c => (c == null ? '' : c))).filter(r => r.some(c => String(c).trim() !== ''));
+    if (!rows.length) throw new Error('No rows found in that file.');
+    dlUp.rows = rows;
+    dlUp.header = Math.max(0, rows.slice(0, 15).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
+    dlGuess(); dlDraw();
+  } catch (e) { box.innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
+  $('dl-file').value = '';
+};
+function dlGuess() {
+  const head = dlUp.rows[dlUp.header].map(h => String(h).trim()), used = new Set();
+  dlUp.map = {};
+  for (const [k, , re] of DL_FIELDS) { const i = head.findIndex((h, j) => h && !used.has(j) && re.test(h)); if (i >= 0) { dlUp.map[k] = i; used.add(i); } }
+}
+function dlParsed() {
+  const g = (r, k) => dlUp.map[k] != null ? r[dlUp.map[k]] : '';
+  return dlUp.rows.slice(dlUp.header + 1).map((r, i) => {
+    let ws = g(r, 'wstart'), we = g(r, 'wend');
+    if (typeof ws === 'string' && /[-–]/.test(ws) && !we) { const [a, b] = ws.split(/\s*[-–]\s*/); ws = a; we = b; }
+    const zip = String(g(r, 'zip')).trim();
+    const address = [g(r, 'address'), g(r, 'city'), [g(r, 'state'), /^\d{3,4}$/.test(zip) ? zip.padStart(5, '0') : zip].filter(Boolean).join(' ')]
+      .map(x => String(x).trim()).filter(Boolean).join(', ');
+    const row = { i, name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address, window_start: toTime(ws), window_end: toTime(we),
+      contact: String(g(r, 'contact')).trim(), phone: String(g(r, 'phone')).trim(), email: String(g(r, 'email')).trim().toLowerCase(),
+      notify_email: String(g(r, 'notify_email')).trim().toLowerCase(), notify: yn(g(r, 'notify')), notes: String(g(r, 'notes')).trim(), active: yn(g(r, 'active')) };
+    row.ok = !!(row.name || row.code);
+    row.badEmail = [row.email, row.notify_email].some(e => e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+    row.match = row.ok ? (dlRows.find(d => row.code && (d.code || '').toLowerCase() === row.code.toLowerCase()) || dlRows.find(d => row.name && nkey(d.name) === nkey(row.name))) : null;
+    return row;
+  });
+}
+function dlDraw() {
+  const head = dlUp.rows[dlUp.header].map(h => String(h).trim());
+  const opts = (sel) => '<option value="">(not in file)</option>' + head.map((h, j) => `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(h || 'Column ' + (j + 1))}</option>`).join('');
+  const rows = dlParsed(), ok = rows.filter(r => r.ok), bad = ok.filter(r => r.badEmail);
+  $('dl-up').innerHTML = `
+    <div class="row" style="justify-content:space-between"><b>Upload delivery customers</b><button class="btn small" id="dl-up-x" type="button">Close</button></div>
+    <details style="margin-top:8px" ${Object.keys(dlUp.map).length < 3 ? 'open' : ''}><summary style="cursor:pointer;font-weight:600">Match the file's columns (${Object.keys(dlUp.map).length} found automatically)</summary>
+      <div class="row" style="margin-top:8px"><label>Header row<select id="dl-head">${dlUp.rows.slice(0, 15).map((r, i) => `<option value="${i}" ${i === dlUp.header ? 'selected' : ''}>Row ${i + 1}: ${esc(r.filter(Boolean).slice(0, 3).join(' | ').slice(0, 50))}</option>`).join('')}</select></label></div>
+      <div class="grid" style="margin-top:8px">${DL_FIELDS.map(([k, label]) => `<label>${label}<select data-dlmap="${k}">${opts(dlUp.map[k])}</select></label>`).join('')}</div>
+    </details>
+    <p style="margin-top:10px"><b>${ok.length}</b> rows · <span class="current">${ok.filter(r => !r.match).length} new</span> ·
+      ${ok.filter(r => r.match).length} update existing ${rows.length - ok.length ? ` · ${rows.length - ok.length} skipped (no name or code)` : ''}
+      ${bad.length ? ` · <span class="error">${bad.length} with an email that doesn't look right (rows ${bad.map(r => dlUp.header + r.i + 2).join(', ')})</span>` : ''}</p>
+    <p class="hint">Blank cells never erase what's already on file. Existing delivery customers are matched by store # first, then by name.</p>
+    <div class="tablewrap" style="max-height:300px;overflow:auto"><table style="min-width:900px">
+      <thead><tr><th>Row</th><th>Name</th><th>Store #</th><th>Address</th><th>Window</th><th>Phone</th><th>Email</th><th>Notify</th><th></th></tr></thead>
+      <tbody>${rows.map(r => `<tr style="${r.ok ? '' : 'opacity:.45'}"><td class="mono">${dlUp.header + r.i + 2}</td><td>${esc(r.name || r.match?.name || '')}</td><td class="mono">${esc(r.code)}</td>
+        <td>${esc(r.address)}</td><td class="mono">${esc([r.window_start, r.window_end].filter(Boolean).join('–'))}</td><td class="mono">${esc(r.phone)}</td>
+        <td${r.badEmail ? ' class="error"' : ''}>${esc(r.email)}</td><td>${r.notify == null ? '' : r.notify ? 'Y' : 'N'}</td>
+        <td>${!r.ok ? 'skipped' : r.match ? 'Update' : '<span class="current">New</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="row" style="margin-top:10px"><button class="btn primary" id="dl-up-go" ${ok.length && !bad.length ? '' : 'disabled'}>Save ${ok.length} delivery customer${ok.length === 1 ? '' : 's'}</button><span id="dl-up-msg"></span></div>`;
+  $('dl-up-x').onclick = () => { $('dl-up').hidden = true; };
+  $('dl-head').onchange = () => { dlUp.header = parseInt($('dl-head').value, 10); dlGuess(); dlDraw(); };
+  document.querySelectorAll('[data-dlmap]').forEach(sel => sel.onchange = () => { if (sel.value === '') delete dlUp.map[sel.dataset.dlmap]; else dlUp.map[sel.dataset.dlmap] = parseInt(sel.value, 10); dlDraw(); });
+  $('dl-up-go').onclick = async () => {
+    $('dl-up-go').disabled = true;
+    const payload = ok.map(({ name, code, address, window_start, window_end, contact, phone, email, notify_email, notify, notes, active }) =>
+      ({ name, code, address, window_start, window_end, contact, phone, email, notify_email, notify, notes, active }));
+    const { data, error } = await sb.rpc('upsert_delivery_locations', { p_customer_id: $('cust').value, p_rows: payload });
+    if (error) { $('dl-up-go').disabled = false; $('dl-up-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    $('dl-up').innerHTML = `<span class="ok">Saved: ${data.added} added, ${data.updated} updated.</span>`;
+    await loadDl();
+  };
+}
 
 start();
 </script>
