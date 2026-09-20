@@ -110,8 +110,9 @@ header .brand span{color:var(--brand)}
 /* Only the menu scrolls. Collapse and Dark/Light are controls you reach for,
    so they stay pinned to the bottom instead of sliding below the fold. */
 header nav{
-  display:flex!important;flex-direction:column;gap:2px;align-items:stretch;font-size:14px;
-  flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  display:flex!important;flex-direction:column;gap:2px!important;align-items:stretch;font-size:14px;
+  flex-wrap:nowrap!important;          /* belt and braces if an inline style survives */
+  flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
   scrollbar-width:thin;
 }
 /* In a height-constrained flex column every child shrinks by default, which

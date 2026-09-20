@@ -97,6 +97,12 @@
       brand.appendChild(words);
     }
 
+    // The pages carry an inline style on <nav> for the old top bar
+    // (display:flex; gap:14px; flex-wrap:wrap). An inline style beats any
+    // stylesheet, and flex-wrap:wrap in a height-limited column wraps the menu
+    // into a second column over the page. Drop it; app.css takes over.
+    nav.removeAttribute('style');
+
     // Index the links access.js left in place
     var links = {};
     Array.prototype.forEach.call(nav.querySelectorAll('a'), function (a) { links[href(a)] = a; });
