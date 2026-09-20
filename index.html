@@ -168,13 +168,14 @@ async function load() {
   $('title').textContent = day === today ? 'Today' : new Date(day + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const sel = 'id, load_no, status, miles, driver_id, customer_id, invoice_id, hub_required, hub_start, hub_end, drivers(full_name), equipment(unit_no), customers(name), ' +
               'stops(id, seq, stop_type, needs_review, added_note, consignee, address, status, window_start, window_end, eta, arrived_at, departed_at, issue_type, late_reason)';
-  const [L, T, P, I, D] = await Promise.all([
+  const [L, T, P, I, D, AE] = await Promise.all([
     sb.from('loads').select(sel).eq('service_date', day).neq('status', 'cancelled').order('load_no'),
     sb.from('loads').select('id, load_no, driver_id, status, customers(name), stops(id)').eq('service_date', tomorrow).neq('status', 'cancelled'),
     sb.from('load_profit').select('billed, cost').eq('service_date', day),
     sb.from('invoices').select('id, invoice_no, status, due_date, total, customers(name)').in('status', ['draft', 'approved', 'sent']),
     sb.from('drivers').select('id, full_name, cdl_expires, med_card_expires').eq('active', true)
-      .or(`cdl_expires.lte.${addDays(today, 30)},med_card_expires.lte.${addDays(today, 30)}`)
+      .or(`cdl_expires.lte.${addDays(today, 30)},med_card_expires.lte.${addDays(today, 30)}`),
+    sb.from('driver_access_events').select('id, kind, at, driver_id, drivers(full_name)').eq('needs_followup', true).is('handled_at', null).order('at', { ascending: false })
   ]);
   if (L.error) { $('kpis').innerHTML = `<div class="card error">${esc(L.error.message)}</div>`; return; }
   const loads = L.data || [], now = new Date();
@@ -202,6 +203,9 @@ async function load() {
   stops.filter(s => s.needs_review).forEach(s => att.push(['', `<a href="${loadLink(s.load, day)}">Load ${esc(s.load.load_no)}</a> · driver added a stop: ${esc(s.consignee)}${s.added_note ? ' (' + esc(s.added_note) + ')' : ''}`]));
   loads.filter(l => !l.driver_id).forEach(l => att.push(['', `<a href="${loadLink(l, day)}">Load ${esc(l.load_no)}</a> · no driver assigned`]));
   loads.filter(l => l.hub_required && l.status === 'delivered' && l.hub_end == null).forEach(l => att.push(['', `<a href="${loadLink(l, day)}">Load ${esc(l.load_no)}</a> · delivered but the ending odometer is missing (hub miles)`]));
+  // Reset card used / locked after hours: check in with the driver (needs 34_driver_access.sql)
+  (AE.error ? [] : AE.data || []).forEach(e => att.push([e.kind === 'card_locked' ? 'red' : '',
+    `<a href="drivers.html?id=${e.driver_id}">${esc(e.drivers?.full_name || 'Driver')}</a> · ${e.kind === 'card_locked' ? 'reset card locked after too many wrong PINs' : 'used their reset card to sign in a phone'} ${esc(new Date(e.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · check in with them`]));
   // Driver CDL / medical card expired or due within 30 days (needs 32_drivers.sql; skipped quietly before that)
   (D.error ? [] : D.data || []).forEach(d => [['CDL', d.cdl_expires], ['medical card', d.med_card_expires]].forEach(([what, dt]) => {
     if (!dt || dt > addDays(today, 30)) return;

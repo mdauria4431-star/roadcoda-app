@@ -11,6 +11,7 @@
 <meta name="theme-color" content="#1c1f24">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="config.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--warn:#8a4b08;--ok:#1e6b34}
@@ -53,6 +54,12 @@
   .exp-bad{color:var(--late);font-weight:600}.exp-warn{color:var(--warn);font-weight:600}
   .loginbox{display:flex;flex-direction:column;gap:8px;background:#f7f5f0;border-radius:10px;padding:12px 14px}
   .count{font-size:14px;color:var(--muted)}
+  .modal{position:fixed;inset:0;background:rgba(20,22,26,.55);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+  .modal .box{background:#fff;border-radius:14px;padding:22px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center}
+  .modal .qr{padding:10px;background:#fff;border:1px solid var(--line);border-radius:10px}
+  .events{list-style:none;margin:6px 0 0;padding:0;font-size:13px}
+  .events li{display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid #efebe4;flex-wrap:wrap}
+  .events li.flag{color:var(--warn);font-weight:600}
   .paytbl{min-width:640px}.paytbl td,.paytbl th{padding:7px 6px}
   .paytbl tr.def td{color:var(--muted)}
   .paytbl tr.old td{color:#8a857c;text-decoration:line-through}
@@ -98,7 +105,7 @@
         <label class="span2">Full name *<input id="f-full_name" autocomplete="off"></label>
         <label>Employee #<input id="f-employee_no" autocomplete="off"></label>
         <label>Phone<input id="f-phone" type="tel" autocomplete="off"></label>
-        <label class="span2">Email (also the phone app login)<input id="f-email" type="email" autocomplete="off"></label>
+        <label class="span2">Email (optional)<input id="f-email" type="email" autocomplete="off"></label>
         <label class="span2">Address<input id="f-address" autocomplete="off"></label>
         <label class="span2">Emergency contact<input id="f-emergency_name" autocomplete="off" placeholder="Name and relationship"></label>
         <label>Emergency phone<input id="f-emergency_phone" type="tel" autocomplete="off"></label>
@@ -149,14 +156,24 @@
       </div>
 
       <div id="login-sec" hidden>
-        <h3>Phone app login</h3>
+        <h3>Driver app on their phone</h3>
         <div class="loginbox">
           <div id="login-state"></div>
           <div class="row" id="login-actions">
-            <button class="btn primary small" id="send-btn" type="button">Send login link</button>
-            <button class="btn small danger" id="remove-btn" type="button" hidden>Remove login</button>
+            <button class="btn primary small" id="qr-btn" type="button">Set up on a phone (QR code)</button>
+            <button class="btn small" id="copy-btn" type="button">Copy sign-in link</button>
+            <button class="btn small" id="email-btn" type="button">Email sign-in link</button>
+          </div>
+          <div id="card-state" style="margin-top:6px"></div>
+          <div class="row">
+            <button class="btn small" id="card-btn" type="button">Print reset card</button>
+            <button class="btn small" id="unlock-btn" type="button" hidden>Unlock card</button>
+            <button class="btn small danger" id="cardx-btn" type="button" hidden>Cancel card</button>
+            <span style="flex-grow:1"></span>
+            <button class="btn small danger" id="remove-btn" type="button" hidden>Remove app access</button>
           </div>
           <div id="login-msg" class="hint" style="margin:0"></div>
+          <ul class="events" id="events"></ul>
         </div>
       </div>
     </section>
@@ -169,6 +186,21 @@
           <thead><tr><th>Name</th><th>Counted per</th><th>Stops</th><th>Pay driver</th><th>Default pay</th><th>Bill customer</th><th>Default price</th><th title="Only pays / bills on customers that turn it on (Customers page)">Only chosen customers</th><th>GL account</th><th>In use</th><th></th></tr></thead>
           <tbody id="types-body"></tbody></table></div>
         <div id="types-msg" class="hint"></div>
+      </details>
+    </section>
+
+    <section class="card">
+      <details class="types" id="appset"><summary>Driver app sign-in</summary>
+        <p class="hint">Drivers don't use passwords. At onboarding, show the QR code on their record and they scan it; that phone stays signed in.
+          If a phone gets signed out (new phone, cleared browser), the driver scans their <b>reset card</b> and enters their reset PIN, any time of day. Every card use shows on Home so dispatch can check in.</p>
+        <div class="row" style="margin-top:10px">
+          <label for="pin-mode" style="flex:0 1 360px">Reset PIN on the card<select id="pin-mode">
+            <option value="cdl_last4">Last 4 characters of the driver's CDL number</option>
+            <option value="own_pin">A PIN the driver chooses (asked once in the app)</option></select></label>
+          <button class="btn small" id="pin-mode-save" type="button">Save</button>
+          <span id="pin-mode-msg" class="hint"></span>
+        </div>
+        <p class="hint">With the CDL option, tell drivers to keep the card <b>in the truck</b> and their license with them, so one lost item isn't enough to get in.</p>
       </details>
     </section>
 
@@ -191,6 +223,15 @@
   </div>
 </main>
 
+<div class="modal" id="qr-modal" hidden role="dialog" aria-modal="true" aria-labelledby="qr-title">
+  <div class="box">
+    <h2 id="qr-title">Scan with the driver's phone</h2>
+    <div class="qr" id="qr-box"></div>
+    <div class="hint" id="qr-hint" style="margin:0">Open the phone camera and point it at the code, then tap <b>Sign in this phone</b>. Works once; expires in 24 hours.<br>Then have them add RoadCoda to their home screen (the app shows how).</div>
+    <button class="btn primary" id="qr-close" type="button">Done</button>
+  </div>
+</div>
+
 <script>
 if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
   document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
@@ -211,6 +252,7 @@ const FIELDS = ['full_name', 'employee_no', 'phone', 'email', 'address', 'emerge
                 'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'home_customer_id', 'home_terminal_id', 'hire_date', 'end_date', 'notes'];
 const MANAGERS = ['owner', 'dispatcher', 'safety'];
 const SOON_DAYS = 30;
+let cards = [], openEvents = [], events = [];
 let me = null, drivers = [], cur = null, items = [], rates = [], customers = [], terminals = [], showHist = false;
 
 async function start() {
@@ -246,9 +288,11 @@ function expiry(dateStr) {
   return { cls: '', txt: fmtDate(dateStr), level: 0 };
 }
 function loginPill(d) {
-  if (!d.user_id) return '<span class="pill p-none">No login</span>';
+  const flag = openEvents.some(e => e.driver_id === d.id) ? ' <span class="pill p-warn">Check in</span>' : '';
+  if (!d.user_id) return '<span class="pill p-none">Not set up</span>' + flag;
   if (!d.active) return '<span class="pill p-bad">Blocked (inactive)</span>';
-  return '<span class="pill p-ok">Has login</span>';
+  const c = cards.find(x => x.driver_id === d.id);
+  return '<span class="pill p-ok">Set up</span>' + (c ? (c.locked_at ? ' <span class="pill p-bad">Card locked</span>' : '') : ' <span class="pill p-none">No card</span>') + flag;
 }
 
 // ---------- List ----------
@@ -259,12 +303,19 @@ async function load() {
     return;
   }
   drivers = data || [];
-  const [I, R, C, T] = await Promise.all([
+  const [I, R, C, T, K, E, CR] = await Promise.all([
     sb.from('activity_types').select('*').order('sort').order('name'),
     sb.from('driver_pay_rates').select('*').order('effective_from', { ascending: false }),
     sb.from('customers').select('*').order('name'),
     sb.from('terminals').select('*').order('name'),
+    sb.from('driver_reset_cards').select('id, driver_id, active, failed_attempts, locked_at, last_used_at, created_at').eq('active', true),
+    sb.from('driver_access_events').select('id, driver_id, kind, detail, needs_followup, handled_at, at').eq('needs_followup', true).is('handled_at', null),
+    sb.from('carriers').select('reset_pin_mode').maybeSingle(),
   ]);
+  cards = K.error ? [] : (K.data || []); openEvents = E.error ? [] : (E.data || []);
+  if (!CR.error && CR.data) $('pin-mode').value = CR.data.reset_pin_mode || 'cdl_last4';
+  $('pin-mode').disabled = $('pin-mode-save').disabled = me.role !== 'owner';
+  if (me.role !== 'owner') $('pin-mode-msg').textContent = 'Only the owner can change this.';
   if (I.error) $('types-msg').innerHTML = `<span class="error">${esc(I.error.message)} · Run 33_driver_pay.sql in the Supabase SQL Editor.</span>`;
   items = I.data || []; rates = R.data || []; customers = C.data || [];
   const kidsOf = (id) => customers.filter(c => c.parent_customer_id === id);
@@ -323,7 +374,7 @@ $('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (t
 $('new-btn').onclick = () => edit(null);
 $('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history.replaceState(null, '', 'drivers.html'); render(); };
 
-function edit(d) {
+function edit(d, quiet) {
   cur = d;
   FIELDS.forEach(f => { $('f-' + f).value = d && d[f] != null ? d[f] : ''; });
   $('ed-title').textContent = d ? d.full_name : 'New driver';
@@ -332,34 +383,58 @@ function edit(d) {
   $('active-btn').hidden = !d;
   $('active-btn').textContent = d && !d.active ? 'Reactivate' : 'Deactivate';
   $('active-btn').classList.toggle('danger', !!(d && d.active));
-  $('ed-msg').textContent = '';
-  $('login-msg').textContent = '';
+  if (!quiet) { $('ed-msg').textContent = ''; $('login-msg').textContent = ''; }
   renderLogin();
   renderPay();
   $('editor').hidden = false;
   history.replaceState(null, '', d ? `drivers.html?id=${d.id}` : 'drivers.html');
   render();
+  if (quiet) return;
   $('editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
   if (!d) $('f-full_name').focus();
 }
 
-function renderLogin() {
+async function renderLogin() {
   const d = cur;
   $('login-sec').hidden = !d;
   if (!d) return;
   const can = MANAGERS.includes(me.role);
-  const sent = d.login_sent_at ? new Date(d.login_sent_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const when = (t) => t ? new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const card = cards.find(c => c.driver_id === d.id);
   let txt;
-  if (!d.active) txt = d.user_id ? 'This driver is inactive, so their login is blocked: they see no loads. Reactivate to restore it.' : 'Inactive drivers can\'t get a login.';
-  else if (!d.user_id) txt = d.email ? `No login yet. <b>Send login link</b> emails <b>${esc(d.email)}</b> a button to choose a password for the driver app.`
-                                     : 'Add the driver\'s email above and Save, then send them a login link.';
-  else txt = `Signs in to the driver app as <b>${esc(d.email || '')}</b>.${sent ? ` Last link sent ${esc(sent)}.` : ''} Forgot their password? <b>Send a new link</b>.`;
+  if (!d.active) txt = d.user_id ? 'This driver is inactive, so the app is blocked on their phone: they see no loads. Reactivate to restore it.' : 'Inactive drivers can\'t use the app.';
+  else if (!d.user_id) txt = 'Not set up yet. At onboarding, click <b>Set up on a phone</b> and have the driver scan the QR code. No password needed. Then print their reset card.';
+  else txt = `Set up.${d.login_sent_at ? ` Last sign-in code made ${esc(when(d.login_sent_at))}.` : ''} If their phone gets signed out, they use their reset card, or you can show a new QR code or copy a link and text it to them.`;
   $('login-state').innerHTML = txt;
-  $('send-btn').textContent = d.user_id ? 'Send a new link' : 'Send login link';
-  $('send-btn').hidden = !d.active || !d.email || !can;
-  $('remove-btn').hidden = !d.user_id || !can;
-  if (!can) $('login-msg').textContent = 'Only the owner, dispatch or safety can send or remove logins.';
+  $('card-state').innerHTML = !card ? '<span class="hint" style="margin:0">No reset card yet.</span>'
+    : `Reset card printed ${esc(when(card.created_at))}${card.last_used_at ? ` · last used ${esc(when(card.last_used_at))}` : ''}` +
+      (card.locked_at ? ` · <span class="error">locked after too many wrong tries</span>` : card.failed_attempts ? ` · ${card.failed_attempts} wrong tr${card.failed_attempts === 1 ? 'y' : 'ies'}` : '');
+  const on = d.active && can;
+  ['qr-btn', 'copy-btn', 'card-btn'].forEach(id => $(id).hidden = !on);
+  $('email-btn').hidden = !on || !d.email;
+  $('card-btn').textContent = card ? 'Print a new card' : 'Print reset card';
+  $('unlock-btn').hidden = !can || !card || !card.locked_at;
+  $('cardx-btn').hidden = !can || !card;
+  $('remove-btn').hidden = !can || (!d.user_id && !card);
+  if (!can) $('login-msg').textContent = 'Only the owner, dispatch or safety can set up phones or print cards.';
+  // Recent activity, with follow-ups
+  const { data: ev } = await sb.from('driver_access_events').select('id, kind, detail, needs_followup, handled_at, at').eq('driver_id', d.id).order('at', { ascending: false }).limit(8);
+  const LABEL = { phone_linked: 'QR code shown to set up a phone', link_copied: 'Sign-in link copied', link_emailed: 'Sign-in link emailed', card_printed: 'Reset card printed',
+    card_cancelled: 'Reset card cancelled', card_used: 'Used the reset card to sign in a phone', card_locked: 'Reset card locked (too many wrong PINs)',
+    card_unlocked: 'Reset card unlocked', access_removed: 'App access removed', pin_set: 'Driver chose a reset PIN' };
+  $('events').innerHTML = (ev || []).map(e => {
+    const open = e.needs_followup && !e.handled_at;
+    return `<li class="${open ? 'flag' : ''}"><span class="mono" style="min-width:120px">${esc(when(e.at))}</span><span style="flex:1">${esc(LABEL[e.kind] || e.kind)}</span>
+      ${open ? `<button class="btn small" data-contacted="${e.id}" type="button">Mark contacted</button>` : e.needs_followup ? '<span class="hint" style="margin:0">contacted</span>' : ''}</li>`;
+  }).join('');
 }
+$('events').onclick = async (ev) => {
+  const b = ev.target.closest('button[data-contacted]'); if (!b) return;
+  b.disabled = true;
+  const { error } = await sb.rpc('driver_access_mark_contacted', { p_event: b.dataset.contacted });
+  if (error) { $('login-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; b.disabled = false; return; }
+  const id = cur.id; await load(); edit(drivers.find(d => d.id === id), true);
+};
 
 function readForm() {
   const v = {};
@@ -379,8 +454,6 @@ function niceError(e) {
 $('save-btn').onclick = async () => {
   const v = readForm();
   if (!v.full_name) { $('ed-msg').innerHTML = '<span class="error">Enter the driver\'s full name.</span>'; return; }
-  const emailChanged = cur && cur.user_id && (cur.email || '') !== (v.email || '');
-  if (cur && cur.user_id && !v.email) { $('ed-msg').innerHTML = '<span class="error">This driver has a login, so the email can\'t be blank. Use Remove login first.</span>'; return; }
   $('save-btn').disabled = true;
   const q = cur ? sb.from('drivers').update(v).eq('id', cur.id).select().single()
                 : sb.from('drivers').insert(v).select().single();
@@ -389,7 +462,7 @@ $('save-btn').onclick = async () => {
   if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(niceError(error))}</span>`; return; }
   await load();
   edit(drivers.find(d => d.id === data.id) || data);
-  $('ed-msg').innerHTML = `<span class="ok">Saved.</span>${emailChanged ? ' The login email changes when you <b>Send a new link</b>.' : ''}`;
+  $('ed-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
 
 $('active-btn').onclick = async () => {
@@ -411,26 +484,88 @@ async function loginFn(body) {
   if (data && data.ok === false) throw new Error(data.error || 'Failed');
   return data;
 }
-$('send-btn').onclick = async () => {
-  if (!cur) return;
-  if (readForm().email !== (cur.email || null)) { $('login-msg').innerHTML = '<span class="error">Save your changes first.</span>'; return; }
-  $('send-btn').disabled = true; $('login-msg').textContent = 'Sending…';
-  try {
-    const r = await loginFn({ action: 'send', driver_id: cur.id });
-    const id = cur.id; await load(); edit(drivers.find(d => d.id === id));
-    $('login-msg').innerHTML = `<span class="ok">Sent to ${esc(r.sent_to)}.</span>${r.test_mode ? ' (Test mode: customer emails and logins go to your test address until you go live.)' : ' The button in the email works once, for 24 hours.'}`;
-  } catch (e) { $('login-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
-  $('send-btn').disabled = false;
+const unsaved = () => cur && readForm().email !== (cur.email || null);
+async function act(btn, body, busy) {
+  if (!cur) return null;
+  btn.disabled = true; $('login-msg').textContent = busy || 'Working…';
+  try { const r = await loginFn({ ...body, driver_id: cur.id }); $('login-msg').textContent = ''; return r; }
+  catch (e) { $('login-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; return null; }
+  finally { btn.disabled = false; }
+}
+async function refreshCur() { const id = cur.id; await load(); edit(drivers.find(d => d.id === id), true); }
+function showQR(link, title, hint) {
+  $('qr-title').textContent = title; $('qr-hint').innerHTML = hint; $('qr-box').innerHTML = '';
+  new QRCode($('qr-box'), { text: link, width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
+  $('qr-modal').hidden = false; $('qr-close').focus();
+}
+$('qr-close').onclick = () => { $('qr-modal').hidden = true; $('qr-box').innerHTML = ''; };
+$('qr-btn').onclick = async () => {
+  if (unsaved()) { $('login-msg').innerHTML = '<span class="error">Save your changes first.</span>'; return; }
+  const r = await act($('qr-btn'), { action: 'link', deliver: 'qr' }, 'Making a sign-in code…'); if (!r) return;
+  showQR(r.link, `Scan with ${cur.full_name}'s phone`, 'Open the phone camera, point it at the code, then tap <b>Sign in this phone</b>. Works once; expires in 24 hours.<br>Then have them add RoadCoda to their home screen (the app shows how).');
+  refreshCur();
+};
+$('copy-btn').onclick = async () => {
+  if (unsaved()) { $('login-msg').innerHTML = '<span class="error">Save your changes first.</span>'; return; }
+  const r = await act($('copy-btn'), { action: 'link', deliver: 'copy' }, 'Making a sign-in link…'); if (!r) return;
+  let copied = false; try { await navigator.clipboard.writeText(r.link); copied = true; } catch (_) {}
+  await refreshCur();
+  $('login-msg').innerHTML = copied ? `<span class="ok">Link copied.</span> Paste it into a text to ${esc(cur.full_name)}. It works once and expires in 24 hours; only send it to the driver's own phone.`
+    : `Copy this link and text it to the driver (works once, 24 hours):<br><input readonly value="${esc(r.link)}" style="width:100%;margin-top:6px" onclick="this.select()">`;
+};
+$('email-btn').onclick = async () => {
+  if (unsaved()) { $('login-msg').innerHTML = '<span class="error">Save your changes first.</span>'; return; }
+  const r = await act($('email-btn'), { action: 'link', deliver: 'email' }, 'Sending…'); if (!r) return;
+  await refreshCur();
+  $('login-msg').innerHTML = `<span class="ok">Sent to ${esc(r.sent_to)}.</span>${r.test_mode ? ' (Test mode: emails go to your test address until you go live.)' : ' The button works once, for 24 hours.'}`;
+};
+$('card-btn').onclick = async () => {
+  if (unsaved()) { $('login-msg').innerHTML = '<span class="error">Save your changes first.</span>'; return; }
+  const had = cards.some(c => c.driver_id === cur.id);
+  if (had && !confirm(`Print a new reset card for ${cur.full_name}? Their old card stops working.`)) return;
+  // Open the print window right away (browsers block pop-ups opened after a wait)
+  const w = window.open('', '_blank', 'width=520,height=640');
+  if (w) w.document.write('<p style="font-family:Arial;padding:20px">Making the card…</p>');
+  const r = await act($('card-btn'), { action: 'card_issue' }, 'Making the card…');
+  if (!r) { if (w) w.close(); return; }
+  printCard(w, r.card_link, r.pin_mode);
+  await refreshCur();
+  $('login-msg').innerHTML = '<span class="ok">Card ready to print.</span> The code is shown only now; if the card is lost, print a new one (the old one stops working).';
+};
+function printCard(w, link, mode) {
+  if (!w) { $('login-msg').innerHTML = '<span class="error">Allow pop-ups for this site to print the card.</span>'; return; }
+  const box = document.createElement('div');
+  new QRCode(box, { text: link, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+  setTimeout(() => {
+    const img = box.querySelector('canvas')?.toDataURL('image/png') || box.querySelector('img')?.src || '';
+    const carrier = esc((me.carriers?.name) || '');
+    const pinText = mode === 'own_pin' ? 'your reset PIN' : 'the <b>last 4 characters of your CDL number</b>';
+    w.document.open();
+    w.document.write(`<!doctype html><html><head><title>Reset card · ${esc(cur.full_name)}</title><style>
+      body{font-family:Arial,sans-serif;margin:24px;color:#1c1f24}
+      .card{width:3.5in;min-height:2in;border:1.5px dashed #999;border-radius:10px;padding:14px 16px;display:flex;gap:14px;align-items:center}
+      .card img{width:1.35in;height:1.35in}.t{font-size:11px;line-height:1.4}.n{font-size:15px;font-weight:bold;margin-bottom:2px}
+      .note{font-size:12px;color:#555;margin-top:14px;max-width:3.5in;line-height:1.5}@media print{.note,button{display:none}}</style></head><body>
+      <div class="card"><img src="${img}" alt="QR code"><div class="t"><div class="n">RoadCoda reset card</div>
+        ${esc(cur.full_name)}<br>${carrier}<br><br>Signed out of the app? Scan this with your phone camera, then enter ${pinText}.</div></div>
+      <div class="note">Cut out the card. Keep it <b>in the truck</b> (visor or logbook pouch), not with the license. If it's lost, dispatch prints a new one and this one stops working.</div>
+      <button onclick="print()" style="margin-top:14px;padding:10px 16px">Print</button></body></html>`);
+    w.document.close();
+  }, 50);
+}
+$('unlock-btn').onclick = async () => { const r = await act($('unlock-btn'), { action: 'card_unlock' }); if (r) { await refreshCur(); $('login-msg').innerHTML = '<span class="ok">Card unlocked.</span>'; } };
+$('cardx-btn').onclick = async () => {
+  if (!confirm(`Cancel ${cur.full_name}'s reset card? It stops working right away.`)) return;
+  const r = await act($('cardx-btn'), { action: 'card_cancel' }); if (r) { await refreshCur(); $('login-msg').innerHTML = '<span class="ok">Card cancelled.</span>'; }
 };
 $('remove-btn').onclick = async () => {
-  if (!cur || !confirm(`Remove ${cur.full_name}'s phone app login? They are signed out and can't sign in again until you send a new link. Their loads and history stay.`)) return;
-  $('remove-btn').disabled = true;
-  try {
-    await loginFn({ action: 'remove', driver_id: cur.id });
-    const id = cur.id; await load(); edit(drivers.find(d => d.id === id));
-    $('login-msg').innerHTML = '<span class="ok">Login removed.</span>';
-  } catch (e) { $('login-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
-  $('remove-btn').disabled = false;
+  if (!cur || !confirm(`Remove ${cur.full_name}'s app access? Their phone is signed out and their reset card stops working. Their loads and history stay.`)) return;
+  const r = await act($('remove-btn'), { action: 'remove' }); if (r) { await refreshCur(); $('login-msg').innerHTML = '<span class="ok">App access removed.</span>'; }
+};
+$('pin-mode-save').onclick = async () => {
+  const { error } = await sb.from('carriers').update({ reset_pin_mode: $('pin-mode').value }).eq('id', me.carrier_id);
+  $('pin-mode-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved. Drivers are asked for their own PIN the next time they open the app.</span>';
+  if (!error && $('pin-mode').value === 'cdl_last4') $('pin-mode-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
 
 // ---------- Pay rates on a driver ----------

@@ -7,7 +7,9 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="manifest" href="site.webmanifest">
+<link rel="manifest" href="driver.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RoadCoda">
 <meta name="theme-color" content="#1c1f24">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -82,17 +84,46 @@
 <header>
   <div class="brand">Road<span>Coda</span></div>
   <div class="who" id="who"></div>
-  <button class="btn link" id="signout" hidden>Sign out</button>
 </header>
 
 <main>
   <section id="login-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
-    <h1>Driver sign in</h1>
-    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
-    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
-    <button class="btn primary" id="login-btn">Sign in</button>
+    <h1>Sign in to RoadCoda</h1>
     <div class="error" id="login-error"></div>
-    <div class="meta">Forgot your password or never set one? Ask dispatch to send you a new login link.</div>
+    <p style="margin:0;line-height:1.5"><b>Scan your reset card</b> with your phone camera, then enter the last 4 of your CDL number.
+      No card? Ask dispatch for a sign-in QR code or link.</p>
+    <details><summary class="meta" style="cursor:pointer">Sign in with email and password instead</summary>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
+        <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+        <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+        <button class="btn primary" id="login-btn">Sign in</button>
+      </div>
+    </details>
+  </section>
+
+  <section id="link-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Use this phone for RoadCoda</h1>
+    <p style="margin:0;line-height:1.5">Tap the button to sign this phone in. You won't need a password.</p>
+    <button class="btn primary" id="link-btn">Sign in this phone</button>
+    <div class="error" id="link-error"></div>
+  </section>
+
+  <section id="card-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Reset card</h1>
+    <div class="meta" id="card-who"></div>
+    <label for="card-pin" id="card-label">Last 4 characters of your CDL number<input id="card-pin" autocomplete="off" autocapitalize="characters" maxlength="6" style="font-size:24px;letter-spacing:.2em;text-transform:uppercase"></label>
+    <button class="btn primary" id="card-btn">Sign in this phone</button>
+    <div class="error" id="card-error"></div>
+    <div class="meta">Dispatch gets a note each time the card is used.</div>
+  </section>
+
+  <section id="setpin-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Choose your reset PIN</h1>
+    <p style="margin:0;line-height:1.5">If this phone ever gets signed out, you'll scan your reset card and enter this PIN. 4 to 6 numbers, only you should know it.</p>
+    <label for="pin1">PIN<input id="pin1" inputmode="numeric" autocomplete="off" maxlength="6" style="font-size:24px;letter-spacing:.2em"></label>
+    <label for="pin2">Type it again<input id="pin2" inputmode="numeric" autocomplete="off" maxlength="6" style="font-size:24px;letter-spacing:.2em"></label>
+    <button class="btn primary" id="pin-btn">Save PIN</button>
+    <div class="error" id="pin-error"></div>
   </section>
 
   <section id="pw-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
@@ -109,8 +140,14 @@
       <h1 style="flex-grow:1">Today's stops</h1>
       <button class="btn" id="refresh" style="min-height:44px">Refresh</button>
     </div>
+    <div id="a2hs" class="card" hidden style="border-color:#e6c77a;background:#fff8e6">
+      <b>Add RoadCoda to your home screen</b>
+      <div id="a2hs-how" class="meta" style="margin-top:6px;line-height:1.5"></div>
+      <div style="display:flex;gap:10px;margin-top:10px"><button class="btn primary" id="a2hs-btn" hidden>Add to home screen</button><button class="btn" id="a2hs-later">Later</button></div>
+    </div>
     <div id="stops"></div>
     <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
+    <div class="meta" style="margin-top:18px"><a href="#" id="signout">Sign out of this phone</a></div>
   </section>
 </main>
 
@@ -138,7 +175,9 @@ if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY |
 }
 // Came from a "Set up my login" / "Set a new password" email? (read before the client tidies the address bar)
 const QS = new URLSearchParams(location.search);
-const tokenHash = QS.get('th') || '', tokenType = /^(invite|recovery)$/.test(QS.get('t') || '') ? QS.get('t') : '', tokenEmail = QS.get('e') || '';
+const phoneLink = QS.get('t') === 'link' ? (QS.get('th') || '') : '';
+const cardCode = QS.get('card') || '';
+const tokenHash = phoneLink ? '' : (QS.get('th') || ''), tokenType = /^(invite|recovery)$/.test(QS.get('t') || '') ? QS.get('t') : '', tokenEmail = QS.get('e') || '';
 const linkType = tokenType || (/[#&?]type=(invite|recovery)/.exec(location.hash) || [])[1] || '';
 const linkError = decodeURIComponent(((/[#&?]error_description=([^&]+)/.exec(location.hash + location.search)) || [])[1] || '').replace(/\+/g, ' ');
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
@@ -172,6 +211,10 @@ function watchMotion() {
 
 // ---------- Sign in ----------
 async function start() {
+  // Sign-in QR code / copied link from the office: tap to sign this phone in
+  if (phoneLink && !pwDone) { hideAll(); $('link-view').hidden = false; return; }
+  // Reset card
+  if (cardCode && !pwDone) { hideAll(); $('card-view').hidden = false; return cardCheck(); }
   // From the emailed button: choose a password first; the one-time code is used on Save
   if (tokenHash && !pwDone) {
     $('pw-title').textContent = linkType === 'invite' ? 'Choose your password' : 'Choose a new password';
@@ -192,10 +235,12 @@ async function start() {
   if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
   if (p.role !== 'driver') { $('login-error').textContent = 'This page is for driver logins. Office users: open dispatch.html.'; $('login-view').hidden = false; return; }
   const { data: drv } = await sb.from('drivers').select('active').eq('user_id', session.user.id).maybeSingle();
-  if (!drv || !drv.active) { $('login-error').textContent = 'Your driver app access is turned off. Call dispatch.'; $('login-view').hidden = false; $('signout').hidden = false; return; }
+  if (!drv || !drv.active) { $('login-error').textContent = 'Your driver app access is turned off. Call dispatch.'; $('login-view').hidden = false; return; }
   me = p; officePhone = p.carriers?.office_phone || '';
   $('who').innerHTML = `${esc(p.full_name)}<br>${esc(p.carriers?.name || '')}`;
-  $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  hideAll(); $('app').hidden = false;
+  if (await needPin()) return;
+  homeScreenPrompt();
   watchMotion();
   loadStops();
 }
@@ -204,7 +249,77 @@ $('login-btn').onclick = async () => {
   if (error) { $('login-error').textContent = error.message; return; }
   start();
 };
-$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('signout').onclick = async (e) => {
+  e.preventDefault();
+  if (!confirm('Sign this phone out of RoadCoda? To get back in you will need your reset card, or a new sign-in code from dispatch.')) return;
+  await sb.auth.signOut(); location.replace(location.pathname);
+};
+function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'app'].forEach(id => $(id).hidden = true); }
+async function fnCall(body) {
+  const { data, error } = await sb.functions.invoke('driver-login', { body });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (data && data.ok === false) throw new Error(data.error || 'Failed');
+  return data;
+}
+async function signInWith(th) {
+  const { error } = await sb.auth.verifyOtp({ token_hash: th, type: 'magiclink' });
+  if (error) throw new Error(/expired|invalid/i.test(error.message) ? 'This code has expired or was already used. Ask dispatch for a new one.' : error.message);
+  pwDone = true; history.replaceState(null, '', location.pathname);
+  return start();
+}
+$('link-btn').onclick = async () => {
+  $('link-btn').disabled = true; $('link-error').textContent = '';
+  try { await signInWith(phoneLink); } catch (e) { $('link-error').textContent = e.message; $('link-btn').disabled = false; }
+};
+async function cardCheck() {
+  try {
+    const r = await fnCall({ action: 'card_check', card: cardCode });
+    $('card-who').textContent = [r.driver, r.carrier].filter(Boolean).join(' · ');
+    if (r.mode === 'own_pin') { $('card-label').firstChild.textContent = 'Your reset PIN'; $('card-pin').inputMode = 'numeric'; }
+    if (r.inactive) { $('card-error').textContent = 'Your driver app access is turned off. Call dispatch.'; $('card-btn').disabled = true; }
+    else if (r.locked) { $('card-error').textContent = 'This card is locked after too many wrong tries. Call dispatch to unlock it.'; $('card-btn').disabled = true; }
+    else $('card-pin').focus();
+  } catch (e) { $('card-error').textContent = e.message; $('card-btn').disabled = true; }
+}
+$('card-btn').onclick = async () => {
+  const pin = $('card-pin').value.trim();
+  if (pin.length < 4) { $('card-error').textContent = 'Enter all 4 characters.'; return; }
+  $('card-btn').disabled = true; $('card-error').textContent = '';
+  try { const r = await fnCall({ action: 'card_use', card: cardCode, pin }); await signInWith(r.th); }
+  catch (e) { $('card-error').textContent = e.message; $('card-btn').disabled = /locked|turned off|isn't valid/.test(e.message); }
+};
+// Own-PIN carriers: a driver who hasn't chosen a reset PIN yet is asked once
+async function needPin() {
+  try {
+    const r = await fnCall({ action: 'pin_status' });
+    if (r.mode !== 'own_pin' || r.has_pin) return false;
+  } catch (_) { return false; }
+  hideAll(); $('setpin-view').hidden = false; $('pin1').focus(); return true;
+}
+$('pin-btn').onclick = async () => {
+  const a = $('pin1').value.trim(), b = $('pin2').value.trim();
+  if (!/^[0-9]{4,6}$/.test(a)) { $('pin-error').textContent = 'Use 4 to 6 numbers.'; return; }
+  if (a !== b) { $('pin-error').textContent = 'The two PINs don\'t match.'; return; }
+  $('pin-btn').disabled = true;
+  try { await fnCall({ action: 'set_pin', pin: a }); start(); }
+  catch (e) { $('pin-error').textContent = e.message; $('pin-btn').disabled = false; }
+};
+// Home screen: iPhones clear a website's sign-in after about a week unless it's on the home screen
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if (!$('a2hs').hidden) $('a2hs-btn').hidden = false; });
+function homeScreenPrompt() {
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let later = 0; try { later = Number(localStorage.getItem('rc-a2hs-later') || 0); } catch (_) {}
+  if (standalone || Date.now() - later < 3 * 864e5) { $('a2hs').hidden = true; return; }
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  $('a2hs-how').innerHTML = ios
+    ? 'So you stay signed in: tap the <b>Share</b> button (square with an arrow) at the bottom of Safari, then <b>Add to Home Screen</b>. Open RoadCoda from that icon from now on.'
+    : 'So you stay signed in and it opens like an app: tap the button below, or the browser menu (⋮) › <b>Add to Home screen</b> / <b>Install app</b>.';
+  $('a2hs-btn').hidden = !installEvt;
+  $('a2hs').hidden = false;
+}
+$('a2hs-btn').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('a2hs').hidden = true; };
+$('a2hs-later').onclick = () => { try { localStorage.setItem('rc-a2hs-later', String(Date.now())); } catch (_) {} $('a2hs').hidden = true; };
 $('refresh').onclick = () => loadStops();
 $('pw-btn').onclick = async () => {
   const a = $('pw1').value, b = $('pw2').value;
