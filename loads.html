@@ -73,7 +73,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -219,8 +219,10 @@ const STATUS_LABEL = {planned:'Planned', dispatched:'Dispatched', in_progress:'I
 let lists = {customers: [], drivers: [], equipment: []};
 let yard = '', tollFactor = 1;
 // Google prices tolls for a car; the carrier's truck factor (set on the Tolls page) scales it
-const tollEst = (r) => r && r.tolls_car != null ? Math.round(r.tolls_car * tollFactor * 100) / 100 : null;
-const tollLine = (r) => r.tolls_car != null ? `Tolls estimate: ${money2(tollEst(r))}${r.tolls_car ? ` (Google car price ${money2(r.tolls_car)} × truck factor ${tollFactor})` : ' (no tolls on this route)'}` : (r.toll_note ? `Tolls estimate: none (${esc(r.toll_note)})` : '');
+const tollEst = (r) => r && r.tolls_truck != null ? Math.round(r.tolls_truck * 100) / 100
+  : r && r.tolls_car != null ? Math.round(r.tolls_car * tollFactor * 100) / 100 : null;
+const tollLine = (r) => r.tolls_truck != null ? `Tolls estimate: ${money2(r.tolls_truck)} (PC*MILER truck tolls)`
+  : r.tolls_car != null ? `Tolls estimate: ${money2(tollEst(r))}${r.tolls_car ? ` (Google car price ${money2(r.tolls_car)} × truck factor ${tollFactor})` : ' (no tolls on this route)'}` : (r.toll_note ? `Tolls estimate: none (${esc(r.toll_note)})` : '');
 // Delivery customers (stores, DCs...) for each bill-to customer
 let locs = [];
 const nameKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -296,7 +298,7 @@ $('nc-btn').onclick = () => addCustomer(null);
 
 async function loadLists() {
   const [c, d, e] = await Promise.all([
-    sb.from('customers').select('id, name, start_name, start_address').order('name'),
+    sb.from('customers').select('id, name, start_name, start_address, miles_basis').order('name'),
     sb.from('drivers').select('id, full_name').eq('active', true).order('full_name'),
     sb.from('equipment').select('id, unit_no').eq('active', true).order('unit_no')
   ]);
@@ -392,18 +394,22 @@ $('new-btn').onclick = async () => {
 $('cancel-form').onclick = () => { $('form').hidden = true; };
 
 // ---------- Miles (Google, through the route-miles server function) and price (rate sheet) ----------
-async function getMiles(origin, roundTrip, stopAddresses) {
+async function getMiles(origin, roundTrip, stopAddresses, customerId) {
   if (!origin) throw new Error('Enter a start address (set your yard address on the Rates page).');
   const missing = stopAddresses.map((a, i) => a ? null : i + 1).filter(Boolean);
   if (missing.length) throw new Error(`Stop ${missing.join(', ')} ${missing.length === 1 ? 'has' : 'have'} no address. Add it on the stop, or on the delivery customer (Rates > Delivery customers), to work out miles.`);
   const addresses = [origin, ...stopAddresses, ...(roundTrip ? [origin] : [])];
-  const { data, error } = await sb.functions.invoke('route-miles', { body: { addresses } });
+  // Customers billed on PC*MILER miles go through the carrier's own PC*MILER key (Integrations page)
+  const usePcm = lists.customers.find(c => c.id === customerId)?.miles_basis === 'pcmiler';
+  const { data, error } = usePcm
+    ? await sb.functions.invoke('integrations', { body: { action: 'pcmiler_route', addresses } })
+    : await sb.functions.invoke('route-miles', { body: { addresses } });
   if (error) {
     let m = error.message;
     try { m = (await error.context.json()).error || m; } catch (_) {}
-    throw new Error('Miles: ' + m);
+    throw new Error((usePcm ? 'PC*MILER miles: ' : 'Miles: ') + m);
   }
-  return data;   // { miles, legs, drive_minutes }
+  return data;   // { miles, legs, drive_minutes, source?, tolls_truck?, state_miles?, version? }
 }
 // items: [{unit, qty}] across all stops; stopCount: number of stops
 async function getPrice(customerId, date, miles, stopCount, items) {
@@ -428,10 +434,12 @@ $('calc').onclick = async () => {
   $('calc').disabled = true;
   try {
     try {
-      const r = await getMiles($('f-origin').value.trim(), $('f-round').checked, stops.map(s => s.address));
+      const r = await getMiles($('f-origin').value.trim(), $('f-round').checked, stops.map(s => s.address), $('f-customer').value);
       $('f-miles').value = Math.round(r.miles);
-      priced.miles_source = 'google';
-      lines.push(`Miles from Google (${r.mode === 'truck' ? 'truck route' : 'car route'}): ${r.miles} (${r.legs.join(' + ')}) · about ${Math.floor(r.drive_minutes / 60)} h ${r.drive_minutes % 60} min driving`);
+      priced.miles_source = r.source || 'google';
+      if (r.source === 'pcmiler') Object.assign(priced, { pcm_state_miles: r.state_miles || null, pcm_version: r.version || null });
+      lines.push(`Miles from ${r.source === 'pcmiler' ? esc(r.version || 'PC*MILER') : `Google (${r.mode === 'truck' ? 'truck route' : 'car route'})`}: ${r.miles} (${r.legs.join(' + ')}) · about ${Math.floor(r.drive_minutes / 60)} h ${r.drive_minutes % 60} min driving`);
+      if (r.state_miles?.length) lines.push('Miles by state: ' + r.state_miles.map(x => `${esc(x.state)} ${x.miles}`).join(' · '));
       if (r.warning) lines.push(`<span class="error">${esc(r.warning)}</span>`);
       priced.toll_estimate = tollEst(r);
       if (tollLine(r)) lines.push(tollLine(r));
@@ -485,7 +493,8 @@ $('save').onclick = async () => {
       truck_id: $('f-truck').value || null, miles: parseFloat($('f-miles').value || '0'),
       status: $('f-driver').value ? 'dispatched' : 'planned',
       origin_address: $('f-origin').value.trim() || null, round_trip: $('f-round').checked,
-      miles_source: priced?.miles_source || 'manual', toll_estimate: priced?.toll_estimate ?? null
+      miles_source: priced?.miles_source || 'manual', toll_estimate: priced?.toll_estimate ?? null,
+      ...(priced?.miles_source === 'pcmiler' ? { pcm_state_miles: priced.pcm_state_miles, pcm_version: priced.pcm_version, pcm_at: new Date().toISOString() } : {})
     }).select('id').single();
     if (e1) throw e1;
     loadId = load.id;
@@ -559,7 +568,7 @@ function noticeSection(l) {
 }
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), notify_muted, notification_queue(id, stop_id, event, status, to_email, sent_at, created_at, detail), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, pcm_state_miles, pcm_version, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), notify_muted, notification_queue(id, stop_id, event, status, to_email, sent_at, created_at, detail), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
@@ -591,7 +600,7 @@ async function showDetail(id) {
     <p>${esc(l.drivers?.full_name || 'No driver')} · ${esc(l.equipment?.unit_no || 'No truck')} · ${Math.round(l.miles)} miles ·
        Linehaul ${money(b?.linehaul)} + fuel ${money(b?.fuel_surcharge)}</p>
     <p style="color:var(--muted);font-size:13px;margin-top:-6px">Start: ${esc(l.origin_address || l.customers?.start_address || yard || 'not set')}${l.round_trip ? ' (round trip)' : ''} ·
-      miles ${({ google: 'from Google', hub: 'from hub odometer', adjusted: 'adjusted by office' })[l.miles_source] || 'typed in'}${l.route_miles != null && Number(l.route_miles) !== Number(l.miles) ? ` (planned ${Math.round(l.route_miles)})` : ''}
+      miles ${({ google: 'from Google', pcmiler: `from ${esc(l.pcm_version || 'PC*MILER')}`, hub: 'from hub odometer', adjusted: 'adjusted by office' })[l.miles_source] || 'typed in'}${l.miles_source === 'pcmiler' && l.pcm_state_miles?.length ? ` (${l.pcm_state_miles.map(x => `${esc(x.state)} ${x.miles}`).join(', ')})` : ''}${l.route_miles != null && Number(l.route_miles) !== Number(l.miles) ? ` (planned ${Math.round(l.route_miles)})` : ''}
       ${l.ask_odometer || l.hub_start != null ? ` · ${l.hub_required ? 'hub miles customer · ' : ''}odometer ${l.hub_start ?? '–'} → ${l.hub_end ?? '–'}${l.hub_start != null && l.hub_end != null ? ` (${(l.hub_end - l.hub_start).toFixed(1)} actual mi)` : ''}${l.deadhead_miles != null ? ` · deadhead ${Number(l.deadhead_miles).toFixed(1)} mi` : ''}${l.ask_odometer && (l.hub_start == null || l.hub_end == null) && l.status !== 'cancelled' ? ' <b style="color:var(--late)">waiting for driver</b>' : ''}` : ''}
       ${l.miles_note ? ` · note: ${esc(l.miles_note)}` : ''}</p>
     ${b?.pricing_note ? `<div class="note">${esc(b.pricing_note)}</div>` : ''}
@@ -717,10 +726,11 @@ async function showDetail(id) {
         };
         return;
       }
-      const r = await getMiles(origin, l.round_trip, sorted.map(s => s.addr));
+      const r = await getMiles(origin, l.round_trip, sorted.map(s => s.addr), l.customer_id);
       const items = sorted.flatMap(s => s.stop_items.map(i => ({ unit: i.unit_type, qty: Number(i.qty_ordered) || 0 })));
       const p2 = await getPrice(l.customer_id, l.service_date, Math.round(r.miles), sorted.length, items);
-      const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: 'google', origin_address: origin, toll_estimate: tollEst(r) }).eq('id', id)).error;
+      const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: r.source || 'google', origin_address: origin, toll_estimate: tollEst(r),
+        ...(r.source === 'pcmiler' ? { pcm_state_miles: r.state_miles || null, pcm_version: r.version || null, pcm_at: new Date().toISOString() } : {}) }).eq('id', id)).error;
       if (e1) throw e1;
       const upd = { pricing_note: p2.note, customer_rate_id: p2.customer_rate_id, fsc_rule_id: p2.fsc_rule_id, doe_price: p2.doe_price, doe_week: p2.doe_week };
       if (p2.linehaul != null) upd.linehaul = p2.linehaul;

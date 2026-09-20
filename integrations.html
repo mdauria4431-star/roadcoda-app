@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadCoda · Integrations</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
+  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
+  header a{color:#d9d5cc}header a.on{color:#fff}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px}.brand span{color:#5fc2c7}
+  .who{margin-left:auto;font-size:14px;color:#d9d5cc}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:40px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600}
+  .btn.primary{background:var(--accent);color:#fff;border:none}
+  .btn.small{height:32px;padding:0 12px;font-size:13px}
+  .btn.danger{color:var(--late)}
+  .btn[disabled]{opacity:.5;cursor:default}
+  main{max-width:1180px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+  input,select{height:40px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff;min-width:0}
+  .error{color:var(--late);font-size:14px}.ok{color:var(--ok);font-size:14px}
+  h1{font-family:Archivo,sans-serif;font-size:28px;margin:0}
+  h2{font-family:Archivo,sans-serif;font-size:18px;margin:0}
+  h3{font-size:13px;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+  .hint{font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0 0}
+  .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  .prov{display:flex;flex-direction:column;gap:10px}
+  .prov .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+  .p-connected{background:#e3f1e6;color:var(--ok)}.p-error{background:#fbe0db;color:var(--late)}.p-none{background:#ecebe8;color:#45423d}
+  .facts{font-size:13px;color:var(--muted);line-height:1.6}
+  .facts b{color:var(--ink);font-weight:600}
+  .keybox{display:flex;flex-direction:column;gap:8px;background:#f7f5f0;border-radius:10px;padding:12px}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:720px}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
+  td{padding:9px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
+  td select{height:34px;font-size:14px}
+  .mono{font-family:'IBM Plex Mono',monospace;font-size:13px}
+  .stale{color:#8a4b08}
+  .note{padding:12px 14px;background:#f7f5f0;border-radius:10px;font-size:13px;color:var(--muted);line-height:1.55}
+  .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  @media (max-width:900px){.cards{grid-template-columns:1fr}.grid3{grid-template-columns:1fr 1fr}}
+  @media (max-width:560px){main{padding:16px}.grid3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a class="on" href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
+    <div class="row"><h1 style="flex-grow:1">Integrations</h1><button class="btn" id="sync-all" type="button">Update truck locations now</button></div>
+    <div class="note">Connect your own <b>PC*MILER</b> and <b>ELD</b> accounts (paid add-ons). Each key is tested with the provider before it's saved, then stored encrypted.
+      It is never shown again, not even to you; to change it, paste a new one. Only the owner can connect or disconnect. <span id="role-note"></span></div>
+
+    <div class="cards" id="cards"></div>
+
+    <section class="card" id="pcm-settings" hidden>
+      <h2>PC*MILER options</h2>
+      <p class="hint">Used for customers set to <b>PC*MILER miles</b> (Rates › customer › Miles billed on). Leave the truck profile blank to use PC*MILER's standard 5-axle, 80,000 lb truck.</p>
+      <div class="grid3" style="margin-top:12px">
+        <label for="pm-route">Route type<select id="pm-route"><option value="0">Practical (most contracts)</option><option value="1">Shortest</option><option value="2">Fastest</option></select></label>
+        <label for="pm-tolls">Toll roads<select id="pm-tolls"><option value="3">Use toll roads</option><option value="2">Avoid if possible</option><option value="1">Always avoid</option></select></label>
+        <label for="pm-ver">Data version<input id="pm-ver" placeholder="Current" title="What your contracts name, e.g. PCM36. Blank = current."></label>
+        <label for="pm-axles">Axles<input id="pm-axles" type="number" min="2" max="14" placeholder="5"></label>
+        <label for="pm-weight">Weight (lb)<input id="pm-weight" type="number" min="1000" step="500" placeholder="80000"></label>
+        <label for="pm-height">Height (inches)<input id="pm-height" type="number" min="60" max="180" placeholder="162 (13'6&quot;)"></label>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="pm-save" type="button">Save options</button><span id="pm-msg" class="hint"></span></div>
+    </section>
+
+    <section class="card" id="veh-card" hidden>
+      <h2>Trucks and ELD vehicles</h2>
+      <p class="hint">RoadCoda matches ELD vehicles to your trucks by VIN, then by unit number ("T-102" = "t102"). Fix any that are wrong or missing here. Locations update every 5 minutes.</p>
+      <div class="tablewrap" style="margin-top:10px"><table>
+        <thead><tr><th>ELD</th><th>Vehicle in the ELD</th><th>VIN</th><th>RoadCoda truck</th><th>Last location</th></tr></thead>
+        <tbody id="veh-body"></tbody></table></div>
+      <p class="hint" id="unmatched"></p>
+    </section>
+  </div>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
+    '<h2 style="margin-top:0">RoadCoda can\'t find its settings</h2>' +
+    (window.RC_CONFIG ? '<p><b>config.js</b> still has the placeholder key. Open it and paste your Publishable key (Supabase &gt; Project Settings &gt; API Keys).</p>'
+                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder (right-click the zip &gt; <b>Extract All</b>), then open the page from that folder.</p>') +
+    '</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ago = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - new Date(t)) / 60000);
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : new Date(t).toLocaleDateString(); };
+const PROVIDERS = [
+  { id: 'pcmiler', name: 'PC*MILER', what: 'Industry-standard truck miles, state miles and truck tolls, for customers whose contracts require PC*MILER miles.',
+    where: 'Needs a PC*MILER <b>Web Services</b> (API) key from Trimble. The desktop or web app alone has no key; ask your Trimble rep for Web Services.', fields: 'key' },
+  { id: 'samsara', name: 'Samsara', what: 'Truck locations and odometer from your Samsara ELD.',
+    where: 'Samsara › Settings › <b>API Tokens</b> › Add an API Token. Give it read-only access: <b>Read Vehicles</b> and <b>Read Vehicle Statistics</b>. Copy it right away; Samsara shows it once.', fields: 'key' },
+  { id: 'motive', name: 'Motive', what: 'Truck locations and odometer from your Motive (KeepTruckin) ELD.',
+    where: 'Motive Dashboard › Admin › <b>Developers</b> › Request API Key.', fields: 'key' },
+  { id: 'geotab', name: 'Geotab', what: 'Truck locations from MyGeotab.',
+    where: 'Create a MyGeotab <b>service user</b> with view-only rights (no driver or admin rights) and enter its database, user name and password.', fields: 'geotab' },
+];
+let me = null, rows = [], trucks = [];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
+  if (p.role === 'driver') { location.href = 'driver.html'; return; }
+  me = p;
+  $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
+  $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  $('role-note').textContent = p.role === 'owner' ? '' : 'You can see what is connected; ask the owner to connect or change keys.';
+  await load();
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; }
+  start();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function fn(body) {
+  const { data, error } = await sb.functions.invoke('integrations', { body });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (data && data.ok === false && data.error) throw new Error(data.error);
+  return data;
+}
+
+async function load() {
+  const [a, t] = await Promise.all([
+    sb.from('carrier_integrations').select('provider, kind, status, key_hint, settings, vehicles_seen, last_test_at, last_sync_at, last_error, connected_at'),
+    sb.from('equipment').select('id, unit_no, unit_type, vin, active').eq('active', true).order('unit_no'),
+  ]);
+  if (a.error) { $('cards').innerHTML = `<div class="card error">${esc(a.error.message)}. Run 30_integrations.sql in the Supabase SQL Editor first.</div>`; return; }
+  rows = a.data || []; trucks = t.data || [];
+  renderCards(); renderPcm(); await renderVehicles();
+}
+
+function renderCards() {
+  const owner = me.role === 'owner';
+  $('cards').innerHTML = PROVIDERS.map(p => {
+    const r = rows.find(x => x.provider === p.id);
+    const on = r && r.status !== 'disconnected';
+    const pill = !on ? '<span class="pill p-none">Not connected</span>' : r.status === 'error' ? '<span class="pill p-error">Problem</span>' : '<span class="pill p-connected">Connected</span>';
+    const facts = on ? `<div class="facts">Key <b>${esc(r.key_hint || '')}</b> · connected ${esc(ago(r.connected_at))} · last check ${esc(ago(r.last_test_at))}
+        ${p.id !== 'pcmiler' ? `<br>Vehicles in ${p.name}: <b>${r.vehicles_seen ?? '–'}</b> · last location update <b>${esc(ago(r.last_sync_at))}</b>` : ''}
+        ${r.last_error ? `<br><span class="error">${esc(r.last_error)}</span>` : ''}</div>` : '';
+    const inputs = p.fields === 'geotab'
+      ? `<div class="grid3"><label>Database<input id="k-${p.id}-db" autocomplete="off"></label><label>User name<input id="k-${p.id}-user" autocomplete="off"></label><label>Password<input id="k-${p.id}-pw" type="password" autocomplete="new-password"></label></div>
+         <label>Server (only if Geotab gave you one)<input id="k-${p.id}-srv" placeholder="my.geotab.com" autocomplete="off"></label>`
+      : `<label>${on ? 'New key (replaces the saved one)' : 'API key'}<input id="k-${p.id}" type="password" autocomplete="new-password" spellcheck="false"></label>`;
+    return `<section class="card prov" data-p="${p.id}">
+      <div class="top"><h2>${p.name}</h2>${pill}<span style="flex-grow:1"></span>
+        ${on ? `<button class="btn small" data-act="test" data-p="${p.id}">Test</button>` : ''}
+        ${on && p.id !== 'pcmiler' ? `<button class="btn small" data-act="sync" data-p="${p.id}">Sync now</button>` : ''}
+        ${on && owner ? `<button class="btn small danger" data-act="disc" data-p="${p.id}">Disconnect</button>` : ''}</div>
+      <p class="hint" style="margin:0">${p.what}</p>
+      ${facts}
+      ${owner ? `<details ${on ? '' : 'open'}><summary class="hint" style="cursor:pointer">${on ? 'Replace the key' : 'Connect'}</summary>
+        <div class="keybox" style="margin-top:8px"><p class="hint" style="margin:0">${p.where}</p>${inputs}
+          <div class="row"><button class="btn primary" data-act="connect" data-p="${p.id}">Test and connect</button><span class="hint" id="m-${p.id}"></span></div></div></details>` : ''}
+      <div class="hint" id="r-${p.id}"></div>
+    </section>`;
+  }).join('');
+}
+
+$('cards').onclick = async (ev) => {
+  const b = ev.target.closest('button[data-act]'); if (!b) return;
+  const p = b.dataset.p, act = b.dataset.act, msg = $('m-' + p) || $('r-' + p), out = $('r-' + p);
+  b.disabled = true;
+  try {
+    if (act === 'connect') {
+      const body = { action: 'connect', provider: p };
+      if (p === 'geotab') Object.assign(body, { database: $('k-geotab-db').value, userName: $('k-geotab-user').value, password: $('k-geotab-pw').value, server: $('k-geotab-srv').value });
+      else body.key = $('k-' + p).value;
+      msg.textContent = 'Testing with ' + p + '…'; msg.className = 'hint';
+      const r = await fn(body);
+      // clear what was typed so the key doesn't stay on screen
+      document.querySelectorAll(`[id^="k-${p}"]`).forEach(i => i.value = '');
+      await load();
+      $('r-' + p).innerHTML = `<span class="ok">Connected.${r.sync ? ` Found ${r.sync.vehicles} vehicles, matched ${r.sync.matched} to your trucks, ${r.sync.positions} with a location.` : ''}</span>`;
+    } else if (act === 'test') {
+      out.textContent = 'Testing…'; await fn({ action: 'test', provider: p }); await load(); $('r-' + p).innerHTML = '<span class="ok">The key works.</span>';
+    } else if (act === 'sync') {
+      out.textContent = 'Updating…'; const r = await fn({ action: 'sync' }); await load();
+      const x = (r.results || []).find(z => z.provider === p);
+      $('r-' + p).innerHTML = x?.error ? `<span class="error">${esc(x.error)}</span>` : `<span class="ok">Updated ${x?.positions ?? 0} truck locations.</span>`;
+    } else if (act === 'disc') {
+      if (!confirm(`Disconnect ${p}? The saved key is deleted${p === 'pcmiler' ? '' : ' and truck locations from it are cleared'}.`)) { b.disabled = false; return; }
+      const { error } = await sb.rpc('integration_disconnect', { p_provider: p }); if (error) throw error;
+      await load();
+    }
+  } catch (e) { msg.innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
+  b.disabled = false;
+};
+
+function renderPcm() {
+  const r = rows.find(x => x.provider === 'pcmiler' && x.status !== 'disconnected');
+  $('pcm-settings').hidden = !r;
+  if (!r) return;
+  const s = r.settings || {}, owner = me.role === 'owner';
+  $('pm-route').value = String(s.route_type ?? 0); $('pm-tolls').value = String(s.toll_roads ?? 3);
+  $('pm-ver').value = s.data_version && s.data_version !== 'Current' ? s.data_version : '';
+  $('pm-axles').value = s.axles ?? ''; $('pm-weight').value = s.weight_lbs ?? ''; $('pm-height').value = s.height_in ?? '';
+  document.querySelectorAll('#pcm-settings input, #pcm-settings select, #pm-save').forEach(el => el.disabled = !owner);
+}
+$('pm-save').onclick = async () => {
+  const n = (id) => $(id).value === '' ? null : Number($(id).value);
+  const settings = { route_type: Number($('pm-route').value), toll_roads: Number($('pm-tolls').value),
+    data_version: $('pm-ver').value.trim() || 'Current', axles: n('pm-axles'), weight_lbs: n('pm-weight'), height_in: n('pm-height') };
+  const { error } = await sb.rpc('integration_set_settings', { p_provider: 'pcmiler', p_settings: settings });
+  $('pm-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved.</span>';
+  if (!error) load();
+};
+
+async function renderVehicles() {
+  const anyEld = rows.some(r => r.kind === 'eld' && r.status !== 'disconnected');
+  $('veh-card').hidden = !anyEld; $('sync-all').hidden = !anyEld;
+  if (!anyEld) return;
+  const [v, pos] = await Promise.all([
+    sb.from('eld_vehicles').select('id, provider, name, vin, equipment_id, match_how, last_seen_at').order('provider').order('name'),
+    sb.from('truck_positions').select('equipment_id, lat, lon, speed_mph, address, odometer_miles, located_at'),
+  ]);
+  const P = new Map((pos.data || []).map(x => [x.equipment_id, x]));
+  const live = new Set(rows.filter(r => r.status !== 'disconnected').map(r => r.provider));
+  const list = (v.data || []).filter(x => live.has(x.provider));
+  const opts = (sel) => '<option value="">Not matched</option>' + trucks.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.unit_no)}</option>`).join('');
+  $('veh-body').innerHTML = list.length ? list.map(x => {
+    const p = x.equipment_id && P.get(x.equipment_id);
+    const old = p && Date.now() - new Date(p.located_at) > 3 * 3600e3;
+    const where = p ? `<span class="${old ? 'stale' : ''}">${esc(p.address || `${Number(p.lat).toFixed(4)}, ${Number(p.lon).toFixed(4)}`)}</span><br>
+        <span class="hint">${esc(ago(p.located_at))}${p.speed_mph != null ? ` · ${Math.round(p.speed_mph)} mph` : ''}${p.odometer_miles != null ? ` · odometer ${Math.round(p.odometer_miles).toLocaleString()}` : ''}</span>` : '<span class="hint">–</span>';
+    return `<tr><td>${esc(PROVIDERS.find(q => q.id === x.provider)?.name || x.provider)}</td><td>${esc(x.name || '(no name)')}</td><td class="mono">${esc(x.vin || '')}</td>
+      <td><select data-veh="${x.id}" aria-label="RoadCoda truck for ${esc(x.name || '')}">${opts(x.equipment_id)}</select>${x.match_how ? `<div class="hint">matched by ${x.match_how === 'unit_no' ? 'unit number' : x.match_how === 'vin' ? 'VIN' : 'hand'}</div>` : ''}</td>
+      <td>${where}</td></tr>`;
+  }).join('') : '<tr><td colspan="5" class="hint">No vehicles yet. Click Sync now.</td></tr>';
+  const matched = new Set(list.map(x => x.equipment_id).filter(Boolean));
+  const loose = trucks.filter(t => !matched.has(t.id) && t.unit_type !== 'trailer');
+  $('unmatched').textContent = loose.length ? `Trucks with no ELD vehicle: ${loose.map(t => t.unit_no).join(', ')}.` : 'Every truck is matched to an ELD vehicle.';
+}
+$('veh-body').onchange = async (ev) => {
+  const s = ev.target.closest('select[data-veh]'); if (!s) return;
+  const { error } = await sb.rpc('set_eld_vehicle_match', { p_eld_vehicle: s.dataset.veh, p_equipment: s.value || null });
+  if (error) { alert(error.message); }
+  await renderVehicles();
+};
+$('sync-all').onclick = async () => {
+  $('sync-all').disabled = true;
+  try { const r = await fn({ action: 'sync' }); await load();
+    const bad = (r.results || []).filter(x => x.error);
+    if (bad.length) alert(bad.map(x => `${x.provider}: ${x.error}`).join('\n'));
+  } catch (e) { alert(e.message); }
+  $('sync-all').disabled = false;
+};
+
+start();
+</script>
+</body>
+</html>

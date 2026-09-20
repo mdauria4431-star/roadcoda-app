@@ -61,7 +61,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -124,7 +124,7 @@
           <label style="flex-direction:row;align-items:center;gap:8px;height:40px;color:var(--ink)"><input type="checkbox" id="b-master" style="height:auto"> <b>Master bill</b> (all loads for the week on one invoice)</label>
           <label for="b-sname">Truck starts at (customer facility)<input id="b-sname" style="width:180px" placeholder="e.g. ABC Route 9 DC"></label>
           <label for="b-saddr" style="flex:1 1 260px">Facility address<input id="b-saddr" placeholder="blank = our yard"></label>
-          <label for="b-miles">Miles billed on<select id="b-miles"><option value="route">Route miles (Google / typed)</option><option value="hub">Hub miles (driver enters odometer)</option></select></label>
+          <label for="b-miles">Miles billed on<select id="b-miles"><option value="route">Route miles (Google / typed)</option><option value="hub">Hub miles (driver enters odometer)</option><option value="pcmiler">PC*MILER miles (needs PC*MILER connected on Integrations)</option></select></label>
           <label for="b-terms">Payment terms (days)<input id="b-terms" type="number" min="0" style="width:110px" placeholder="default"></label>
           <label for="b-po">PO / reference no.<input id="b-po" style="width:150px"></label>
           <label for="b-code">Customer code<input id="b-code" style="width:100px" placeholder="ABC"></label>

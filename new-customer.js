@@ -48,7 +48,7 @@
           <option value="delivered">Delivered (last stop finished), e.g. Mon 7:00 AM to next Mon 6:59 AM</option>
           <option value="started">Started (first stop reached)</option>
           <option value="service_date" selected>In the window by service date, e.g. Sun 12:00 AM to Sat 11:59 PM</option></select></label>
-        <label>Miles billed by<select name="miles_basis"><option value="route">Route miles (Google)</option><option value="hub">Hub miles (driver odometer)</option></select></label>
+        <label>Miles billed by<select name="miles_basis"><option value="route">Route miles (Google)</option><option value="hub">Hub miles (driver odometer)</option><option value="pcmiler">PC*MILER miles (needs PC*MILER connected)</option></select></label>
         <label>Trucks start at (name)<input name="start_name" placeholder="e.g. ABC Route 9 DC"></label>
         <label>Start address<input name="start_address" placeholder="Blank = your yard"></label>
       </div>
