@@ -163,7 +163,6 @@
     </div>
     <div id="stops"></div>
     <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
-    <div class="meta" style="margin-top:18px"><a href="#" id="signout">Sign out of this phone</a></div>
   </section>
 </main>
 
@@ -276,11 +275,7 @@ $('login-btn').onclick = async () => {
   if (error) { $('login-error').textContent = error.message; return; }
   start();
 };
-$('signout').onclick = async (e) => {
-  e.preventDefault();
-  if (!confirm('Sign this phone out of RoadCoda? To get back in you will need your reset card, or a new sign-in code from dispatch.')) return;
-  await sb.auth.signOut(); location.replace(location.pathname);
-};
+// No sign-out in the driver app: the office removes access (Drivers › Remove app access / Deactivate).
 // iPhone: an app on the home screen keeps its own sign-in, separate from Safari. So add it FIRST,
 // open it from the icon, and scan the code inside the app (the code isn't used until then).
 function iosFirst(view) {
