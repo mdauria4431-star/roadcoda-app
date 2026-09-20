@@ -123,6 +123,54 @@
       </details>
     </section>
 
+
+    <section class="card" id="delay-card" hidden>
+      <details id="delay-det"><summary style="cursor:pointer"><h2 style="display:inline">Delays &amp; free time</h2></summary>
+      <p class="hint">How long a truck can sit before it counts as a delay, and the codes used to explain one.
+        Drivers are never asked and never see any of this &mdash; when a stop runs past its free time, dispatch gets a message
+        and has to code it or zero it before the trip can be closed, invoiced or paid.</p>
+
+      <h3 style="font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Free time on this customer</h3>
+      <div class="row" style="align-items:end">
+        <label for="ft-plant" style="flex:0 1 220px">At the plant (minutes)<input id="ft-plant" type="number" min="0" step="5" placeholder="inherit"></label>
+        <label for="ft-stop" style="flex:0 1 220px">At each stop (minutes)<input id="ft-stop" type="number" min="0" step="5" placeholder="inherit"></label>
+        <button class="btn" id="ft-save" type="button">Save free time</button>
+      </div>
+      <p class="hint" id="ft-hint" style="margin:8px 0 0"></p>
+
+      <h3 style="font-size:13px;margin:18px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">This customer&rsquo;s own delay codes</h3>
+      <p class="hint" style="margin-top:-2px">Some customers hand you their own codes. Set them on the <b>main customer</b> and every DC under it inherits them.
+        Each one points at one of your codes, so your reporting stays the same while their file speaks their language.</p>
+      <div class="tablewrap"><table style="min-width:640px">
+        <thead><tr><th>Their code</th><th>What they call it</th><th>Means, to us</th><th></th></tr></thead>
+        <tbody id="cdc-body"></tbody></table></div>
+      <div class="row" style="align-items:end;margin-top:8px">
+        <label for="cdc-code" style="flex:0 1 140px">Their code<input id="cdc-code" placeholder="WF-14"></label>
+        <label for="cdc-name" style="flex:1 1 220px">What they call it<input id="cdc-name" placeholder="Receiving backed up"></label>
+        <label for="cdc-maps" style="flex:0 1 240px">Means, to us<select id="cdc-maps"></select></label>
+        <button class="btn" id="cdc-add" type="button">Add</button>
+      </div>
+      <div id="cdc-msg" class="hint"></div>
+
+      <h3 style="font-size:13px;margin:18px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Your delay codes</h3>
+      <p class="hint" style="margin-top:-2px">The list every load uses. These came with the system &mdash; rename them, add your own, or retire ones you never use.
+        <b>Billable</b> decides whether detention can be charged for that reason by default; dispatch can still change it on a load.</p>
+      <div class="tablewrap"><table style="min-width:680px">
+        <thead><tr><th>Code</th><th>Name</th><th>Whose fault</th><th>Billable</th><th></th></tr></thead>
+        <tbody id="dc-body"></tbody></table></div>
+      <div class="row" style="align-items:end;margin-top:8px">
+        <label for="dc-code" style="flex:0 1 120px">Code<input id="dc-code" placeholder="LUMP"></label>
+        <label for="dc-name" style="flex:1 1 220px">Name<input id="dc-name" placeholder="Waiting on a lumper"></label>
+        <label for="dc-resp" style="flex:0 1 160px">Whose fault<select id="dc-resp">
+          <option value="customer">Customer</option><option value="carrier">Us</option>
+          <option value="driver">Driver</option><option value="outside">Outside (traffic, weather)</option></select></label>
+        <label for="dc-bill" style="flex:0 1 130px">Billable<select id="dc-bill"><option value="true">Yes</option><option value="false">No</option></select></label>
+        <button class="btn" id="dc-add" type="button">Add</button>
+      </div>
+      <div id="dc-msg" class="hint"></div>
+      </details>
+    </section>
+
     <section class="card">
       <h2>Stop customers: delivery points and pickup points</h2>
       <p class="hint" style="margin-top:-6px">The stores, DCs, job sites and suppliers this customer's loads stop at. Stops on loads are picked from this list.
@@ -223,6 +271,7 @@ async function start() {
   me = p;
   $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  await loadDelayCodes();
   await loadCustList();
   const qs = new URLSearchParams(location.search);
   if (customers.some(c => c.id === qs.get('customer'))) $('cust').value = qs.get('customer');
@@ -238,7 +287,10 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 
 // ---------- Bill-to customers ----------
 async function loadCustList() {
-  let { data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name');
+  let { data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min').order('name');
+  if (error && /free_time_plant_min/.test(error.message)) {   // before 40_delays.sql
+    ({ data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name'));
+  }
   if (error && /parent_customer_id/.test(error.message)) {   // before 33_driver_pay.sql: no parent accounts yet
     ({ data } = await sb.from('customers').select('id, name, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name'));
     $('parent').closest('label').hidden = true;
@@ -266,7 +318,7 @@ function pickCustomer() {
     const extra = par ? `Account under <a href="#" data-go="${par.id}">${esc(par.name)}</a>; anything not set here uses the settings on ${esc(par.name)}`
       : kids.length ? `Accounts under it: ${kids.map(k => `<a href="#" data-go="${k.id}">${esc(k.name)}</a>`).join(', ')}` : '';
     if (extra) $('cust-info').innerHTML += (($('cust-info').innerHTML ? '<br>' : '') + extra);
-    loadDl(); loadAct();
+    loadDl(); loadAct(); loadDelays();
   }
 }
 $('cust-info').onclick = (e) => { const a = e.target.closest('a[data-go]'); if (!a) return; e.preventDefault(); $('cust').value = a.dataset.go; $('cust').onchange(); };
@@ -281,6 +333,127 @@ $('cust').onchange = () => { dlFilter = 'all'; $('dl-edit').open = false; pickCu
 $('nc-btn').onclick = () => RCNewCustomer.open(sb, async (c) => { await loadCustList(); $('cust').value = c.id; pickCustomer(); flash(`${c.name} added.`); });
 document.querySelectorAll('.kpi').forEach(k => k.onclick = () => { dlFilter = k.dataset.f; drawDl(); });
 $('dl-add').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; $('dl-edit').open = true; $('dl-name').focus(); };
+
+// ── Delays & free time (40_delays.sql) ────────────────────────────────
+// Free time and the customer's own codes live on the BILL-TO customer;
+// DCs under it inherit both unless they set their own.
+let delayCodes = [], custCodes = [], delaysOff = false;
+
+async function loadDelayCodes() {
+  const { data, error } = await sb.from('delay_codes')
+    .select('id, code, name, responsible, billable, active, sort').eq('active', true).order('sort');
+  if (error) { delaysOff = true; $('delay-card').hidden = true; return; }   // before 40_delays.sql
+  delayCodes = data || [];
+  $('dc-body').innerHTML = delayCodes.map(d => `<tr>
+      <td class="mono">${esc(d.code)}</td>
+      <td><input data-dc="${d.id}" data-f="name" value="${esc(d.name)}" style="width:100%"></td>
+      <td><select data-dc="${d.id}" data-f="responsible">${
+        [['customer','Customer'],['carrier','Us'],['driver','Driver'],['outside','Outside']]
+          .map(([v,l]) => `<option value="${v}"${d.responsible===v?' selected':''}>${l}</option>`).join('')}</select></td>
+      <td><select data-dc="${d.id}" data-f="billable">
+        <option value="true"${d.billable?' selected':''}>Yes</option>
+        <option value="false"${!d.billable?' selected':''}>No</option></select></td>
+      <td><button class="btn small danger" data-retire="${d.id}" type="button">Retire</button></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="hint">No codes yet.</td></tr>';
+  $('cdc-maps').innerHTML = delayCodes.map(d => `<option value="${d.id}">${esc(d.code)} — ${esc(d.name)}</option>`).join('');
+}
+
+async function loadDelays() {
+  if (delaysOff) return;
+  const c = customers.find(x => x.id === $('cust').value);
+  $('delay-card').hidden = !c;
+  if (!c) return;
+  const par = customers.find(p => p.id === c.parent_customer_id);
+
+  // free time, with what it falls back to spelled out
+  $('ft-plant').value = c.free_time_plant_min ?? '';
+  $('ft-stop').value  = c.free_time_stop_min ?? '';
+  const inherited = [];
+  if (c.free_time_plant_min == null) inherited.push(par ? `plant from ${esc(par.name)}` : 'plant from the company default');
+  if (c.free_time_stop_min  == null) inherited.push(par ? `stops from ${esc(par.name)}` : 'stops from the company default');
+  $('ft-hint').innerHTML = inherited.length
+    ? `Blank means inherited: ${inherited.join(', ')}. A delivery point can still override its own.`
+    : 'Both set on this customer. A delivery point can still override its own.';
+
+  // their codes: this customer's, or the parent's if it has none of its own
+  const { data: own } = await sb.from('customer_delay_codes')
+    .select('id, their_code, their_name, delay_code_id, active, customer_id')
+    .in('customer_id', [c.id, c.parent_customer_id].filter(Boolean)).eq('active', true).order('sort');
+  const mine = (own || []).filter(r => r.customer_id === c.id);
+  custCodes = mine.length ? mine : (own || []).filter(r => r.customer_id === c.parent_customer_id);
+  const inheritedCodes = !mine.length && custCodes.length;
+
+  $('cdc-body').innerHTML = custCodes.length ? custCodes.map(r => {
+    const d = delayCodes.find(x => x.id === r.delay_code_id);
+    return `<tr>
+      <td class="mono">${esc(r.their_code)}</td>
+      <td>${esc(r.their_name)}</td>
+      <td>${d ? `${esc(d.code)} — ${esc(d.name)}` : '<span class="error">code removed</span>'}</td>
+      <td>${inheritedCodes ? '<span class="hint">from ' + esc(par ? par.name : '') + '</span>'
+                           : `<button class="btn small danger" data-cdc="${r.id}" type="button">Remove</button>`}</td></tr>`;
+  }).join('') : `<tr><td colspan="4" class="hint">None. Your own codes are used on this customer's loads.</td></tr>`;
+
+  $('cdc-msg').innerHTML = c.parent_customer_id
+    ? `Adding a code here applies to <b>${esc(c.name)}</b> only. To cover every DC, set it on ${par ? esc(par.name) : 'the main customer'}.`
+    : 'Codes added here are inherited by every account under this customer.';
+}
+
+$('ft-save').onclick = async () => {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const v = (el) => $(el).value === '' ? null : Math.max(0, parseInt($(el).value, 10));
+  const patch = { free_time_plant_min: v('ft-plant'), free_time_stop_min: v('ft-stop') };
+  const { error } = await sb.from('customers').update(patch).eq('id', c.id);
+  if (error) return flash(error.message);
+  Object.assign(c, patch);
+  await loadDelays();
+  flash('Free time saved.');
+};
+
+$('cdc-add').onclick = async () => {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const code = $('cdc-code').value.trim(), name = $('cdc-name').value.trim();
+  if (!code || !name) return flash('Type their code and what they call it.');
+  const { error } = await sb.from('customer_delay_codes').insert({
+    customer_id: c.id, their_code: code, their_name: name, delay_code_id: $('cdc-maps').value });
+  if (error) return flash(/unique|duplicate/i.test(error.message) ? `${code} is already set up on this customer.` : error.message);
+  $('cdc-code').value = ''; $('cdc-name').value = '';
+  await loadDelays(); flash(`${code} added.`);
+};
+
+$('cdc-body').onclick = async (ev) => {
+  const b = ev.target.closest('[data-cdc]'); if (!b) return;
+  const { error } = await sb.from('customer_delay_codes').update({ active: false }).eq('id', b.dataset.cdc);
+  if (error) return flash(error.message);
+  await loadDelays(); flash('Removed.');
+};
+
+$('dc-add').onclick = async () => {
+  const code = $('dc-code').value.trim(), name = $('dc-name').value.trim();
+  if (!code || !name) return flash('Type a code and a name.');
+  const { error } = await sb.from('delay_codes').insert({
+    code, name, responsible: $('dc-resp').value, billable: $('dc-bill').value === 'true',
+    sort: (delayCodes.length ? Math.max(...delayCodes.map(d => d.sort)) : 100) + 10 });
+  if (error) return flash(/unique|duplicate/i.test(error.message) ? `${code} already exists.` : error.message);
+  $('dc-code').value = ''; $('dc-name').value = '';
+  await loadDelayCodes(); await loadDelays(); flash(`${code} added.`);
+};
+
+$('dc-body').onchange = async (ev) => {
+  const el = ev.target.closest('[data-dc]'); if (!el) return;
+  const patch = {}; patch[el.dataset.f] = el.dataset.f === 'billable' ? el.value === 'true' : el.value;
+  const { error } = await sb.from('delay_codes').update(patch).eq('id', el.dataset.dc);
+  if (error) return flash(error.message);
+  await loadDelayCodes(); flash('Saved.');
+};
+
+$('dc-body').onclick = async (ev) => {
+  const b = ev.target.closest('[data-retire]'); if (!b) return;
+  // a code in use on past loads is kept for the record, just taken off the list
+  const { error } = await sb.from('delay_codes').update({ active: false }).eq('id', b.dataset.retire);
+  if (error) return flash(error.message);
+  await loadDelayCodes(); await loadDelays(); flash('Retired. Loads that already used it keep it.');
+};
+
 function flash(t) {
   let el = $('flash');
   if (!el) { el = document.createElement('div'); el.id = 'flash'; el.setAttribute('role', 'status');
