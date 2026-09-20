@@ -91,10 +91,15 @@ header{
   background:var(--surface);color:var(--ink);
   border-right:1px solid var(--line);border-bottom:0;
   display:flex;flex-direction:column;align-items:stretch;gap:2px;
-  padding:14px 12px 14px;overflow:hidden auto;
+  /* The old top-bar rule set flex-wrap:wrap. In a fixed-height column that
+     wraps overflowing items into a SECOND column, which spills over the page.
+     The rail scrolls instead. */
+  flex-wrap:nowrap;
+  padding:14px 12px 14px;overflow:hidden;
   transition:width .16s ease;
 }
 header .brand{
+  flex:none;
   display:flex;align-items:center;gap:9px;padding:2px 4px 14px;min-height:34px;
   font-family:var(--ui);font-weight:700;font-size:17px;letter-spacing:-.3px;color:var(--ink);white-space:nowrap;
 }
@@ -102,9 +107,18 @@ header .brand span{color:var(--brand)}
 .rc-mark{width:28px;height:28px;flex:none;display:grid;place-items:center}
 .rc-mark svg{display:block;width:100%;height:100%;overflow:visible}
 
-header nav{display:flex!important;flex-direction:column;gap:2px;align-items:stretch;font-size:14px}
+/* Only the menu scrolls. Collapse and Dark/Light are controls you reach for,
+   so they stay pinned to the bottom instead of sliding below the fold. */
+header nav{
+  display:flex!important;flex-direction:column;gap:2px;align-items:stretch;font-size:14px;
+  flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-width:thin;
+}
+/* In a height-constrained flex column every child shrinks by default, which
+   squashed the menu to hairlines. They keep their height; the nav scrolls. */
+header nav > *, .rc-sub > *{flex:none}
 header nav a{
-  display:flex;align-items:center;gap:10px;overflow:hidden;
+  display:flex;align-items:center;gap:10px;overflow:hidden;flex:none;
   padding:0 11px;height:36px;border-radius:9px;
   font-family:var(--ui);font-size:13.5px;font-weight:500;
   color:var(--muted);text-decoration:none;white-space:nowrap;
@@ -157,8 +171,8 @@ header #signout{width:100%}
 .rc-foot a .rc-ic{width:17px;flex:none;text-align:center;color:var(--accent-hi);font-size:13px;line-height:1}
 html.rc-rail-in .rc-foot a{justify-content:center;padding:0}
 /* who-am-I sits just above the controls, quietly */
-header .who{margin-top:auto;padding-top:14px;border-top:1px solid var(--line-soft)}
-.rc-foot{margin-top:0}
+header .who{flex:none;padding-top:12px;border-top:1px solid var(--line-soft)}
+.rc-foot{flex:none;margin-top:0;padding-top:10px}
 
 /* collapsed rail */
 html.rc-rail-in header nav a,
@@ -261,7 +275,7 @@ html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
 /* ── Narrow screens: the sidebar goes back to being a top bar ─────── */
 @media (max-width:900px){
   body{padding-left:0}
-  header{position:static;width:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;
+  header{position:static;width:auto;flex-direction:row;flex-wrap:wrap!important;align-items:center;gap:8px;
          border-right:0;border-bottom:1px solid var(--line);padding:10px 14px}
   header nav{flex-direction:row!important;flex-wrap:wrap;gap:6px}
   header nav a{height:32px}
@@ -274,3 +288,95 @@ html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 :focus-visible{outline:2px solid var(--accent-hi);outline-offset:2px}
+
+/* ── Status fills the pages hardcoded to pale colours ────────────────
+   Generated from the pages' own stylesheets and grouped by what each
+   colour meant. Keeping the meaning, swapping the paper for glass.
+   QR codes are deliberately left white so they still scan.        */
+/* late / error */
+.alert.over,
+.b-exception,
+.banner.over,
+.p-acc,
+.p-bad,
+.p-error,
+.p-late,
+.p-miss,
+.s-cancelled,
+.st-disputed,
+.st-issue {
+  background:color-mix(in srgb, var(--late) 15%, transparent);
+  border-color:var(--line);
+}
+/* warning */
+.alert,
+.banner,
+.edit.need input,
+.ios-first,
+.p-warn,
+.st-unmatched,
+.tag-new {
+  background:color-mix(in srgb, var(--risk) 15%, transparent);
+  border-color:var(--line);
+}
+/* good */
+.b-arrived,
+.chip.e,
+.current,
+.p-connected,
+.p-ok,
+.st-matched,
+.tag-old {
+  background:color-mix(in srgb, var(--ok) 15%, transparent);
+  border-color:var(--line);
+}
+/* information */
+.b-pending,
+.p-pu,
+.tag-pu {
+  background:color-mix(in srgb, var(--info) 18%, transparent);
+  border-color:var(--line);
+}
+/* quiet panels and wells */
+#dl-edit,
+#list tr:hover,
+.access,
+.b-delivered,
+.bar,
+.chip,
+.cpi,
+.instr summary,
+.issue,
+.keybox,
+.kpi,
+.loginbox,
+.note,
+.p-done,
+.p-none,
+.s-delivered,
+.st-non_billable,
+.st-paid,
+.stop.pu,
+.thumbs img,
+tr.click:hover,
+tr.click:hover td,
+tr.sel {
+  background:var(--panel-2);
+  border-color:var(--line);
+}
+/* plain white surfaces */
+.codelist,
+.modal .box,
+.seg button,
+.x,
+fieldset.acc,
+input,select,
+input,select,textarea {
+  background:var(--surface);
+}
+
+/* tokens some pages declare for themselves and app.css did not cover */
+:root, html[data-rc-theme="dark"]{ --late-bg:color-mix(in srgb,#f4685f 14%,transparent); --late-line:color-mix(in srgb,#f4685f 42%,#21323f); --warn:#e9a23b; }
+html[data-rc-theme="light"]{ --late-bg:#fdf1ef; --late-line:#f0c9c2; --warn:#9a6208; }
+/* pale text colours that were chosen for a light card */
+.banner, .alert, .issue{ color:var(--ink); }
