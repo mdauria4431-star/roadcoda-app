@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadCoda · Drivers</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--warn:#8a4b08;--ok:#1e6b34}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
+  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
+  header a{color:#d9d5cc}header a.on{color:#fff}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px}.brand span{color:#5fc2c7}
+  .who{margin-left:auto;font-size:14px;color:#d9d5cc}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:40px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600}
+  .btn.primary{background:var(--accent);color:#fff;border:none}
+  .btn.small{height:32px;padding:0 12px;font-size:13px}
+  .btn.danger{color:var(--late)}
+  .btn[disabled]{opacity:.5;cursor:default}
+  main{max-width:1180px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+  input,select,textarea{height:40px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff;min-width:0}
+  textarea{height:64px;padding:8px 10px;resize:vertical}
+  .error{color:var(--late);font-size:14px}.ok{color:var(--ok);font-size:14px}
+  h1{font-family:Archivo,sans-serif;font-size:28px;margin:0}
+  h2{font-family:Archivo,sans-serif;font-size:18px;margin:0}
+  h3{font-size:13px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+  .hint{font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0 0}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .span2{grid-column:span 2}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:900px}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
+  td{padding:10px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
+  tbody tr{cursor:pointer}tbody tr:hover{background:#faf8f4}
+  tr.sel{background:#eef6f6!important}
+  .mono{font-family:'IBM Plex Mono',monospace;font-size:13px}
+  .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+  .p-ok{background:#e3f1e6;color:var(--ok)}.p-bad{background:#fbe0db;color:var(--late)}.p-warn{background:#fdf0d9;color:var(--warn)}.p-none{background:#ecebe8;color:#45423d}
+  .exp-bad{color:var(--late);font-weight:600}.exp-warn{color:var(--warn);font-weight:600}
+  .loginbox{display:flex;flex-direction:column;gap:8px;background:#f7f5f0;border-radius:10px;padding:12px 14px}
+  .count{font-size:14px;color:var(--muted)}
+  @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
+  @media (max-width:560px){main{padding:16px}.grid{grid-template-columns:1fr}.span2{grid-column:auto}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="drivers.html">Drivers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
+    <div class="row">
+      <h1 style="flex-grow:1">Drivers</h1>
+      <input id="q" type="search" placeholder="Search name, phone, CDL…" aria-label="Search drivers" style="width:240px">
+      <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option></select>
+      <button class="btn primary" id="new-btn" type="button">+ New driver</button>
+    </div>
+
+    <section class="card" id="editor" hidden>
+      <div class="row" style="align-items:center"><h2 id="ed-title" style="flex-grow:1">New driver</h2><span id="ed-status"></span></div>
+
+      <h3>Contact</h3>
+      <div class="grid">
+        <label class="span2">Full name *<input id="f-full_name" autocomplete="off"></label>
+        <label>Employee #<input id="f-employee_no" autocomplete="off"></label>
+        <label>Phone<input id="f-phone" type="tel" autocomplete="off"></label>
+        <label class="span2">Email (also the phone app login)<input id="f-email" type="email" autocomplete="off"></label>
+        <label class="span2">Address<input id="f-address" autocomplete="off"></label>
+        <label class="span2">Emergency contact<input id="f-emergency_name" autocomplete="off" placeholder="Name and relationship"></label>
+        <label>Emergency phone<input id="f-emergency_phone" type="tel" autocomplete="off"></label>
+      </div>
+
+      <h3>License and medical</h3>
+      <div class="grid">
+        <label>CDL number<input id="f-cdl_number" autocomplete="off" class="mono"></label>
+        <label>Class<select id="f-cdl_class"><option value="">–</option><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="none">No CDL</option></select></label>
+        <label>State<input id="f-cdl_state" maxlength="2" autocomplete="off" placeholder="NJ"></label>
+        <label>Endorsements<input id="f-cdl_endorsements" autocomplete="off" placeholder="e.g. H N T"></label>
+        <label>CDL expires<input id="f-cdl_expires" type="date"></label>
+        <label>Medical card expires<input id="f-med_card_expires" type="date"></label>
+      </div>
+
+      <h3>Employment and pay</h3>
+      <div class="grid">
+        <label>Hire date<input id="f-hire_date" type="date"></label>
+        <label>Pay basis<select id="f-pay_basis"><option value="">–</option><option value="mile">Per mile</option><option value="day">Per day</option><option value="stop">Per stop</option><option value="hour">Per hour</option><option value="load">Per load</option></select></label>
+        <label>Pay rate ($)<input id="f-pay_rate" type="number" min="0" step="0.01"></label>
+        <label id="end-wrap" hidden>End date<input id="f-end_date" type="date"></label>
+        <label class="span2" style="grid-column:1/-1">Notes<textarea id="f-notes"></textarea></label>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <button class="btn primary" id="save-btn" type="button">Save</button>
+        <button class="btn" id="cancel-btn" type="button">Close</button>
+        <span style="flex-grow:1"></span>
+        <button class="btn danger" id="active-btn" type="button" hidden>Deactivate</button>
+      </div>
+      <div id="ed-msg" class="hint"></div>
+
+      <div id="login-sec" hidden>
+        <h3>Phone app login</h3>
+        <div class="loginbox">
+          <div id="login-state"></div>
+          <div class="row" id="login-actions">
+            <button class="btn primary small" id="send-btn" type="button">Send login link</button>
+            <button class="btn small danger" id="remove-btn" type="button" hidden>Remove login</button>
+          </div>
+          <div id="login-msg" class="hint" style="margin:0"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="count" id="count"></div>
+      <div class="tablewrap" style="margin-top:8px"><table>
+        <thead><tr><th>Driver</th><th>Phone</th><th>CDL</th><th>CDL expires</th><th>Medical card</th><th>Pay</th><th>App login</th></tr></thead>
+        <tbody id="list"></tbody></table></div>
+    </section>
+  </div>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
+    '<h2 style="margin-top:0">RoadCoda can\'t find its settings</h2>' +
+    (window.RC_CONFIG ? '<p><b>config.js</b> still has the placeholder key. Open it and paste your Publishable key (Supabase &gt; Project Settings &gt; API Keys).</p>'
+                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder (right-click the zip &gt; <b>Extract All</b>), then open the page from that folder.</p>') +
+    '</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+const PER = { mile: '/mile', day: '/day', stop: '/stop', hour: '/hour', load: '/load' };
+const FIELDS = ['full_name', 'employee_no', 'phone', 'email', 'address', 'emergency_name', 'emergency_phone', 'cdl_number', 'cdl_class', 'cdl_state',
+                'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'hire_date', 'pay_basis', 'pay_rate', 'end_date', 'notes'];
+const MANAGERS = ['owner', 'dispatcher', 'safety'];
+const SOON_DAYS = 30;
+let me = null, drivers = [], cur = null;
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
+  if (p.role === 'driver') { location.href = 'driver.html'; return; }
+  me = p;
+  $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
+  $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  await load();
+  const want = new URLSearchParams(location.search).get('id');
+  if (want) { const d = drivers.find(x => x.id === want); if (d) { if (!d.active) $('show').value = 'all'; render(); edit(d); } }
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; }
+  start();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+// ---------- Expiry ----------
+function expiry(dateStr) {
+  if (!dateStr) return { cls: '', txt: '<span class="hint">not entered</span>', level: 0 };
+  const today = localISO(new Date());
+  const soon = localISO(new Date(Date.now() + SOON_DAYS * 864e5));
+  if (dateStr < today) return { cls: 'exp-bad', txt: `${fmtDate(dateStr)} · expired`, level: 2 };
+  if (dateStr <= soon) {
+    const days = Math.round((new Date(dateStr + 'T00:00:00') - new Date(today + 'T00:00:00')) / 864e5);
+    return { cls: 'exp-warn', txt: `${fmtDate(dateStr)} · ${days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}`, level: 1 };
+  }
+  return { cls: '', txt: fmtDate(dateStr), level: 0 };
+}
+function loginPill(d) {
+  if (!d.user_id) return '<span class="pill p-none">No login</span>';
+  if (!d.active) return '<span class="pill p-bad">Blocked (inactive)</span>';
+  return '<span class="pill p-ok">Has login</span>';
+}
+
+// ---------- List ----------
+async function load() {
+  const { data, error } = await sb.from('drivers').select('*').order('full_name');
+  if (error) {
+    $('list').innerHTML = `<tr><td colspan="7" class="error">${esc(error.message)}${/column/.test(error.message) ? ' · Run 32_drivers.sql in the Supabase SQL Editor first.' : ''}</td></tr>`;
+    return;
+  }
+  drivers = data || [];
+  render();
+}
+function render() {
+  const show = $('show').value, q = $('q').value.trim().toLowerCase();
+  const list = drivers.filter(d => (show === 'all' || (show === 'active') === d.active) &&
+    (!q || [d.full_name, d.phone, d.email, d.employee_no, d.cdl_number].some(v => String(v || '').toLowerCase().includes(q))));
+  const active = drivers.filter(d => d.active);
+  const flagged = active.filter(d => expiry(d.cdl_expires).level || expiry(d.med_card_expires).level).length;
+  $('count').innerHTML = `${active.length} active driver${active.length === 1 ? '' : 's'}${flagged ? ` · <span class="exp-warn">${flagged} with a CDL or medical card expired or due within ${SOON_DAYS} days</span>` : ''}`;
+  $('list').innerHTML = list.map(d => {
+    const c = expiry(d.cdl_expires), m = expiry(d.med_card_expires);
+    const cdl = [d.cdl_class && d.cdl_class !== 'none' ? 'Class ' + d.cdl_class : d.cdl_class === 'none' ? 'No CDL' : '', d.cdl_state, d.cdl_endorsements].filter(Boolean).join(' · ');
+    return `<tr data-id="${d.id}" class="${cur && cur.id === d.id ? 'sel' : ''}">
+      <td><b>${esc(d.full_name)}</b>${d.employee_no ? ` <span class="hint mono">#${esc(d.employee_no)}</span>` : ''}${!d.active ? ' <span class="pill p-none">Inactive</span>' : ''}
+        ${d.hire_date ? `<div class="hint" style="margin:0">Hired ${fmtDate(d.hire_date)}</div>` : ''}</td>
+      <td>${esc(d.phone || '')}</td>
+      <td>${esc(cdl)}</td>
+      <td class="${c.cls}">${c.txt}</td>
+      <td class="${m.cls}">${m.txt}</td>
+      <td class="mono">${d.pay_rate != null ? '$' + Number(d.pay_rate).toFixed(2) + (PER[d.pay_basis] || '') : ''}</td>
+      <td>${loginPill(d)}</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="hint">${drivers.length ? 'No drivers match.' : 'No drivers yet. Click + New driver.'}</td></tr>`;
+}
+$('q').oninput = render;
+$('show').onchange = render;
+$('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (tr) edit(drivers.find(d => d.id === tr.dataset.id)); };
+
+// ---------- Editor ----------
+$('new-btn').onclick = () => edit(null);
+$('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history.replaceState(null, '', 'drivers.html'); render(); };
+
+function edit(d) {
+  cur = d;
+  FIELDS.forEach(f => { $('f-' + f).value = d && d[f] != null ? d[f] : ''; });
+  $('ed-title').textContent = d ? d.full_name : 'New driver';
+  $('ed-status').innerHTML = d ? (d.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-none">Inactive</span>') : '';
+  $('end-wrap').hidden = !(d && !d.active);
+  $('active-btn').hidden = !d;
+  $('active-btn').textContent = d && !d.active ? 'Reactivate' : 'Deactivate';
+  $('active-btn').classList.toggle('danger', !!(d && d.active));
+  $('ed-msg').textContent = '';
+  $('login-msg').textContent = '';
+  renderLogin();
+  $('editor').hidden = false;
+  history.replaceState(null, '', d ? `drivers.html?id=${d.id}` : 'drivers.html');
+  render();
+  $('editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!d) $('f-full_name').focus();
+}
+
+function renderLogin() {
+  const d = cur;
+  $('login-sec').hidden = !d;
+  if (!d) return;
+  const can = MANAGERS.includes(me.role);
+  const sent = d.login_sent_at ? new Date(d.login_sent_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  let txt;
+  if (!d.active) txt = d.user_id ? 'This driver is inactive, so their login is blocked: they see no loads. Reactivate to restore it.' : 'Inactive drivers can\'t get a login.';
+  else if (!d.user_id) txt = d.email ? `No login yet. <b>Send login link</b> emails <b>${esc(d.email)}</b> a button to choose a password for the driver app.`
+                                     : 'Add the driver\'s email above and Save, then send them a login link.';
+  else txt = `Signs in to the driver app as <b>${esc(d.email || '')}</b>.${sent ? ` Last link sent ${esc(sent)}.` : ''} Forgot their password? <b>Send a new link</b>.`;
+  $('login-state').innerHTML = txt;
+  $('send-btn').textContent = d.user_id ? 'Send a new link' : 'Send login link';
+  $('send-btn').hidden = !d.active || !d.email || !can;
+  $('remove-btn').hidden = !d.user_id || !can;
+  if (!can) $('login-msg').textContent = 'Only the owner, dispatch or safety can send or remove logins.';
+}
+
+function readForm() {
+  const v = {};
+  FIELDS.forEach(f => { const x = $('f-' + f).value.trim(); v[f] = x === '' ? null : x; });
+  if (v.pay_rate != null) v.pay_rate = Number(v.pay_rate);
+  if (v.cdl_state) v.cdl_state = v.cdl_state.toUpperCase();
+  if (v.email) v.email = v.email.toLowerCase();
+  if (cur && cur.active) delete v.end_date;   // only editable once inactive
+  return v;
+}
+function niceError(e) {
+  const m = e.message || String(e);
+  if (/drivers_carrier_email_uq/.test(m)) return 'Another driver already has that email.';
+  if (/drivers_email_chk/.test(m)) return 'That email doesn\'t look right.';
+  if (/pay_basis/.test(m)) return 'Pick a pay basis.';
+  return m;
+}
+
+$('save-btn').onclick = async () => {
+  const v = readForm();
+  if (!v.full_name) { $('ed-msg').innerHTML = '<span class="error">Enter the driver\'s full name.</span>'; return; }
+  if (v.pay_rate != null && !v.pay_basis) { $('ed-msg').innerHTML = '<span class="error">Pick a pay basis for the pay rate.</span>'; return; }
+  const emailChanged = cur && cur.user_id && (cur.email || '') !== (v.email || '');
+  if (cur && cur.user_id && !v.email) { $('ed-msg').innerHTML = '<span class="error">This driver has a login, so the email can\'t be blank. Use Remove login first.</span>'; return; }
+  $('save-btn').disabled = true;
+  const q = cur ? sb.from('drivers').update(v).eq('id', cur.id).select().single()
+                : sb.from('drivers').insert(v).select().single();
+  const { data, error } = await q;
+  $('save-btn').disabled = false;
+  if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(niceError(error))}</span>`; return; }
+  await load();
+  edit(drivers.find(d => d.id === data.id) || data);
+  $('ed-msg').innerHTML = `<span class="ok">Saved.</span>${emailChanged ? ' The login email changes when you <b>Send a new link</b>.' : ''}`;
+};
+
+$('active-btn').onclick = async () => {
+  if (!cur) return;
+  const turnOff = cur.active;
+  if (turnOff && !confirm(`Deactivate ${cur.full_name}? They drop off the driver lists${cur.user_id ? ' and their phone app login stops working' : ''}. You can reactivate later.`)) return;
+  const { error } = await sb.from('drivers').update({ active: !turnOff }).eq('id', cur.id);
+  if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  const id = cur.id;
+  await load();
+  if (turnOff && $('show').value === 'active') $('show').value = 'all';
+  edit(drivers.find(d => d.id === id));
+  $('ed-msg').innerHTML = `<span class="ok">${turnOff ? 'Deactivated.' : 'Reactivated.'}</span>`;
+};
+
+async function loginFn(body) {
+  const { data, error } = await sb.functions.invoke('driver-login', { body });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (data && data.ok === false) throw new Error(data.error || 'Failed');
+  return data;
+}
+$('send-btn').onclick = async () => {
+  if (!cur) return;
+  if (readForm().email !== (cur.email || null)) { $('login-msg').innerHTML = '<span class="error">Save your changes first.</span>'; return; }
+  $('send-btn').disabled = true; $('login-msg').textContent = 'Sending…';
+  try {
+    const r = await loginFn({ action: 'send', driver_id: cur.id });
+    const id = cur.id; await load(); edit(drivers.find(d => d.id === id));
+    $('login-msg').innerHTML = `<span class="ok">Sent to ${esc(r.sent_to)}.</span>${r.test_mode ? ' (Test mode: customer emails and logins go to your test address until you go live.)' : ' The button in the email works once, for 24 hours.'}`;
+  } catch (e) { $('login-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('send-btn').disabled = false;
+};
+$('remove-btn').onclick = async () => {
+  if (!cur || !confirm(`Remove ${cur.full_name}'s phone app login? They are signed out and can't sign in again until you send a new link. Their loads and history stay.`)) return;
+  $('remove-btn').disabled = true;
+  try {
+    await loginFn({ action: 'remove', driver_id: cur.id });
+    const id = cur.id; await load(); edit(drivers.find(d => d.id === id));
+    $('login-msg').innerHTML = '<span class="ok">Login removed.</span>';
+  } catch (e) { $('login-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('remove-btn').disabled = false;
+};
+
+start();
+</script>
+</body>
+</html>
