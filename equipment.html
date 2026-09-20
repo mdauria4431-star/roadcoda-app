@@ -139,7 +139,7 @@
         <label>PM every (miles)<input id="f-pm_every_miles" type="number" min="1" step="500" placeholder="e.g. 15000"></label>
         <label>Last PM date<input id="f-last_pm_date" type="date"></label>
         <label>Last PM odometer<input id="f-last_pm_miles" type="number" min="0"></label>
-        <label>Odometer (typed in)<input id="f-odometer_miles" type="number" min="0"></label>
+        <label>Odometer (typed in, optional)<input id="f-odometer_miles" type="number" min="0"></label>
         <label>Odometer read on<input id="f-odometer_at" type="date"></label>
         <div class="span2" style="align-self:end"><div class="hint" id="pm-status" style="margin:0"></div></div>
         <label class="span2" style="grid-column:1/-1">Notes<textarea id="f-notes"></textarea></label>
@@ -209,7 +209,7 @@ const FIELDS = ['unit_no', 'unit_type', 'body_type', 'ownership', 'year', 'make'
 const NUMS = ['year', 'length_ft', 'max_weight_lbs', 'axles', 'pm_every_days', 'pm_every_miles', 'last_pm_miles', 'odometer_miles'];
 const MANAGERS = ['owner', 'dispatcher', 'safety'];
 const SOON_DAYS = 30, PM_SOON_DAYS = 14, PM_SOON_MILES = 1000;
-let me = null, units = [], cur = null, terminals = [], devices = [], eldOdo = {}, drivers = [];
+let me = null, units = [], cur = null, terminals = [], devices = [], eldOdo = {}, drvOdo = {}, drivers = [];
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -242,7 +242,14 @@ function due(dateStr) {
   }
   return { cls: '', txt: fmtDate(dateStr), level: 0 };
 }
-const odometerOf = (u) => eldOdo[u.id] != null ? { miles: eldOdo[u.id].miles, from: 'ELD', at: eldOdo[u.id].at } : u.odometer_miles != null ? { miles: Number(u.odometer_miles), from: 'typed in', at: u.odometer_at } : null;
+// Odometer: the ELD when connected; otherwise the newest of the typed-in reading and the drivers' odometer entries on loads
+function odometerOf(u) {
+  if (eldOdo[u.id] != null) return { miles: eldOdo[u.id].miles, from: 'ELD', at: eldOdo[u.id].at };
+  const typed = u.odometer_miles != null ? { miles: Number(u.odometer_miles), from: 'typed in', at: u.odometer_at, day: u.odometer_at || '' } : null;
+  const drv = drvOdo[u.id] ? { miles: drvOdo[u.id].miles, from: 'driver entry', at: drvOdo[u.id].day, day: drvOdo[u.id].day } : null;
+  if (typed && drv) return (drv.day > typed.day || (drv.day === typed.day && drv.miles > typed.miles)) ? drv : typed;
+  return typed || drv;
+}
 function pmDue(u) {
   if (!u.pm_every_days && !u.pm_every_miles) return { cls: '', txt: '<span class="hint" style="margin:0">no schedule</span>', level: 0 };
   if (!u.last_pm_date && u.last_pm_miles == null) return { cls: 'exp-warn', txt: 'last PM not entered', level: 1 };
@@ -268,12 +275,17 @@ async function load() {
   const { data, error } = await sb.from('equipment').select('*').order('unit_no');
   if (error) { $('list').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}${/column/.test(error.message) ? ' · Run 36_equipment.sql in the Supabase SQL Editor first.' : ''}</td></tr>`; return; }
   units = data || [];
-  const [T, D, P, DR] = await Promise.all([
+  const [T, D, P, DR, LO] = await Promise.all([
     sb.from('terminals').select('id, name, active').order('name'),
     sb.from('truck_devices').select('id, equipment_id, label, paired_at, pair_expires_at, active, failed_attempts, locked_at, current_driver_id, current_since, last_seen_at').eq('active', true),
     sb.from('truck_positions').select('equipment_id, odometer_miles, located_at'),
     sb.from('drivers').select('id, full_name'),
+    sb.from('loads').select('truck_id, service_date, hub_start, hub_end').not('truck_id', 'is', null).or('hub_end.not.is.null,hub_start.not.is.null')
+      .order('service_date', { ascending: false }).limit(1000),
   ]);
+  drvOdo = {};
+  (LO.data || []).forEach(l => { const m = Math.max(Number(l.hub_end || 0), Number(l.hub_start || 0)); if (!m) return;
+    const c = drvOdo[l.truck_id]; if (!c || l.service_date > c.day || (l.service_date === c.day && m > c.miles)) drvOdo[l.truck_id] = { miles: m, day: l.service_date }; });
   terminals = T.data || []; devices = (D.data || []).filter(x => x.paired_at); drivers = DR.data || [];
   eldOdo = {}; (P.data || []).forEach(x => { if (x.odometer_miles != null) eldOdo[x.equipment_id] = { miles: Number(x.odometer_miles), at: x.located_at }; });
   const keep = $('f-home_terminal_id').value;
@@ -331,7 +343,7 @@ function edit(u, quiet) {
 function pmStatus() {
   if (!cur) { $('pm-status').textContent = ''; return; }
   const odo = odometerOf(cur), pm = pmDue(cur);
-  $('pm-status').innerHTML = `${odo ? `Odometer ${Math.round(odo.miles).toLocaleString()} mi (${odo.from}${odo.at ? ', ' + esc(odo.from === 'ELD' ? when(odo.at) : fmtDate(odo.at)) : ''}). ` : ''}Next PM: <span class="${pm.cls}">${pm.txt}</span>`;
+  $('pm-status').innerHTML = `${odo ? `Odometer ${Math.round(odo.miles).toLocaleString()} mi (${odo.from}${odo.at ? ', ' + esc(odo.from === 'ELD' ? when(odo.at) : fmtDate(odo.at)) : ''}). ` : 'No odometer yet: connect an ELD, or it fills in from drivers\' odometer entries, or type one. '}Next PM: <span class="${pm.cls}">${pm.txt}</span>`;
 }
 function readForm() {
   const v = {};
