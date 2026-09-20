@@ -1,0 +1,274 @@
+/* RoadCoda — shared look and feel.
+   Load this AFTER each page's own <style> block: it redefines the tokens the
+   pages already use, so every existing rule re-colours itself, and it restyles
+   the shared furniture (header, buttons, cards, tables) into the new console.
+   Page-specific rules that this file does not name keep working as they are.
+
+   Dark is the default. The user's choice is stamped on <html data-rc-theme>
+   by shell.js; with no choice stamped, the operating system decides.        */
+
+:root,
+html[data-rc-theme="dark"]{
+  /* tokens the existing pages already reference */
+  --ground:#070c14;
+  --surface:#0e1823;
+  --ink:#e8eff6;
+  --muted:#9fb2c2;
+  --line:#21323f;
+  --accent:#a274ee;
+  --late:#f4685f;
+  --ok:#3fbf87;
+  --ok-bg:rgba(63,191,135,.14);
+  --info:#7fb2e8;   --info-bg:rgba(127,178,232,.14);
+  --risk:#e9a23b;   --risk-bg:rgba(233,162,59,.14);
+
+  /* new tokens */
+  --panel-2:#13202d;
+  --raise:#1a2938;
+  --raise-hi:#243648;
+  --line-soft:#182634;
+  --ink-3:#6a8093;
+  --accent-hi:#d9bcff;
+  --accent-deep:#2f1a63;
+  --brand:#a274ee;          /* identity violet */
+  --rim:#a274ee;            /* the mark's outline */
+  --hexfill:#0a0a0a;
+  --glyph:#b8b8bc;
+  --row-hover:rgba(162,116,238,.09);
+  --row-line:#182634;
+  --well:#13202d;
+  --lift:0 1px 0 rgba(255,255,255,.055) inset, 0 -1px 0 rgba(0,0,0,.45) inset, 0 2px 4px rgba(0,0,0,.5);
+  --press:0 2px 5px rgba(0,0,0,.55) inset, 0 -1px 0 rgba(255,255,255,.05) inset;
+  --card-sh:0 1px 0 rgba(255,255,255,.04) inset, 0 8px 22px rgba(0,0,0,.42);
+  --rail:232px;
+  --ui:Archivo,'Helvetica Neue',Arial,sans-serif;
+  --mono:'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
+}
+
+html[data-rc-theme="light"]{
+  --ground:#e9edf4;
+  --surface:#ffffff;
+  --ink:#121a26;
+  --muted:#53627a;
+  --line:#d7dfea;
+  --accent:#6d3fc4;
+  --late:#c6362c;
+  --ok:#157a4b;     --ok-bg:#e3f1e6;
+  --info:#1d4e89;   --info-bg:#e3edf6;
+  --risk:#9a6208;   --risk-bg:#fbeed8;
+
+  --panel-2:#f4f7fb;
+  --raise:#ffffff;
+  --raise-hi:#f0f3f9;
+  --line-soft:#e6ebf3;
+  --ink-3:#7d8ca3;
+  --accent-hi:#8b5fd6;
+  --accent-deep:#ece2ff;
+  --brand:#4c2a91;          /* deep — 10.3:1 on white, holds on a printed page */
+  --rim:#4c2a91;
+  --hexfill:#0a0a0a;
+  --glyph:#f2f2f4;
+  --row-hover:rgba(109,63,196,.07);
+  --row-line:#e6ebf3;
+  --well:#f4f7fb;
+  --lift:0 1px 0 rgba(255,255,255,.9) inset, 0 -1px 0 rgba(18,26,38,.07) inset, 0 1px 2px rgba(18,26,38,.12);
+  --press:0 2px 4px rgba(18,26,38,.16) inset;
+  --card-sh:0 1px 2px rgba(18,26,38,.07), 0 10px 24px rgba(18,26,38,.07);
+}
+/* The console is designed dark, so dark is the app's default whatever the
+   operating system says. shell.js stamps data-rc-theme when the user picks. */
+
+body{background:var(--ground);color:var(--ink);font-size:14px}
+
+/* ── The header becomes a sidebar ─────────────────────────────────────
+   Same markup the pages already ship; only the layout changes, so
+   access.js keeps finding the links exactly where it expects them.      */
+body{padding-left:var(--rail);transition:padding-left .16s ease}
+html.rc-rail-in body{--rail:62px}
+
+header{
+  position:fixed;left:0;top:0;bottom:0;width:var(--rail);z-index:40;
+  background:var(--surface);color:var(--ink);
+  border-right:1px solid var(--line);border-bottom:0;
+  display:flex;flex-direction:column;align-items:stretch;gap:2px;
+  padding:14px 12px 14px;overflow:hidden auto;
+  transition:width .16s ease;
+}
+header .brand{
+  display:flex;align-items:center;gap:9px;padding:2px 4px 14px;min-height:34px;
+  font-family:var(--ui);font-weight:700;font-size:17px;letter-spacing:-.3px;color:var(--ink);white-space:nowrap;
+}
+header .brand span{color:var(--brand)}
+.rc-mark{width:28px;height:28px;flex:none;display:grid;place-items:center}
+.rc-mark svg{display:block;width:100%;height:100%;overflow:visible}
+
+header nav{display:flex!important;flex-direction:column;gap:2px;align-items:stretch;font-size:14px}
+header nav a{
+  display:flex;align-items:center;gap:10px;
+  padding:0 11px;height:36px;border-radius:9px;
+  font-family:var(--ui);font-size:13.5px;font-weight:500;
+  color:var(--muted);text-decoration:none;white-space:nowrap;
+  background:linear-gradient(180deg,var(--raise),var(--panel-2));
+  border:1px solid var(--line);box-shadow:var(--lift);
+  transition:transform .09s ease,box-shadow .12s ease,color .12s ease,background .12s ease;
+}
+header nav a:hover{background:linear-gradient(180deg,var(--raise-hi),var(--raise));color:var(--ink);transform:translateY(-1px)}
+header nav a:active{transform:translateY(1px);box-shadow:var(--press)}
+header nav a.on{
+  color:var(--ink);
+  background:linear-gradient(180deg,var(--accent) -35%,var(--accent-deep) 62%,var(--panel-2));
+  border-color:color-mix(in srgb,var(--accent) 55%,var(--line));
+  box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 -1px 0 rgba(0,0,0,.4) inset;
+}
+header nav a .rc-ic{width:17px;flex:none;text-align:center;color:var(--accent-hi);font-size:13px;line-height:1}
+header nav a.on .rc-ic{color:#fff}
+
+.rc-sec{
+  font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);padding:15px 8px 6px;
+}
+.rc-sub{display:flex;flex-direction:column;gap:2px;margin:2px 0 0 12px;padding-left:10px;border-left:1px solid var(--line-soft)}
+.rc-sub a{height:31px;font-size:13px;background:none!important;border-color:transparent!important;box-shadow:none!important}
+.rc-sub a:hover{background:var(--panel-2)!important;border-color:var(--line)!important;box-shadow:var(--lift)!important}
+.rc-sub a.on{background:linear-gradient(180deg,var(--accent-deep),var(--panel-2))!important;
+  border-color:color-mix(in srgb,var(--accent) 40%,var(--line))!important;box-shadow:var(--lift)!important}
+
+header .who{margin-left:0;font-size:12px;color:var(--ink-3);padding:4px 6px;line-height:1.45;white-space:normal}
+.rc-foot{margin-top:auto;padding-top:12px;display:flex;flex-direction:column;gap:6px}
+.rc-railbtn{
+  display:flex;align-items:center;gap:10px;height:34px;padding:0 11px;border-radius:9px;
+  font-family:var(--ui);font-size:13px;font-weight:500;color:var(--muted);
+  background:linear-gradient(180deg,var(--raise),var(--panel-2));
+  border:1px solid var(--line);box-shadow:var(--lift);cursor:pointer;text-align:left;
+}
+.rc-railbtn:hover{color:var(--ink);background:linear-gradient(180deg,var(--raise-hi),var(--raise))}
+header #signout{width:100%}
+/* Links that end up in the foot (Driver app, My account) are buttons too —
+   they sit outside <nav>, so the nav rules above don't reach them. */
+.rc-foot a{
+  display:flex;align-items:center;gap:10px;height:34px;padding:0 11px;border-radius:9px;
+  font-family:var(--ui);font-size:13px;font-weight:500;color:var(--muted);text-decoration:none;white-space:nowrap;
+  background:linear-gradient(180deg,var(--raise),var(--panel-2));
+  border:1px solid var(--line);box-shadow:var(--lift);
+  transition:transform .09s ease,box-shadow .12s ease,color .12s ease,background .12s ease;
+}
+.rc-foot a:hover{color:var(--ink);background:linear-gradient(180deg,var(--raise-hi),var(--raise));transform:translateY(-1px)}
+.rc-foot a:active{transform:translateY(1px);box-shadow:var(--press)}
+.rc-foot a .rc-ic{width:17px;flex:none;text-align:center;color:var(--accent-hi);font-size:13px;line-height:1}
+html.rc-rail-in .rc-foot a{justify-content:center;padding:0}
+/* who-am-I sits just above the controls, quietly */
+header .who{margin-top:auto;padding-top:14px;border-top:1px solid var(--line-soft)}
+.rc-foot{margin-top:0}
+
+/* collapsed rail */
+html.rc-rail-in header nav a{justify-content:center;padding:0}
+html.rc-rail-in header .brand span,
+html.rc-rail-in header .brand b,
+html.rc-rail-in header .who,
+html.rc-rail-in .rc-sec,
+html.rc-rail-in .rc-sub,
+html.rc-rail-in .rc-lbl,
+html.rc-rail-in #signout{display:none}
+html.rc-rail-in .rc-railbtn{justify-content:center;padding:0}
+
+/* ── Content ──────────────────────────────────────────────────────── */
+main{max-width:none;padding:20px 22px 40px;gap:16px}
+h1{font-family:var(--ui);font-size:22px;font-weight:600;letter-spacing:-.2px}
+h2{font-family:var(--ui);font-size:13px;font-weight:600;letter-spacing:.055em;text-transform:uppercase;color:var(--muted)}
+main a{color:var(--accent-hi)}
+html[data-rc-theme="light"] main a{color:var(--accent)}
+
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--card-sh);padding:16px 18px;
+}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--card-sh);color:var(--ink)}
+.kpi b{font-family:var(--mono);font-weight:600;font-size:27px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--ink-3)}
+.kpi small{color:var(--muted)}
+.kpi.warn b{color:var(--late)}
+
+/* buttons keep their depth */
+.btn{
+  height:34px;padding:0 14px;border-radius:8px;
+  border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--raise),var(--panel-2));
+  color:var(--ink);font-family:var(--ui);font-size:13px;font-weight:500;
+  box-shadow:var(--lift);
+  transition:transform .09s ease,box-shadow .12s ease,background .12s ease;
+}
+.btn:hover{background:linear-gradient(180deg,var(--raise-hi),var(--raise));transform:translateY(-1px)}
+.btn:active{transform:translateY(1px);box-shadow:var(--press)}
+.btn.primary{
+  color:#fff;border-color:color-mix(in srgb,var(--accent) 60%,var(--line));
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 88%,#fff) -10%,var(--accent) 45%,color-mix(in srgb,var(--accent) 70%,#000) 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.3) inset,0 -1px 0 rgba(0,0,0,.3) inset;
+}
+.btn.danger{color:var(--late)}
+.btn.small{height:28px;padding:0 11px;font-size:12px;border-radius:7px}
+.btn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+
+/* form controls */
+label{color:var(--muted);font-size:12.5px}
+input,select,textarea{
+  height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;
+  font-size:14px;font-family:inherit;color:var(--ink);background:var(--panel-2);
+}
+textarea{height:auto;padding:8px 10px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+input[type=checkbox],input[type=radio]{height:auto;accent-color:var(--accent)}
+
+/* tables — denser, and the numbers line up */
+table{min-width:680px}
+th{
+  font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);padding:7px 8px;border-bottom:1px solid var(--line);background:var(--panel-2);
+}
+td{padding:6px 8px;border-bottom:1px solid var(--row-line);vertical-align:middle}
+tr.click:hover{background:var(--row-hover)}
+.mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.pill{font-family:var(--ui);font-size:11px;font-weight:600;letter-spacing:.02em;padding:2px 9px}
+.s-delivered{background:var(--accent-deep);color:var(--accent-hi)}
+html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
+.s-cancelled{background:rgba(244,104,95,.16);color:var(--late)}
+
+/* everything the pages hardcoded to a light colour */
+.note{background:var(--well);color:var(--muted)}
+.att li,.detail-stop{border-bottom-color:var(--row-line)}
+.bar{background:var(--panel-2)}
+.bar i{background:var(--accent)}
+.thumbs img{background:var(--panel-2);border-color:var(--line)}
+.stop{border-color:var(--line);background:var(--panel-2);border-radius:10px}
+.s-hint{color:var(--ink-3)}
+.s-hint.new{color:var(--risk)}
+.tag-new{background:var(--risk-bg);color:var(--risk)}
+.tag-old{background:var(--ok-bg);color:var(--ok)}
+.dot{background:var(--risk)}
+.dot.red{background:var(--late)}
+.dot.blue{background:var(--info)}
+.error{color:var(--late)}
+.ok{color:var(--ok)}
+
+/* access.js's notices, in the new language */
+.rc-note div{background:var(--risk-bg)!important;border-color:color-mix(in srgb,var(--risk) 45%,var(--line))!important;color:var(--ink)!important}
+.rc-forgot{color:var(--accent-hi)!important}
+
+.login{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--card-sh);padding:20px;margin-top:48px}
+
+/* ── Narrow screens: the sidebar goes back to being a top bar ─────── */
+@media (max-width:900px){
+  body{padding-left:0}
+  header{position:static;width:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;
+         border-right:0;border-bottom:1px solid var(--line);padding:10px 14px}
+  header nav{flex-direction:row!important;flex-wrap:wrap;gap:6px}
+  header nav a{height:32px}
+  .rc-sec{display:none}
+  .rc-sub{flex-direction:row;flex-wrap:wrap;margin:0;padding-left:0;border-left:0}
+  .rc-foot{margin-top:0;flex-direction:row;padding-top:0}
+  header .who{margin-left:auto}
+  main{padding:16px 14px 32px}
+}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+:focus-visible{outline:2px solid var(--accent-hi);outline-offset:2px}

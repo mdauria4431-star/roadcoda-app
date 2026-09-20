@@ -1,0 +1,196 @@
+// RoadCoda: turns the shared page header into the console sidebar.
+// Include on every office page AFTER access.js:
+//     <script src="access.js"></script>
+//     <script src="shell.js"></script>
+// It waits for access.js to finish hiding screens before it groups the menu,
+// so a link this user can't open never leaves an empty group behind.
+// Nothing here changes what a page does — only how the furniture is arranged.
+(function () {
+  'use strict';
+
+  // Theme first, before anything paints, so there's no flash of the wrong one.
+  try {
+    var saved = localStorage.getItem('rc-theme');
+    if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-rc-theme', saved);
+  } catch (e) { /* private window, blocked storage — the OS setting decides */ }
+  try {
+    if (localStorage.getItem('rc-rail') === 'in') document.documentElement.classList.add('rc-rail-in');
+  } catch (e) {}
+
+  // The mark: octagon, violet hairline, the R traced from the real artwork.
+  var MARK =
+    '<svg viewBox="-1 -1 26 26" aria-hidden="true">' +
+    '<path style="fill:var(--hexfill)" d="M23.09 7.41L16.59 0.91H7.41L0.91 7.41V16.59L7.41 23.09H16.59L23.09 16.59Z"/>' +
+    '<path style="fill:none;stroke:var(--rim);stroke-width:1;vector-effect:non-scaling-stroke" d="M23.09 7.41L16.59 0.91H7.41L0.91 7.41V16.59L7.41 23.09H16.59L23.09 16.59Z"/>' +
+    '<path style="fill:var(--glyph)" transform="translate(12 12) scale(1.07) translate(-11.77 -12.25)" ' +
+    'd="M6.72 7.27 L8.13 9.17 L13.61 9.17 L13.93 9.23 L14.20 9.38 L14.45 9.65 L14.54 9.82 L14.62 10.16 L14.62 10.39 ' +
+    'L14.54 10.75 L14.41 10.98 L14.22 11.19 L14.01 11.34 L13.61 11.46 L9.63 11.48 L9.63 13.09 L13.70 17.22 L16.69 17.22 ' +
+    'L12.98 13.27 L13.00 13.23 L13.70 13.23 L14.18 13.17 L14.94 12.94 L15.49 12.64 L15.82 12.39 L16.16 12.05 L16.46 11.65 ' +
+    'L16.67 11.21 L16.79 10.68 L16.81 10.26 L16.75 9.71 L16.63 9.27 L16.39 8.79 L16.08 8.34 L15.70 7.96 L15.32 7.69 ' +
+    'L15.00 7.52 L14.60 7.37 L14.20 7.29 Z"/></svg>';
+
+  // Six visible groups instead of eleven flat links. Setup is weekly work, so
+  // it folds away — that's what buys the dispatch board its width.
+  var GROUPS = [
+    { name: 'Daily', items: ['index.html', 'dispatch.html', 'loads.html'] },
+    { name: 'Money', items: ['invoices.html', 'tolls.html'] },
+    { name: 'Setup', items: ['customers.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
+  ];
+  var ICON = {
+    'index.html': '◎', 'dispatch.html': '▤', 'loads.html': '▸',
+    'invoices.html': '§', 'tolls.html': '¤',
+    'customers.html': '☰', 'drivers.html': '☰', 'equipment.html': '☰',
+    'rates.html': '☰', 'integrations.html': '☰', 'users.html': '☰',
+    'driver.html': '▢', 'account.html': '◔',
+  };
+  var NAME = { 'index.html': 'Home', 'dispatch.html': 'Dispatch', 'loads.html': 'Loads',
+    'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
+    'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
+    'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
+    'account.html': 'My account' };
+
+  function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
+
+  function build() {
+    var header = document.querySelector('header');
+    var nav = header && header.querySelector('nav');
+    if (!header || !nav) return;
+    if (header.dataset.rcDone) return;
+    header.dataset.rcDone = '1';
+
+    // Title leads with the screen: Chrome fades long tab titles, so
+    // "RoadCoda — Dispatch" renders as three identical tabs when three are open.
+    var here = location.pathname.split('/').pop() || 'index.html';
+    if (NAME[here]) document.title = NAME[here] + ' · RoadCoda';
+
+    // Brand gets the mark
+    var brand = header.querySelector('.brand');
+    if (brand && !brand.querySelector('.rc-mark')) {
+      var m = document.createElement('span');
+      m.className = 'rc-mark';
+      m.innerHTML = MARK;
+      var words = document.createElement('b');
+      words.style.fontWeight = '700';
+      words.innerHTML = brand.innerHTML;
+      brand.innerHTML = '';
+      brand.appendChild(m);
+      brand.appendChild(words);
+    }
+
+    // Index the links access.js left in place
+    var links = {};
+    Array.prototype.forEach.call(nav.querySelectorAll('a'), function (a) { links[href(a)] = a; });
+
+    var frag = document.createDocumentFragment();
+    var used = {};
+    GROUPS.forEach(function (g) {
+      var present = g.items.filter(function (k) { return links[k]; });
+      if (!present.length) return;
+      var head = document.createElement('div');
+      head.className = 'rc-sec';
+      head.textContent = g.name;
+      frag.appendChild(head);
+      var box = frag;
+      if (g.fold) {
+        var toggle = document.createElement('a');
+        toggle.href = '#';
+        toggle.innerHTML = '<span class="rc-ic">⚙</span><span class="rc-lbl">' + g.name + '</span>';
+        var sub = document.createElement('div');
+        sub.className = 'rc-sub';
+        var open = true;
+        try { open = localStorage.getItem('rc-fold-' + g.name) !== 'shut'; } catch (e) {}
+        sub.hidden = !open;
+        toggle.onclick = function (ev) {
+          ev.preventDefault();
+          sub.hidden = !sub.hidden;
+          try { localStorage.setItem('rc-fold-' + g.name, sub.hidden ? 'shut' : 'open'); } catch (e) {}
+        };
+        head.remove();                       // the fold button is its own label
+        frag.appendChild(toggle);
+        frag.appendChild(sub);
+        box = sub;
+      }
+      present.forEach(function (k) {
+        var a = links[k]; used[k] = 1;
+        if (!a.querySelector('.rc-ic')) {
+          var ic = document.createElement('span');
+          ic.className = 'rc-ic';
+          ic.textContent = ICON[k] || '·';
+          a.insertBefore(ic, a.firstChild);
+        }
+        box.appendChild(a);
+      });
+      // A group whose links this user can't open shouldn't leave a heading behind
+      if (!box.children.length) { head.remove(); }
+    });
+
+    // Anything not in a group (driver app, my account) goes to the bottom
+    var rest = Object.keys(links).filter(function (k) { return !used[k]; });
+    var foot = document.createElement('div');
+    foot.className = 'rc-foot';
+    rest.forEach(function (k) {
+      var a = links[k];
+      if (!a.querySelector('.rc-ic')) {
+        var ic = document.createElement('span');
+        ic.className = 'rc-ic';
+        ic.textContent = ICON[k] || '·';
+        a.insertBefore(ic, a.firstChild);
+      }
+      foot.appendChild(a);
+    });
+
+    nav.innerHTML = '';
+    nav.appendChild(frag);
+
+    // Who am I, then the controls
+    var who = header.querySelector('.who');
+    if (who) header.appendChild(who);
+    header.appendChild(foot);
+
+    var theme = document.createElement('button');
+    theme.type = 'button';
+    theme.className = 'rc-railbtn';
+    function paintTheme() {
+      var dark = document.documentElement.getAttribute('data-rc-theme') !== 'light';
+      theme.innerHTML = '<span class="rc-ic">' + (dark ? '☾' : '☀') + '</span><span class="rc-lbl">' +
+        (dark ? 'Dark' : 'Light') + '</span>';
+    }
+    paintTheme();
+    theme.onclick = function () {
+      var dark = document.documentElement.getAttribute('data-rc-theme') !== 'light';
+      var next = dark ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-rc-theme', next);
+      try { localStorage.setItem('rc-theme', next); } catch (e) {}
+      paintTheme();
+    };
+    foot.appendChild(theme);
+
+    var rail = document.createElement('button');
+    rail.type = 'button';
+    rail.className = 'rc-railbtn';
+    function paintRail() {
+      var inn = document.documentElement.classList.contains('rc-rail-in');
+      rail.innerHTML = '<span class="rc-ic">' + (inn ? '»' : '«') + '</span><span class="rc-lbl">Collapse</span>';
+    }
+    paintRail();
+    rail.onclick = function () {
+      var inn = document.documentElement.classList.toggle('rc-rail-in');
+      try { localStorage.setItem('rc-rail', inn ? 'in' : 'out'); } catch (e) {}
+      paintRail();
+    };
+    foot.appendChild(rail);
+
+    var out = header.querySelector('#signout');
+    if (out) foot.appendChild(out);
+  }
+
+  function start() {
+    // Let access.js settle first so grouping sees the final link set
+    var ready = window.RC_ACCESS_READY || Promise.resolve(null);
+    ready.then(build, build);
+    // and a backstop in case access.js never loaded on this page
+    setTimeout(build, 2500);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
