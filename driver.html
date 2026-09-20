@@ -137,7 +137,9 @@ if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY |
   throw new Error('RoadCoda settings missing');
 }
 // Came from a "Set up my login" / "Set a new password" email? (read before the client tidies the address bar)
-const linkType = (/[#&?]type=(invite|recovery)/.exec(location.hash + location.search) || [])[1] || '';
+const QS = new URLSearchParams(location.search);
+const tokenHash = QS.get('th') || '', tokenType = /^(invite|recovery)$/.test(QS.get('t') || '') ? QS.get('t') : '', tokenEmail = QS.get('e') || '';
+const linkType = tokenType || (/[#&?]type=(invite|recovery)/.exec(location.hash) || [])[1] || '';
 const linkError = decodeURIComponent(((/[#&?]error_description=([^&]+)/.exec(location.hash + location.search)) || [])[1] || '').replace(/\+/g, ' ');
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
@@ -170,6 +172,12 @@ function watchMotion() {
 
 // ---------- Sign in ----------
 async function start() {
+  // From the emailed button: choose a password first; the one-time code is used on Save
+  if (tokenHash && !pwDone) {
+    $('pw-title').textContent = linkType === 'invite' ? 'Choose your password' : 'Choose a new password';
+    $('pw-who').textContent = tokenEmail ? `Your login email: ${tokenEmail}` : '';
+    $('pw-view').hidden = false; $('login-view').hidden = true; $('app').hidden = true; $('pw1').focus(); return;
+  }
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
     if (linkError) $('login-error').textContent = /expired|invalid/i.test(linkError) ? 'That login link has expired or was already used. Ask dispatch to send a new one.' : linkError;
@@ -203,6 +211,14 @@ $('pw-btn').onclick = async () => {
   if (a.length < 8) { $('pw-error').textContent = 'Use at least 8 characters.'; return; }
   if (a !== b) { $('pw-error').textContent = 'The two passwords don\'t match.'; return; }
   $('pw-btn').disabled = true;
+  if (tokenHash) {
+    const { error: ve } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: tokenType || 'recovery' });
+    if (ve) {
+      $('pw-btn').disabled = false;
+      $('pw-error').textContent = /expired|invalid/i.test(ve.message) ? 'This link has expired or was already used. Ask dispatch to send you a new one.' : ve.message;
+      return;
+    }
+  }
   const { error } = await sb.auth.updateUser({ password: a });
   $('pw-btn').disabled = false;
   if (error) { $('pw-error').textContent = error.message; return; }
