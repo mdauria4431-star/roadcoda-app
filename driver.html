@@ -78,6 +78,8 @@
   .lock{position:fixed;inset:0;background:#0e1013;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;
         gap:12px;text-align:center;padding:24px;z-index:50}
   .lock b{font-family:Archivo,sans-serif;font-size:28px}
+  .ios-first{padding:12px 14px;background:#fff8e6;border:1px solid #e6c77a;border-radius:10px;line-height:1.5;font-size:15px}
+  .ios-first ol{margin:6px 0 0;padding-left:20px}
 </style>
 </head>
 <body>
@@ -90,7 +92,14 @@
   <section id="login-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1>Sign in to RoadCoda</h1>
     <div class="error" id="login-error"></div>
-    <p style="margin:0;line-height:1.5"><b>Scan your reset card</b> with your phone camera, then enter the last 4 of your CDL number.
+    <div id="appcode-box" style="display:flex;flex-direction:column;gap:8px">
+      <label for="appcode">Have an app code? (from Safari, looks like K7Q2-9MXD)<input id="appcode" autocomplete="off" autocapitalize="characters" maxlength="9" placeholder="XXXX-XXXX" style="font-size:24px;letter-spacing:.15em;text-transform:uppercase"></label>
+      <button class="btn primary" id="appcode-btn" type="button">Enter app code</button>
+      <div class="error" id="appcode-error"></div>
+    </div>
+    <div class="meta" style="text-align:center">or</div>
+    <button class="btn" id="scan-sign-btn" type="button">Scan sign-in code</button>
+    <p style="margin:0;line-height:1.5">Scan the QR code dispatch shows you, or your <b>reset card</b> (then enter the last 4 of your CDL number).
       No card? Ask dispatch for a sign-in QR code or link.</p>
     <details><summary class="meta" style="cursor:pointer">Sign in with email and password instead</summary>
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:10px">
@@ -103,6 +112,7 @@
 
   <section id="link-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1>Use this phone for RoadCoda</h1>
+    <div class="ios-first" hidden></div>
     <p style="margin:0;line-height:1.5">Tap the button to sign this phone in. You won't need a password.</p>
     <button class="btn primary" id="link-btn">Sign in this phone</button>
     <div class="error" id="link-error"></div>
@@ -111,6 +121,7 @@
   <section id="card-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1>Reset card</h1>
     <div class="meta" id="card-who"></div>
+    <div class="ios-first" hidden></div>
     <label for="card-pin" id="card-label">Last 4 characters of your CDL number<input id="card-pin" autocomplete="off" autocapitalize="characters" maxlength="6" style="font-size:24px;letter-spacing:.2em;text-transform:uppercase"></label>
     <button class="btn primary" id="card-btn">Sign in this phone</button>
     <div class="error" id="card-error"></div>
@@ -143,7 +154,12 @@
     <div id="a2hs" class="card" hidden style="border-color:#e6c77a;background:#fff8e6">
       <b>Add RoadCoda to your home screen</b>
       <div id="a2hs-how" class="meta" style="margin-top:6px;line-height:1.5"></div>
-      <div style="display:flex;gap:10px;margin-top:10px"><button class="btn primary" id="a2hs-btn" hidden>Add to home screen</button><button class="btn" id="a2hs-later">Later</button></div>
+      <div id="handoff" hidden style="margin-top:10px;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:10px;text-align:center">
+        <div class="meta">Open RoadCoda from the home screen, tap <b>Enter app code</b> and type:</div>
+        <div id="handoff-code" style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:700;letter-spacing:.12em;margin:6px 0"></div>
+        <div class="meta" id="handoff-exp"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn primary" id="a2hs-btn" hidden>Add to home screen</button><button class="btn primary" id="handoff-btn" hidden>I added it: get app code</button><button class="btn" id="a2hs-later">Later</button></div>
     </div>
     <div id="stops"></div>
     <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
@@ -157,6 +173,13 @@
   <div id="scan-status" aria-live="polite">Point the camera at a label</div>
   <div class="row" style="margin-top:0"><input id="manual-code" placeholder="Or type the label number" autocomplete="off"><button class="btn" id="manual-add" style="flex:0 0 auto">Add</button></div>
   <button class="btn primary" id="scan-done">Done scanning</button>
+</div>
+
+<div class="scanner" id="signscan" hidden role="dialog" aria-label="Scan sign-in code">
+  <div style="font-family:Archivo,sans-serif;font-size:20px">Scan your sign-in code or reset card</div>
+  <div id="sreader" style="width:100%;max-width:520px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000"></div>
+  <div id="sscan-status" style="text-align:center;font-size:18px;font-weight:600;min-height:26px">Point the camera at the QR code</div>
+  <button class="btn" id="sscan-close">Cancel</button>
 </div>
 
 <div class="lock" id="lock" hidden role="alertdialog" aria-live="assertive">
@@ -175,8 +198,12 @@ if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY |
 }
 // Came from a "Set up my login" / "Set a new password" email? (read before the client tidies the address bar)
 const QS = new URLSearchParams(location.search);
-const phoneLink = QS.get('t') === 'link' ? (QS.get('th') || '') : '';
-const cardCode = QS.get('card') || '';
+let phoneLink = QS.get('t') === 'link' ? (QS.get('th') || '') : '';
+let cardCode = QS.get('card') || '';
+const IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const STANDALONE = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+// Keep the one-time code in memory only, so a home-screen icon added from this page doesn't carry it
+if (phoneLink || cardCode) history.replaceState(null, '', location.pathname);
 const tokenHash = phoneLink ? '' : (QS.get('th') || ''), tokenType = /^(invite|recovery)$/.test(QS.get('t') || '') ? QS.get('t') : '', tokenEmail = QS.get('e') || '';
 const linkType = tokenType || (/[#&?]type=(invite|recovery)/.exec(location.hash) || [])[1] || '';
 const linkError = decodeURIComponent(((/[#&?]error_description=([^&]+)/.exec(location.hash + location.search)) || [])[1] || '').replace(/\+/g, ' ');
@@ -212,9 +239,9 @@ function watchMotion() {
 // ---------- Sign in ----------
 async function start() {
   // Sign-in QR code / copied link from the office: tap to sign this phone in
-  if (phoneLink && !pwDone) { hideAll(); $('link-view').hidden = false; return; }
+  if (phoneLink && !pwDone) { hideAll(); iosFirst($('link-view')); $('link-view').hidden = false; return; }
   // Reset card
-  if (cardCode && !pwDone) { hideAll(); $('card-view').hidden = false; return cardCheck(); }
+  if (cardCode && !pwDone) { hideAll(); iosFirst($('card-view')); $('card-view').hidden = false; return cardCheck(); }
   // From the emailed button: choose a password first; the one-time code is used on Save
   if (tokenHash && !pwDone) {
     $('pw-title').textContent = linkType === 'invite' ? 'Choose your password' : 'Choose a new password';
@@ -254,6 +281,37 @@ $('signout').onclick = async (e) => {
   if (!confirm('Sign this phone out of RoadCoda? To get back in you will need your reset card, or a new sign-in code from dispatch.')) return;
   await sb.auth.signOut(); location.replace(location.pathname);
 };
+// iPhone: an app on the home screen keeps its own sign-in, separate from Safari. So add it FIRST,
+// open it from the icon, and scan the code inside the app (the code isn't used until then).
+function iosFirst(view) {
+  const box = view.querySelector('.ios-first');
+  if (!IOS || STANDALONE) { box.hidden = true; return; }
+  box.innerHTML = `<b>iPhone: add RoadCoda to your home screen first</b>
+    <ol><li>Tap the <b>Share</b> button (square with an arrow) at the bottom of Safari.</li>
+      <li>Tap <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+      <li>Come back here and sign in below. You'll get a short <b>app code</b>.</li>
+      <li>Open <b>RoadCoda</b> from the new icon, tap <b>Enter app code</b> and type it.</li></ol>`;
+  box.hidden = false;
+}
+let signScanner = null;
+async function openSignScan() {
+  $('signscan').hidden = false; $('sscan-status').textContent = 'Point the camera at the QR code';
+  if (!window.Html5Qrcode) { $('sscan-status').textContent = 'Camera scanner did not load. Check your connection and try again.'; return; }
+  try {
+    signScanner = new Html5Qrcode('sreader');
+    await signScanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 240 } }, onSignCode, () => {});
+  } catch (e) { $('sscan-status').textContent = 'Camera not available (' + (e?.message || e) + '). Allow camera access for RoadCoda and try again.'; signScanner = null; }
+}
+async function closeSignScan() { if (signScanner) { try { await signScanner.stop(); signScanner.clear(); } catch (_) {} signScanner = null; } $('signscan').hidden = true; }
+async function onSignCode(text) {
+  let u; try { u = new URL(text); } catch (_) { $('sscan-status').textContent = 'That isn\'t a RoadCoda sign-in code.'; return; }
+  const q = u.searchParams;
+  if (q.get('t') === 'link' && q.get('th')) { await closeSignScan(); phoneLink = q.get('th'); cardCode = ''; pwDone = false; return start(); }
+  if (q.get('card')) { await closeSignScan(); cardCode = q.get('card'); phoneLink = ''; pwDone = false; return start(); }
+  $('sscan-status').textContent = 'That isn\'t a RoadCoda sign-in code.';
+}
+$('scan-sign-btn').onclick = openSignScan;
+$('sscan-close').onclick = closeSignScan;
 function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'app'].forEach(id => $(id).hidden = true); }
 async function fnCall(body) {
   const { data, error } = await sb.functions.invoke('driver-login', { body });
@@ -264,7 +322,7 @@ async function fnCall(body) {
 async function signInWith(th) {
   const { error } = await sb.auth.verifyOtp({ token_hash: th, type: 'magiclink' });
   if (error) throw new Error(/expired|invalid/i.test(error.message) ? 'This code has expired or was already used. Ask dispatch for a new one.' : error.message);
-  pwDone = true; history.replaceState(null, '', location.pathname);
+  pwDone = true; phoneLink = ''; cardCode = ''; history.replaceState(null, '', location.pathname);
   return start();
 }
 $('link-btn').onclick = async () => {
@@ -313,12 +371,31 @@ function homeScreenPrompt() {
   if (standalone || Date.now() - later < 3 * 864e5) { $('a2hs').hidden = true; return; }
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   $('a2hs-how').innerHTML = ios
-    ? 'So you stay signed in: tap the <b>Share</b> button (square with an arrow) at the bottom of Safari, then <b>Add to Home Screen</b>. Open RoadCoda from that icon from now on.'
+    ? 'So you stay signed in: tap the <b>Share</b> button (square with an arrow) at the bottom of Safari, then <b>Add to Home Screen</b>. The icon signs in separately, so then tap <b>I added it: get app code</b> below and type that code into the app.'
     : 'So you stay signed in and it opens like an app: tap the button below, or the browser menu (⋮) › <b>Add to Home screen</b> / <b>Install app</b>.';
   $('a2hs-btn').hidden = !installEvt;
+  $('handoff-btn').hidden = !ios;
   $('a2hs').hidden = false;
 }
 $('a2hs-btn').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('a2hs').hidden = true; };
+$('handoff-btn').onclick = async () => {
+  $('handoff-btn').disabled = true;
+  try {
+    const r = await fnCall({ action: 'handoff_make' });
+    $('handoff-code').textContent = r.code;
+    $('handoff-exp').textContent = `Works once, for ${r.minutes} minutes. Get a new one here if it runs out.`;
+    $('handoff').hidden = false; $('handoff-btn').textContent = 'Get a new code';
+  } catch (e) { $('handoff-exp').textContent = e.message; $('handoff').hidden = false; }
+  $('handoff-btn').disabled = false;
+};
+$('appcode-btn').onclick = async () => {
+  const code = $('appcode').value.trim();
+  if (code.replace(/[^A-Za-z0-9]/g, '').length !== 8) { $('appcode-error').textContent = 'Enter all 8 characters, e.g. K7Q2-9MXD.'; return; }
+  $('appcode-btn').disabled = true; $('appcode-error').textContent = '';
+  try { const r = await fnCall({ action: 'handoff_use', code }); await signInWith(r.th); }
+  catch (e) { $('appcode-error').textContent = e.message; $('appcode-btn').disabled = false; }
+};
+$('appcode').onkeydown = (e) => { if (e.key === 'Enter') $('appcode-btn').click(); };
 $('a2hs-later').onclick = () => { try { localStorage.setItem('rc-a2hs-later', String(Date.now())); } catch (_) {} $('a2hs').hidden = true; };
 $('refresh').onclick = () => loadStops();
 $('pw-btn').onclick = async () => {
