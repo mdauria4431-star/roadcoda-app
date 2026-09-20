@@ -74,7 +74,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="drivers.html">Drivers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -421,7 +421,8 @@ async function renderLogin() {
   const { data: ev } = await sb.from('driver_access_events').select('id, kind, detail, needs_followup, handled_at, at').eq('driver_id', d.id).order('at', { ascending: false }).limit(8);
   const LABEL = { phone_linked: 'QR code shown to set up a phone', link_copied: 'Sign-in link copied', link_emailed: 'Sign-in link emailed', card_printed: 'Reset card printed',
     card_cancelled: 'Reset card cancelled', card_used: 'Used the reset card to sign in a phone', card_locked: 'Reset card locked (too many wrong PINs)',
-    card_unlocked: 'Reset card unlocked', access_removed: 'App access removed', pin_set: 'Driver chose a reset PIN' };
+    card_unlocked: 'Reset card unlocked', access_removed: 'App access removed', pin_set: 'Driver chose a reset PIN',
+    device_signin: 'Started a shift on a truck device', device_locked: 'Truck device locked (too many wrong PINs)' };
   $('events').innerHTML = (ev || []).map(e => {
     const open = e.needs_followup && !e.handled_at;
     return `<li class="${open ? 'flag' : ''}"><span class="mono" style="min-width:120px">${esc(when(e.at))}</span><span style="flex:1">${esc(LABEL[e.kind] || e.kind)}</span>

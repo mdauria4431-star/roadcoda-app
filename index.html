@@ -82,7 +82,7 @@
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a class="on" href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a class="on" href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
@@ -168,14 +168,15 @@ async function load() {
   $('title').textContent = day === today ? 'Today' : new Date(day + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const sel = 'id, load_no, status, miles, driver_id, customer_id, invoice_id, hub_required, hub_start, hub_end, drivers(full_name), equipment(unit_no), customers(name), ' +
               'stops(id, seq, stop_type, needs_review, added_note, consignee, address, status, window_start, window_end, eta, arrived_at, departed_at, issue_type, late_reason)';
-  const [L, T, P, I, D, AE] = await Promise.all([
+  const [L, T, P, I, D, AE, EQ] = await Promise.all([
     sb.from('loads').select(sel).eq('service_date', day).neq('status', 'cancelled').order('load_no'),
     sb.from('loads').select('id, load_no, driver_id, status, customers(name), stops(id)').eq('service_date', tomorrow).neq('status', 'cancelled'),
     sb.from('load_profit').select('billed, cost').eq('service_date', day),
     sb.from('invoices').select('id, invoice_no, status, due_date, total, customers(name)').in('status', ['draft', 'approved', 'sent']),
     sb.from('drivers').select('id, full_name, cdl_expires, med_card_expires').eq('active', true)
       .or(`cdl_expires.lte.${addDays(today, 30)},med_card_expires.lte.${addDays(today, 30)}`),
-    sb.from('driver_access_events').select('id, kind, at, driver_id, drivers(full_name)').eq('needs_followup', true).is('handled_at', null).order('at', { ascending: false })
+    sb.from('driver_access_events').select('id, kind, at, driver_id, drivers(full_name)').eq('needs_followup', true).is('handled_at', null).order('at', { ascending: false }),
+    sb.from('equipment').select('id, unit_no, registration_expires, inspection_due, pm_every_days, last_pm_date').eq('active', true)
   ]);
   if (L.error) { $('kpis').innerHTML = `<div class="card error">${esc(L.error.message)}</div>`; return; }
   const loads = L.data || [], now = new Date();
@@ -204,8 +205,17 @@ async function load() {
   loads.filter(l => !l.driver_id).forEach(l => att.push(['', `<a href="${loadLink(l, day)}">Load ${esc(l.load_no)}</a> · no driver assigned`]));
   loads.filter(l => l.hub_required && l.status === 'delivered' && l.hub_end == null).forEach(l => att.push(['', `<a href="${loadLink(l, day)}">Load ${esc(l.load_no)}</a> · delivered but the ending odometer is missing (hub miles)`]));
   // Reset card used / locked after hours: check in with the driver (needs 34_driver_access.sql)
-  (AE.error ? [] : AE.data || []).forEach(e => att.push([e.kind === 'card_locked' ? 'red' : '',
-    `<a href="drivers.html?id=${e.driver_id}">${esc(e.drivers?.full_name || 'Driver')}</a> · ${e.kind === 'card_locked' ? 'reset card locked after too many wrong PINs' : 'used their reset card to sign in a phone'} ${esc(new Date(e.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · check in with them`]));
+  (AE.error ? [] : AE.data || []).forEach(e => att.push([/locked/.test(e.kind) ? 'red' : '',
+    `<a href="drivers.html?id=${e.driver_id}">${esc(e.drivers?.full_name || 'Driver')}</a> · ${e.kind === 'card_locked' ? 'reset card locked after too many wrong PINs' : e.kind === 'device_locked' ? 'a truck device locked after too many wrong PINs (unlock it on the Equipment page)' : 'used their reset card to sign in a phone'} ${esc(new Date(e.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · check in with them`]));
+  // Equipment registration / inspection due within 30 days, PM due by date (needs 36_equipment.sql)
+  (EQ.error ? [] : EQ.data || []).forEach(u => {
+    [['registration', u.registration_expires], ['annual inspection', u.inspection_due],
+     ['PM', u.pm_every_days && u.last_pm_date ? addDays(u.last_pm_date, u.pm_every_days) : null]].forEach(([what, dt]) => {
+      if (!dt || dt > addDays(today, what === 'PM' ? 14 : 30)) return;
+      const n = Math.round((new Date(dt + 'T00:00:00') - new Date(today + 'T00:00:00')) / 864e5);
+      att.push([n < 0 ? 'red' : '', `<a href="equipment.html?id=${u.id}">${esc(u.unit_no)}</a> · ${what} ${n < 0 ? `overdue since ${esc(new Date(dt + 'T00:00:00').toLocaleDateString())}` : n === 0 ? 'due today' : `due in ${n} day${n === 1 ? '' : 's'}`}`]);
+    });
+  });
   // Driver CDL / medical card expired or due within 30 days (needs 32_drivers.sql; skipped quietly before that)
   (D.error ? [] : D.data || []).forEach(d => [['CDL', d.cdl_expires], ['medical card', d.med_card_expires]].forEach(([what, dt]) => {
     if (!dt || dt > addDays(today, 30)) return;

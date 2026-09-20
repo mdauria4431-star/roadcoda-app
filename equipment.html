@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadCoda · Equipment</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--warn:#8a4b08;--ok:#1e6b34}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
+  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
+  header a{color:#d9d5cc}header a.on{color:#fff}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px}.brand span{color:#5fc2c7}
+  .who{margin-left:auto;font-size:14px;color:#d9d5cc}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:40px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600}
+  .btn.primary{background:var(--accent);color:#fff;border:none}
+  .btn.small{height:32px;padding:0 12px;font-size:13px}
+  .btn.danger{color:var(--late)}
+  .btn[disabled]{opacity:.5;cursor:default}
+  main{max-width:1180px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+  input,select,textarea{height:40px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff;min-width:0}
+  textarea{height:64px;padding:8px 10px;resize:vertical}
+  .error{color:var(--late);font-size:14px}.ok{color:var(--ok);font-size:14px}
+  h1{font-family:Archivo,sans-serif;font-size:28px;margin:0}
+  h2{font-family:Archivo,sans-serif;font-size:18px;margin:0}
+  h3{font-size:13px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+  .hint{font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0 0}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .span2{grid-column:span 2}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:900px}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
+  td{padding:10px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
+  #list tr{cursor:pointer}#list tr:hover{background:#faf8f4}
+  tr.sel{background:#eef6f6!important}
+  .mono{font-family:'IBM Plex Mono',monospace;font-size:13px}
+  .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+  .p-ok{background:#e3f1e6;color:var(--ok)}.p-bad{background:#fbe0db;color:var(--late)}.p-warn{background:#fdf0d9;color:var(--warn)}.p-none{background:#ecebe8;color:#45423d}
+  .exp-bad{color:var(--late);font-weight:600}.exp-warn{color:var(--warn);font-weight:600}
+  .loginbox{display:flex;flex-direction:column;gap:8px;background:#f7f5f0;border-radius:10px;padding:12px 14px}
+  .count{font-size:14px;color:var(--muted)}
+  .modal{position:fixed;inset:0;background:rgba(20,22,26,.55);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+  .modal .box{background:#fff;border-radius:14px;padding:22px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center}
+  .modal .qr{padding:10px;background:#fff;border:1px solid var(--line);border-radius:10px}
+  .events{list-style:none;margin:6px 0 0;padding:0;font-size:13px}
+  .events li{display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid #efebe4;flex-wrap:wrap}
+  .events li.flag{color:var(--warn);font-weight:600}
+  .paytbl{min-width:640px}.paytbl td,.paytbl th{padding:7px 6px}
+  .paytbl tr.def td{color:var(--muted)}
+  .paytbl tr.old td{color:#8a857c;text-decoration:line-through}
+  .addpay{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.6fr) minmax(0,.9fr) minmax(0,1.2fr) minmax(0,1.5fr) auto;gap:10px;align-items:end;margin-top:10px}
+  details.types summary{cursor:pointer;font-family:Archivo,sans-serif;font-size:18px;font-weight:700}
+  .types td input,.types td select{height:34px;font-size:14px}
+  @media (max-width:900px){.addpay{grid-template-columns:1fr 1fr}}
+  @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
+  @media (max-width:560px){main{padding:16px}.grid{grid-template-columns:1fr}.span2{grid-column:auto}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a class="on" href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
+    <div class="row">
+      <h1 style="flex-grow:1">Equipment</h1>
+      <input id="q" type="search" placeholder="Search unit, VIN, plate, tag…" aria-label="Search equipment" style="width:240px">
+      <select id="ftype" aria-label="Type"><option value="">All types</option><option value="tractor">Tractors</option><option value="straight_truck">Straight trucks</option><option value="van">Vans</option><option value="pickup">Pickups</option><option value="trailer">Trailers</option></select>
+      <select id="show" aria-label="Show"><option value="active">In service</option><option value="inactive">Retired</option><option value="all">All</option></select>
+      <button class="btn primary" id="new-btn" type="button">+ New unit</button>
+    </div>
+
+    <section class="card" id="editor" hidden>
+      <div class="row" style="align-items:center"><h2 id="ed-title" style="flex-grow:1">New unit</h2><span id="ed-status"></span></div>
+
+      <h3>Unit</h3>
+      <div class="grid">
+        <label>Unit # *<input id="f-unit_no" autocomplete="off"></label>
+        <label>Type *<select id="f-unit_type"><option value="tractor">Tractor</option><option value="straight_truck">Straight truck</option><option value="van">Van</option><option value="pickup">Pickup</option><option value="trailer">Trailer</option></select></label>
+        <label>Body<input id="f-body_type" list="bodies" autocomplete="off" placeholder="e.g. box, reefer"></label>
+        <label>Ownership<select id="f-ownership"><option value="">–</option><option value="owned">Owned</option><option value="leased">Leased</option><option value="rented">Rented</option><option value="owner_operator">Owner-operator</option></select></label>
+        <label>Year<input id="f-year" type="number" min="1950" max="2100"></label>
+        <label>Make<input id="f-make" autocomplete="off"></label>
+        <label>Model<input id="f-model" autocomplete="off"></label>
+        <label>Home terminal<select id="f-home_terminal_id"><option value="">–</option></select></label>
+        <label class="span2">VIN<input id="f-vin" autocomplete="off" class="mono" maxlength="17"></label>
+        <label>Plate<input id="f-plate" autocomplete="off"></label>
+        <label>Plate state<input id="f-plate_state" maxlength="2" autocomplete="off" placeholder="NJ"></label>
+        <label>Length (ft)<input id="f-length_ft" type="number" min="0" step="0.5"></label>
+        <label>Max weight (lb)<input id="f-max_weight_lbs" type="number" min="0" step="500"></label>
+        <label>In service since<input id="f-in_service_date" type="date"></label>
+        <label id="oos-wrap" hidden>Retired on<input id="f-out_of_service_date" type="date"></label>
+      </div>
+      <datalist id="bodies"><option value="Dry van"><option value="Reefer"><option value="Box"><option value="Box with liftgate"><option value="Flatbed"><option value="Step deck"><option value="Cargo van"><option value="Day cab"><option value="Sleeper"></datalist>
+
+      <h3>Tolls</h3>
+      <div class="grid">
+        <label class="span2">Toll tag (transponder #)<input id="f-toll_tag" autocomplete="off" class="mono"></label>
+        <label>Axles<input id="f-axles" type="number" min="2" max="14"></label>
+        <label>Toll class<input id="f-toll_class" autocomplete="off" placeholder="as on the statement"></label>
+      </div>
+
+      <h3>Registration and inspection</h3>
+      <div class="grid">
+        <label>Registration expires<input id="f-registration_expires" type="date"></label>
+        <label>Annual inspection due<input id="f-inspection_due" type="date"></label>
+      </div>
+
+      <h3>Preventive maintenance</h3>
+      <div class="grid">
+        <label>PM every (days)<input id="f-pm_every_days" type="number" min="1" placeholder="e.g. 90"></label>
+        <label>PM every (miles)<input id="f-pm_every_miles" type="number" min="1" step="500" placeholder="e.g. 15000"></label>
+        <label>Last PM date<input id="f-last_pm_date" type="date"></label>
+        <label>Last PM odometer<input id="f-last_pm_miles" type="number" min="0"></label>
+        <label>Odometer (typed in)<input id="f-odometer_miles" type="number" min="0"></label>
+        <label>Odometer read on<input id="f-odometer_at" type="date"></label>
+        <div class="span2" style="align-self:end"><div class="hint" id="pm-status" style="margin:0"></div></div>
+        <label class="span2" style="grid-column:1/-1">Notes<textarea id="f-notes"></textarea></label>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <button class="btn primary" id="save-btn" type="button">Save</button>
+        <button class="btn" id="pm-btn" type="button" hidden>PM done today</button>
+        <button class="btn" id="cancel-btn" type="button">Close</button>
+        <span style="flex-grow:1"></span>
+        <button class="btn danger" id="active-btn" type="button" hidden>Retire</button>
+      </div>
+      <div id="ed-msg" class="hint"></div>
+
+      <div id="dev-sec" hidden>
+        <h3>Truck device</h3>
+        <div class="loginbox">
+          <div class="hint" style="margin:0">A phone or tablet that stays in this truck (often the ELD device). Pair it once; at each shift the driver taps their name and enters the last 4 of their CDL, and sees only their loads on this truck.</div>
+          <ul class="events" id="dev-list"></ul>
+          <div class="row"><button class="btn primary small" id="pair-btn" type="button">Pair a device</button></div>
+          <div id="dev-msg" class="hint" style="margin:0"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="count" id="count"></div>
+      <div class="tablewrap" style="margin-top:8px"><table>
+        <thead><tr><th>Unit</th><th>Plate</th><th>VIN</th><th>Toll tag · class</th><th>Registration</th><th>Inspection</th><th>PM due</th><th>Device</th></tr></thead>
+        <tbody id="list"></tbody></table></div>
+    </section>
+  </div>
+</main>
+
+<div class="modal" id="qr-modal" hidden role="dialog" aria-modal="true" aria-labelledby="qr-title">
+  <div class="box">
+    <h2 id="qr-title">Pair the truck device</h2>
+    <div class="qr" id="qr-box"></div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:700;letter-spacing:.1em" id="qr-code"></div>
+    <div class="hint" style="margin:0">On the device: open RoadCoda (from its home screen), tap <b>Set up this device for a truck</b> and type the code, or tap <b>Scan sign-in code</b> and scan this. Good for 15 minutes.</div>
+    <button class="btn primary" id="qr-close" type="button">Done</button>
+  </div>
+</div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
+    '<h2 style="margin-top:0">RoadCoda can\'t find its settings</h2>' +
+    (window.RC_CONFIG ? '<p><b>config.js</b> still has the placeholder key. Open it and paste your Publishable key (Supabase &gt; Project Settings &gt; API Keys).</p>'
+                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder (right-click the zip &gt; <b>Extract All</b>), then open the page from that folder.</p>') +
+    '</div>';
+  throw new Error('RoadCoda settings missing');
+}
+
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayISO = () => localISO(new Date());
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localISO(d); };
+const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+const when = (t) => t ? new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+const TYPES = { tractor: 'Tractor', straight_truck: 'Straight truck', van: 'Van', pickup: 'Pickup', trailer: 'Trailer' };
+const FIELDS = ['unit_no', 'unit_type', 'body_type', 'ownership', 'year', 'make', 'model', 'home_terminal_id', 'vin', 'plate', 'plate_state', 'length_ft', 'max_weight_lbs',
+                'in_service_date', 'out_of_service_date', 'toll_tag', 'axles', 'toll_class', 'registration_expires', 'inspection_due',
+                'pm_every_days', 'pm_every_miles', 'last_pm_date', 'last_pm_miles', 'odometer_miles', 'odometer_at', 'notes'];
+const NUMS = ['year', 'length_ft', 'max_weight_lbs', 'axles', 'pm_every_days', 'pm_every_miles', 'last_pm_miles', 'odometer_miles'];
+const MANAGERS = ['owner', 'dispatcher', 'safety'];
+const SOON_DAYS = 30, PM_SOON_DAYS = 14, PM_SOON_MILES = 1000;
+let me = null, units = [], cur = null, terminals = [], devices = [], eldOdo = {}, drivers = [];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
+  if (p.role === 'driver') { location.href = 'driver.html'; return; }
+  me = p;
+  $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
+  $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  await load();
+  const want = new URLSearchParams(location.search).get('id');
+  if (want) { const u = units.find(x => x.id === want); if (u) { if (!u.active) $('show').value = 'all'; edit(u); } }
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; }
+  start();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+// ---------- Due dates ----------
+function due(dateStr) {
+  if (!dateStr) return { cls: '', txt: '<span class="hint" style="margin:0">not entered</span>', level: 0 };
+  const today = todayISO();
+  if (dateStr < today) return { cls: 'exp-bad', txt: `${fmtDate(dateStr)} · overdue`, level: 2 };
+  if (dateStr <= addDays(today, SOON_DAYS)) {
+    const n = Math.round((new Date(dateStr + 'T00:00:00') - new Date(today + 'T00:00:00')) / 864e5);
+    return { cls: 'exp-warn', txt: `${fmtDate(dateStr)} · ${n === 0 ? 'today' : `in ${n} day${n === 1 ? '' : 's'}`}`, level: 1 };
+  }
+  return { cls: '', txt: fmtDate(dateStr), level: 0 };
+}
+const odometerOf = (u) => eldOdo[u.id] != null ? { miles: eldOdo[u.id].miles, from: 'ELD', at: eldOdo[u.id].at } : u.odometer_miles != null ? { miles: Number(u.odometer_miles), from: 'typed in', at: u.odometer_at } : null;
+function pmDue(u) {
+  if (!u.pm_every_days && !u.pm_every_miles) return { cls: '', txt: '<span class="hint" style="margin:0">no schedule</span>', level: 0 };
+  if (!u.last_pm_date && u.last_pm_miles == null) return { cls: 'exp-warn', txt: 'last PM not entered', level: 1 };
+  const parts = []; let level = 0;
+  if (u.pm_every_days && u.last_pm_date) {
+    const d = addDays(u.last_pm_date, u.pm_every_days), today = todayISO();
+    const lv = d < today ? 2 : d <= addDays(today, PM_SOON_DAYS) ? 1 : 0; level = Math.max(level, lv);
+    parts.push(`${fmtDate(d)}${lv === 2 ? ' · overdue' : ''}`);
+  }
+  const odo = odometerOf(u);
+  if (u.pm_every_miles && u.last_pm_miles != null) {
+    const at = Number(u.last_pm_miles) + Number(u.pm_every_miles);
+    if (odo) {
+      const left = at - odo.miles, lv = left < 0 ? 2 : left <= PM_SOON_MILES ? 1 : 0; level = Math.max(level, lv);
+      parts.push(left < 0 ? `${Math.round(-left).toLocaleString()} mi overdue` : `in ${Math.round(left).toLocaleString()} mi`);
+    } else parts.push(`at ${Math.round(at).toLocaleString()} mi`);
+  }
+  return { cls: level === 2 ? 'exp-bad' : level === 1 ? 'exp-warn' : '', txt: parts.join(' · '), level };
+}
+
+// ---------- List ----------
+async function load() {
+  const { data, error } = await sb.from('equipment').select('*').order('unit_no');
+  if (error) { $('list').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}${/column/.test(error.message) ? ' · Run 36_equipment.sql in the Supabase SQL Editor first.' : ''}</td></tr>`; return; }
+  units = data || [];
+  const [T, D, P, DR] = await Promise.all([
+    sb.from('terminals').select('id, name, active').order('name'),
+    sb.from('truck_devices').select('id, equipment_id, label, paired_at, pair_expires_at, active, failed_attempts, locked_at, current_driver_id, current_since, last_seen_at').eq('active', true),
+    sb.from('truck_positions').select('equipment_id, odometer_miles, located_at'),
+    sb.from('drivers').select('id, full_name'),
+  ]);
+  terminals = T.data || []; devices = (D.data || []).filter(x => x.paired_at); drivers = DR.data || [];
+  eldOdo = {}; (P.data || []).forEach(x => { if (x.odometer_miles != null) eldOdo[x.equipment_id] = { miles: Number(x.odometer_miles), at: x.located_at }; });
+  const keep = $('f-home_terminal_id').value;
+  $('f-home_terminal_id').innerHTML = '<option value="">–</option>' + terminals.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  $('f-home_terminal_id').value = keep;
+  render();
+}
+function render() {
+  const show = $('show').value, ft = $('ftype').value, q = $('q').value.trim().toLowerCase();
+  const list = units.filter(u => (show === 'all' || (show === 'active') === u.active) && (!ft || u.unit_type === ft) &&
+    (!q || [u.unit_no, u.vin, u.plate, u.toll_tag, u.make, u.model].some(v => String(v || '').toLowerCase().includes(q))));
+  const act = units.filter(u => u.active);
+  const flagged = act.filter(u => due(u.registration_expires).level || due(u.inspection_due).level || pmDue(u).level === 2).length;
+  $('count').innerHTML = `${act.length} unit${act.length === 1 ? '' : 's'} in service${flagged ? ` · <span class="exp-warn">${flagged} with registration, inspection or PM overdue or coming due</span>` : ''}`;
+  $('list').innerHTML = list.map(u => {
+    const r = due(u.registration_expires), i = due(u.inspection_due), pm = pmDue(u);
+    const dv = devices.filter(x => x.equipment_id === u.id);
+    const cd = dv.find(x => x.current_driver_id);
+    const dvTxt = u.unit_type === 'trailer' ? '' : !dv.length ? '<span class="hint" style="margin:0">–</span>'
+      : dv.some(x => x.locked_at) ? '<span class="pill p-bad">Locked</span>'
+      : cd ? `<span class="pill p-ok">${esc(drivers.find(d => d.id === cd.current_driver_id)?.full_name || 'In use')}</span>` : '<span class="pill p-none">Paired</span>';
+    return `<tr data-id="${u.id}" class="${cur && cur.id === u.id ? 'sel' : ''}">
+      <td><b>${esc(u.unit_no)}</b>${!u.active ? ' <span class="pill p-none">Retired</span>' : ''}<div class="hint" style="margin:0">${esc([TYPES[u.unit_type], u.year, u.make, u.model].filter(Boolean).join(' · '))}</div></td>
+      <td>${esc([u.plate, u.plate_state].filter(Boolean).join(' '))}</td>
+      <td class="mono">${u.vin ? '…' + esc(u.vin.slice(-6)) : ''}</td>
+      <td class="mono">${esc([u.toll_tag, u.toll_class && 'class ' + u.toll_class].filter(Boolean).join(' · '))}</td>
+      <td class="${r.cls}">${r.txt}</td><td class="${i.cls}">${i.txt}</td><td class="${pm.cls}">${pm.txt}</td><td>${dvTxt}</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="hint">${units.length ? 'No units match.' : 'No equipment yet. Click + New unit.'}</td></tr>`;
+}
+$('q').oninput = render; $('show').onchange = render; $('ftype').onchange = render;
+$('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (tr) edit(units.find(u => u.id === tr.dataset.id)); };
+
+// ---------- Editor ----------
+$('new-btn').onclick = () => edit(null);
+$('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history.replaceState(null, '', 'equipment.html'); render(); };
+function edit(u, quiet) {
+  cur = u;
+  FIELDS.forEach(f => { $('f-' + f).value = u && u[f] != null ? u[f] : ''; });
+  if (!u) $('f-unit_type').value = 'tractor';
+  $('ed-title').textContent = u ? `${u.unit_no}` : 'New unit';
+  $('ed-status').innerHTML = u ? (u.active ? '<span class="pill p-ok">In service</span>' : '<span class="pill p-none">Retired</span>') : '';
+  $('oos-wrap').hidden = !(u && !u.active);
+  $('active-btn').hidden = !u; $('active-btn').textContent = u && !u.active ? 'Put back in service' : 'Retire';
+  $('active-btn').classList.toggle('danger', !!(u && u.active));
+  $('pm-btn').hidden = !u || (!u.pm_every_days && !u.pm_every_miles);
+  if (!quiet) { $('ed-msg').textContent = ''; $('dev-msg').textContent = ''; }
+  pmStatus(); renderDevices();
+  $('editor').hidden = false;
+  history.replaceState(null, '', u ? `equipment.html?id=${u.id}` : 'equipment.html');
+  render();
+  if (quiet) return;
+  $('editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!u) $('f-unit_no').focus();
+}
+function pmStatus() {
+  if (!cur) { $('pm-status').textContent = ''; return; }
+  const odo = odometerOf(cur), pm = pmDue(cur);
+  $('pm-status').innerHTML = `${odo ? `Odometer ${Math.round(odo.miles).toLocaleString()} mi (${odo.from}${odo.at ? ', ' + esc(odo.from === 'ELD' ? when(odo.at) : fmtDate(odo.at)) : ''}). ` : ''}Next PM: <span class="${pm.cls}">${pm.txt}</span>`;
+}
+function readForm() {
+  const v = {};
+  FIELDS.forEach(f => { const x = $('f-' + f).value.trim(); v[f] = x === '' ? null : NUMS.includes(f) ? Number(x) : x; });
+  if (cur && cur.active) delete v.out_of_service_date;
+  return v;
+}
+function niceError(e) {
+  const m = e.message || String(e);
+  if (/equipment_carrier_id_unit_no_key|unit_no/.test(m) && /duplicate|unique/.test(m)) return 'Another unit already has that unit number.';
+  if (/equipment_carrier_vin_uq/.test(m)) return 'Another unit already has that VIN.';
+  if (/equipment_year_chk/.test(m)) return 'Check the year.';
+  return m;
+}
+$('save-btn').onclick = async () => {
+  const v = readForm();
+  if (!v.unit_no) { $('ed-msg').innerHTML = '<span class="error">Enter the unit number.</span>'; return; }
+  if (v.vin && v.vin.replace(/\s/g, '').length !== 17) { if (!confirm('A VIN is normally 17 characters. Save anyway?')) return; }
+  $('save-btn').disabled = true;
+  const { data, error } = cur ? await sb.from('equipment').update(v).eq('id', cur.id).select().single() : await sb.from('equipment').insert(v).select().single();
+  $('save-btn').disabled = false;
+  if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(niceError(error))}</span>`; return; }
+  await load(); edit(units.find(u => u.id === data.id) || data, true);
+  $('ed-msg').innerHTML = '<span class="ok">Saved.</span>';
+};
+$('pm-btn').onclick = async () => {
+  if (!cur) return;
+  const odo = odometerOf(cur);
+  const v = { last_pm_date: todayISO(), last_pm_miles: odo ? Math.round(odo.miles) : cur.last_pm_miles };
+  if (!confirm(`Record a PM for ${cur.unit_no} today${odo ? ` at ${Math.round(odo.miles).toLocaleString()} mi` : ''}?`)) return;
+  const { error } = await sb.from('equipment').update(v).eq('id', cur.id);
+  if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  const id = cur.id; await load(); edit(units.find(u => u.id === id), true);
+  $('ed-msg').innerHTML = '<span class="ok">PM recorded.</span>';
+};
+$('active-btn').onclick = async () => {
+  if (!cur) return;
+  const off = cur.active;
+  if (off && !confirm(`Retire ${cur.unit_no}? It drops off the lists for new loads. You can put it back in service later.`)) return;
+  const { error } = await sb.from('equipment').update({ active: !off }).eq('id', cur.id);
+  if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  const id = cur.id; await load(); if (off && $('show').value === 'active') $('show').value = 'all';
+  edit(units.find(u => u.id === id), true);
+  $('ed-msg').innerHTML = `<span class="ok">${off ? 'Retired.' : 'Back in service.'}</span>`;
+};
+
+// ---------- Truck devices ----------
+async function devFn(body) {
+  const { data, error } = await sb.functions.invoke('driver-login', { body });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (data && data.ok === false) throw new Error(data.error || 'Failed');
+  return data;
+}
+function renderDevices() {
+  const u = cur;
+  $('dev-sec').hidden = !u || u.unit_type === 'trailer' || !u.active;
+  if ($('dev-sec').hidden) return;
+  const can = MANAGERS.includes(me.role);
+  const dv = devices.filter(x => x.equipment_id === u.id);
+  $('dev-list').innerHTML = dv.map(x => {
+    const drv = drivers.find(d => d.id === x.current_driver_id);
+    return `<li><span style="flex:1"><b>${esc(x.label || 'Device')}</b> · paired ${esc(when(x.paired_at))}${x.last_seen_at ? ` · last used ${esc(when(x.last_seen_at))}` : ''}<br>
+      ${x.locked_at ? '<span class="error">Locked after too many wrong PINs</span>' : drv ? `Driving now: <b>${esc(drv.full_name)}</b> since ${esc(when(x.current_since))}` : '<span class="hint" style="margin:0">No driver signed in</span>'}</span>
+      ${can && x.locked_at ? `<button class="btn small" data-unlock="${x.id}" type="button">Unlock</button>` : ''}
+      ${can ? `<button class="btn small danger" data-unpair="${x.id}" type="button">Unpair</button>` : ''}</li>`;
+  }).join('') || '<li class="hint" style="margin:0">No device paired to this truck.</li>';
+  $('pair-btn').hidden = !can;
+  $('pair-btn').textContent = dv.length ? 'Pair another device' : 'Pair a device';
+}
+$('dev-list').onclick = async (ev) => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.unpair && !confirm('Unpair this device? Anyone signed in on it is signed out the next time it opens, and it has to be paired again.')) return;
+  b.disabled = true;
+  try { await devFn({ action: b.dataset.unpair ? 'device_unpair' : 'device_unlock', device_id: b.dataset.unpair || b.dataset.unlock });
+        const id = cur.id; await load(); edit(units.find(u => u.id === id), true); $('dev-msg').innerHTML = `<span class="ok">${b.dataset.unpair ? 'Unpaired.' : 'Unlocked.'}</span>`; }
+  catch (e) { $('dev-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; b.disabled = false; }
+};
+$('pair-btn').onclick = async () => {
+  const label = prompt('Name this device (optional), e.g. "Samsara tablet":', '');
+  if (label === null) return;
+  $('pair-btn').disabled = true; $('dev-msg').textContent = 'Making a pairing code…';
+  try {
+    const r = await devFn({ action: 'device_pair_start', equipment_id: cur.id, label });
+    $('dev-msg').textContent = '';
+    $('qr-title').textContent = `Pair a device to ${cur.unit_no}`; $('qr-code').textContent = r.code; $('qr-box').innerHTML = '';
+    new QRCode($('qr-box'), { text: r.link, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+    $('qr-modal').hidden = false; $('qr-close').focus();
+  } catch (e) { $('dev-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('pair-btn').disabled = false;
+};
+$('qr-close').onclick = async () => { $('qr-modal').hidden = true; $('qr-box').innerHTML = ''; const id = cur.id; await load(); edit(units.find(u => u.id === id), true); };
+
+start();
+</script>
+</body>
+</html>

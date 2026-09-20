@@ -99,6 +99,13 @@
     </div>
     <div class="meta" style="text-align:center">or</div>
     <button class="btn" id="scan-sign-btn" type="button">Scan sign-in code</button>
+    <details id="pair-det"><summary class="meta" style="cursor:pointer">Set up this device for a truck (office gives you a pairing code)</summary>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+        <label for="paircode">Pairing code<input id="paircode" autocomplete="off" autocapitalize="characters" maxlength="9" placeholder="XXXX-XXXX" style="font-size:24px;letter-spacing:.15em;text-transform:uppercase"></label>
+        <button class="btn primary" id="pair-btn" type="button">Pair with the truck</button>
+        <div class="error" id="pair-error"></div>
+      </div>
+    </details>
     <p style="margin:0;line-height:1.5">Scan the QR code dispatch shows you, or your <b>reset card</b> (then enter the last 4 of your CDL number).
       No card? Ask dispatch for a sign-in QR code or link.</p>
     <details><summary class="meta" style="cursor:pointer">Sign in with email and password instead</summary>
@@ -146,6 +153,19 @@
     <div class="error" id="pw-error"></div>
   </section>
 
+  <section id="device-view" class="card" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1 id="dv-title">Truck</h1>
+    <div class="meta" id="dv-sub">Tap your name to start your shift.</div>
+    <div id="dv-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div id="dv-pin" hidden style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:20px;font-weight:700" id="dv-name"></div>
+      <label for="dv-pin-in" id="dv-pin-label">Last 4 characters of your CDL number<input id="dv-pin-in" autocomplete="off" autocapitalize="characters" maxlength="6" style="font-size:24px;letter-spacing:.2em;text-transform:uppercase"></label>
+      <button class="btn primary" id="dv-go" type="button">Start my shift</button>
+      <button class="btn" id="dv-back" type="button">Not me</button>
+    </div>
+    <div class="error" id="dv-error"></div>
+  </section>
+
   <section id="app" hidden style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;align-items:center;gap:10px">
       <h1 style="flex-grow:1">Today's stops</h1>
@@ -160,6 +180,10 @@
         <div class="meta" id="handoff-exp"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn primary" id="a2hs-btn" hidden>Add to home screen</button><button class="btn primary" id="handoff-btn" hidden>I added it: get app code</button><button class="btn" id="a2hs-later">Later</button></div>
+    </div>
+    <div id="devbar" class="card" hidden style="display:flex;align-items:center;gap:10px;padding:10px 14px">
+      <div style="flex:1"><b id="devbar-unit"></b> · <span id="devbar-name"></span></div>
+      <button class="btn" id="switch-btn" type="button" style="min-height:44px">Switch driver</button>
     </div>
     <div id="stops"></div>
     <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
@@ -218,6 +242,12 @@ const STATUS = { pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered' 
 const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Issue reported' };
 const MOVING_MPS = 2.2;
 let me = null, lastPos = null, officePhone = '', pwDone = false;
+// Truck device mode: the device key stays on this device; drivers sign in and out of it by shift
+const DEV_KEY = 'rc-device';
+const getDevice = () => { try { return JSON.parse(localStorage.getItem(DEV_KEY) || 'null'); } catch (_) { return null; } };
+const setDevice = (d) => { try { d ? localStorage.setItem(DEV_KEY, JSON.stringify(d)) : localStorage.removeItem(DEV_KEY); } catch (_) {} };
+let pairCode = QS.get('pair') || '';
+if (pairCode) history.replaceState(null, '', location.pathname);
 // the load the driver is looking at (one at a time)
 let curLoad = (() => { try { return localStorage.getItem('rc-driver-load'); } catch (_) { return null; } })();
 let movingSince = null;
@@ -247,7 +277,12 @@ async function start() {
     $('pw-who').textContent = tokenEmail ? `Your login email: ${tokenEmail}` : '';
     $('pw-view').hidden = false; $('login-view').hidden = true; $('app').hidden = true; $('pw1').focus(); return;
   }
-  const { data: { session } } = await sb.auth.getSession();
+  if (pairCode) { const c = pairCode; pairCode = ''; hideAll(); $('login-view').hidden = false; $('pair-det').open = true; $('paircode').value = c; return; }
+  let { data: { session } } = await sb.auth.getSession();
+  const dev = getDevice();
+  // Truck device: a shift ends after 16 hours (covers overnight runs), then the device asks who's driving
+  if (dev && session && (!dev.since_at || Date.now() - dev.since_at > 16 * 3600e3)) { await endShift(); session = null; }
+  if (dev && !session) return showDevicePicker();
   if (!session) {
     if (linkError) $('login-error').textContent = /expired|invalid/i.test(linkError) ? 'That login link has expired or was already used. Ask dispatch to send a new one.' : linkError;
     $('login-view').hidden = false; return;
@@ -265,8 +300,11 @@ async function start() {
   me = p; officePhone = p.carriers?.office_phone || '';
   $('who').innerHTML = `${esc(p.full_name)}<br>${esc(p.carriers?.name || '')}`;
   hideAll(); $('app').hidden = false;
-  if (await needPin()) return;
-  homeScreenPrompt();
+  const devNow = getDevice();
+  $('devbar').hidden = !devNow;
+  if (devNow) { $('devbar-unit').textContent = `Truck ${devNow.unit_no}`; $('devbar-name').textContent = p.full_name; }
+  if (!devNow && await needPin()) return;
+  if (!devNow) homeScreenPrompt();
   watchMotion();
   loadStops();
 }
@@ -303,11 +341,73 @@ async function onSignCode(text) {
   const q = u.searchParams;
   if (q.get('t') === 'link' && q.get('th')) { await closeSignScan(); phoneLink = q.get('th'); cardCode = ''; pwDone = false; return start(); }
   if (q.get('card')) { await closeSignScan(); cardCode = q.get('card'); phoneLink = ''; pwDone = false; return start(); }
+  if (q.get('pair')) { await closeSignScan(); pairCode = q.get('pair'); return start(); }
   $('sscan-status').textContent = 'That isn\'t a RoadCoda sign-in code.';
 }
 $('scan-sign-btn').onclick = openSignScan;
 $('sscan-close').onclick = closeSignScan;
-function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'app'].forEach(id => $(id).hidden = true); }
+// ---------- Truck device ----------
+let dvInfo = null, dvPick = null;
+async function showDevicePicker() {
+  hideAll(); $('device-view').hidden = false; $('dv-pin').hidden = true; $('dv-list').hidden = false; $('dv-error').textContent = '';
+  const dev = getDevice();
+  $('dv-title').textContent = `Truck ${dev.unit_no || ''}`; $('dv-list').innerHTML = '<div class="meta">Loading drivers…</div>';
+  try { dvInfo = await fnCall({ action: 'device_info', device_key: dev.key }); }
+  catch (e) {
+    if (/no longer paired/i.test(e.message)) { setDevice(null); hideAll(); $('login-view').hidden = false; $('login-error').textContent = 'This device was unpaired from the truck by the office.'; return; }
+    $('dv-list').innerHTML = `<div class="error">${esc(e.message)}</div><button class="btn" onclick="showDevicePicker()">Try again</button>`; return;
+  }
+  setDevice({ ...dev, unit_no: dvInfo.unit_no, equipment_id: dvInfo.equipment_id });
+  $('dv-title').textContent = `Truck ${dvInfo.unit_no}`;
+  $('dv-sub').textContent = dvInfo.locked ? '' : `${dvInfo.carrier} · Tap your name to start your shift.`;
+  if (dvInfo.locked) { $('dv-list').innerHTML = ''; $('dv-error').textContent = 'This device is locked after too many wrong PINs. Call dispatch to unlock it.'; return; }
+  const on = dvInfo.drivers.filter(d => d.on_truck), rest = dvInfo.drivers.filter(d => !d.on_truck);
+  const btn = (d) => `<button class="btn" data-dv="${d.id}" style="min-height:52px;font-size:18px;justify-content:flex-start;text-align:left">${esc(d.name)}${d.on_truck ? ' <span class="meta">· on this truck today</span>' : ''}</button>`;
+  $('dv-list').innerHTML = on.map(btn).join('') + (on.length && rest.length ? '<div class="meta" style="margin-top:6px">Other drivers</div>' : '') + rest.map(btn).join('');
+  $('dv-pin-label').firstChild.textContent = dvInfo.pin_mode === 'own_pin' ? 'Your reset PIN (or last 4 of your CDL if you haven\'t set one)' : 'Last 4 characters of your CDL number';
+}
+$('dv-list').onclick = (ev) => {
+  const b = ev.target.closest('button[data-dv]'); if (!b) return;
+  dvPick = dvInfo.drivers.find(d => d.id === b.dataset.dv);
+  $('dv-name').textContent = dvPick.name; $('dv-list').hidden = true; $('dv-pin').hidden = false; $('dv-error').textContent = '';
+  $('dv-pin-in').value = ''; $('dv-pin-in').focus();
+};
+$('dv-back').onclick = () => { dvPick = null; $('dv-pin').hidden = true; $('dv-list').hidden = false; $('dv-error').textContent = ''; };
+$('dv-go').onclick = async () => {
+  const pin = $('dv-pin-in').value.trim();
+  if (pin.length < 4) { $('dv-error').textContent = 'Enter all 4 characters.'; return; }
+  $('dv-go').disabled = true; $('dv-error').textContent = '';
+  try {
+    const r = await fnCall({ action: 'device_signin', device_key: getDevice().key, driver_id: dvPick.id, pin });
+    setDevice({ ...getDevice(), since_at: Date.now() });
+    await signInWith(r.th);
+  } catch (e) { $('dv-error').textContent = e.message; }
+  $('dv-go').disabled = false;
+};
+$('dv-pin-in').onkeydown = (e) => { if (e.key === 'Enter') $('dv-go').click(); };
+async function endShift() {
+  const dev = getDevice();
+  try { await sb.auth.signOut({ scope: 'local' }); } catch (_) {}
+  if (dev) { try { await fnCall({ action: 'device_switch', device_key: dev.key }); } catch (_) {} setDevice({ ...dev, since_at: null }); }
+}
+$('switch-btn').onclick = async () => {
+  if (!confirm('End your shift on this truck and hand it to the next driver?')) return;
+  await endShift(); showDevicePicker();
+};
+$('pair-btn').onclick = async () => {
+  const code = $('paircode').value.trim();
+  if (code.replace(/[^A-Za-z0-9]/g, '').length !== 8) { $('pair-error').textContent = 'Enter all 8 characters, e.g. K7Q2-9MXD.'; return; }
+  $('pair-btn').disabled = true; $('pair-error').textContent = '';
+  try {
+    const r = await fnCall({ action: 'device_pair', code });
+    try { await sb.auth.signOut({ scope: 'local' }); } catch (_) {}
+    setDevice({ key: r.device_key, unit_no: r.unit_no, equipment_id: r.equipment_id, since_at: null });
+    showDevicePicker();
+  } catch (e) { $('pair-error').textContent = e.message; }
+  $('pair-btn').disabled = false;
+};
+$('paircode').onkeydown = (e) => { if (e.key === 'Enter') $('pair-btn').click(); };
+function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'device-view', 'app'].forEach(id => $(id).hidden = true); }
 async function fnCall(body) {
   const { data, error } = await sb.functions.invoke('driver-login', { body });
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
@@ -417,14 +517,19 @@ $('pw-btn').onclick = async () => {
 // ---------- Today's stops ----------
 async function loadStops() {
   let { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, truck_id, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
+  // Truck device: only this driver's loads on THIS truck
+  const devL = getDevice();
+  let elsewhere = 0;
+  if (devL) { elsewhere = loads.filter(l => l.truck_id && l.truck_id !== devL.equipment_id && l.status !== 'delivered').length;
+              loads = loads.filter(l => !l.truck_id || l.truck_id === devL.equipment_id); }
   // Delivered loads drop off; the driver sees one open load at a time
   const all = loads;
   loads = loads.filter(l => l.status !== 'delivered');
   if (!loads.length) {
-    $('stops').innerHTML = `<div class="card">${all.length ? `All done for today: ${all.length} load${all.length === 1 ? '' : 's'} delivered.` : 'No stops assigned to you today.'} Tap Refresh if dispatch just sent you a load.</div>`;
+    $('stops').innerHTML = `<div class="card">${all.length ? `All done for today: ${all.length} load${all.length === 1 ? '' : 's'} delivered.` : devL ? `No loads for you on truck ${esc(devL.unit_no)} today.` : 'No stops assigned to you today.'} Tap Refresh if dispatch just sent you a load.${elsewhere ? `<br><b>You have ${elsewhere} load${elsewhere === 1 ? '' : 's'} on another truck today.</b> Call dispatch if you're in the wrong truck.` : ''}</div>`;
     return;
   }
   if (!loads.some(l => l.id === curLoad)) curLoad = loads[0].id;
