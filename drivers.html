@@ -45,7 +45,7 @@
   table{width:100%;border-collapse:collapse;min-width:900px}
   th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
   td{padding:10px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
-  tbody tr{cursor:pointer}tbody tr:hover{background:#faf8f4}
+  #list tr{cursor:pointer}#list tr:hover{background:#faf8f4}
   tr.sel{background:#eef6f6!important}
   .mono{font-family:'IBM Plex Mono',monospace;font-size:13px}
   .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;white-space:nowrap}
@@ -53,6 +53,13 @@
   .exp-bad{color:var(--late);font-weight:600}.exp-warn{color:var(--warn);font-weight:600}
   .loginbox{display:flex;flex-direction:column;gap:8px;background:#f7f5f0;border-radius:10px;padding:12px 14px}
   .count{font-size:14px;color:var(--muted)}
+  .paytbl{min-width:640px}.paytbl td,.paytbl th{padding:7px 6px}
+  .paytbl tr.def td{color:var(--muted)}
+  .paytbl tr.old td{color:#8a857c;text-decoration:line-through}
+  .addpay{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.6fr) minmax(0,.9fr) minmax(0,1.2fr) minmax(0,1.5fr) auto;gap:10px;align-items:end;margin-top:10px}
+  details.types summary{cursor:pointer;font-family:Archivo,sans-serif;font-size:18px;font-weight:700}
+  .types td input,.types td select{height:34px;font-size:14px}
+  @media (max-width:900px){.addpay{grid-template-columns:1fr 1fr}}
   @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
   @media (max-width:560px){main{padding:16px}.grid{grid-template-columns:1fr}.span2{grid-column:auto}}
 </style>
@@ -78,6 +85,7 @@
     <div class="row">
       <h1 style="flex-grow:1">Drivers</h1>
       <input id="q" type="search" placeholder="Search name, phone, CDL…" aria-label="Search drivers" style="width:240px">
+      <select id="acct" aria-label="Home account"><option value="">All accounts</option></select>
       <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option></select>
       <button class="btn primary" id="new-btn" type="button">+ New driver</button>
     </div>
@@ -106,11 +114,11 @@
         <label>Medical card expires<input id="f-med_card_expires" type="date"></label>
       </div>
 
-      <h3>Employment and pay</h3>
+      <h3>Employment</h3>
       <div class="grid">
+        <label>Home account<select id="f-home_customer_id"><option value="">None (floater)</option></select></label>
+        <label>Home terminal<select id="f-home_terminal_id"><option value="">–</option></select></label>
         <label>Hire date<input id="f-hire_date" type="date"></label>
-        <label>Pay basis<select id="f-pay_basis"><option value="">–</option><option value="mile">Per mile</option><option value="day">Per day</option><option value="stop">Per stop</option><option value="hour">Per hour</option><option value="load">Per load</option></select></label>
-        <label>Pay rate ($)<input id="f-pay_rate" type="number" min="0" step="0.01"></label>
         <label id="end-wrap" hidden>End date<input id="f-end_date" type="date"></label>
         <label class="span2" style="grid-column:1/-1">Notes<textarea id="f-notes"></textarea></label>
       </div>
@@ -123,6 +131,23 @@
       </div>
       <div id="ed-msg" class="hint"></div>
 
+      <div id="pay-sec" hidden>
+        <h3>Pay <span style="text-transform:none;letter-spacing:0;font-weight:400">· changes here save right away · <a href="#" id="hist-toggle">show past rates</a></span></h3>
+        <div class="tablewrap"><table class="paytbl">
+          <thead><tr><th>Pay type</th><th>Customer</th><th>Rate</th><th>Since</th><th>Note</th><th></th></tr></thead>
+          <tbody id="pay-body"></tbody></table></div>
+        <div class="addpay" id="addpay">
+          <label>Pay type<select id="ap-item"></select></label>
+          <label>Customer<select id="ap-cust"></select></label>
+          <label>Rate<input id="ap-rate" type="number" min="0" step="0.01"></label>
+          <label>Starts<input id="ap-from" type="date"></label>
+          <label>Note<input id="ap-note" autocomplete="off" placeholder="optional"></label>
+          <button class="btn primary" id="ap-btn" type="button" style="white-space:nowrap">Add rate</button>
+        </div>
+        <p class="hint">A new rate for the same pay type and customer ends the old one the day before it starts, so payroll always uses the rate that was in effect. Grey rows are company defaults (set under Pay &amp; billing types below). Which rate applies: this driver on that account (a DC, then its main customer) › that account's driver pay (Customers page) › this driver on all customers › company default. A rate on a main customer (e.g. Whole Foods) covers all its DCs unless a DC has its own.</p>
+        <div id="pay-msg" class="hint"></div>
+      </div>
+
       <div id="login-sec" hidden>
         <h3>Phone app login</h3>
         <div class="loginbox">
@@ -134,6 +159,27 @@
           <div id="login-msg" class="hint" style="margin:0"></div>
         </div>
       </div>
+    </section>
+
+    <section class="card">
+      <details class="types" id="types"><summary>Pay &amp; billing types</summary>
+        <p class="hint">One list of the work that gets paid and/or billed. Tick <b>Pay driver</b> and/or <b>Bill customer</b> and set the defaults; a driver's own rate (on their record) beats the pay default.
+          <b>Each</b> = per time it happens (fueling, strapping…); <b>% of revenue</b> is pay only. <b>Only chosen customers</b> = it pays and bills only on customers that turn it on (Customers page › Activities &amp; driver pay), where you can also set that customer's price and driver pay. Miles, stops, days, hours and loads are billed from each customer's rate sheet or contract, so leave their Bill side off.</p>
+        <div class="tablewrap" style="margin-top:8px"><table class="types" style="min-width:1060px">
+          <thead><tr><th>Name</th><th>Counted per</th><th>Stops</th><th>Pay driver</th><th>Default pay</th><th>Bill customer</th><th>Default price</th><th title="Only pays / bills on customers that turn it on (Customers page)">Only chosen customers</th><th>GL account</th><th>In use</th><th></th></tr></thead>
+          <tbody id="types-body"></tbody></table></div>
+        <div id="types-msg" class="hint"></div>
+      </details>
+    </section>
+
+    <section class="card">
+      <details class="types" id="terms"><summary>Terminals</summary>
+        <p class="hint">The yards, DCs and hubs your drivers and trucks start from. Pick one as each driver's home terminal.</p>
+        <div class="tablewrap" style="margin-top:8px"><table class="types" style="min-width:640px">
+          <thead><tr><th>Name</th><th>Address</th><th>In use</th><th></th></tr></thead>
+          <tbody id="terms-body"></tbody></table></div>
+        <div id="terms-msg" class="hint"></div>
+      </details>
     </section>
 
     <section class="card">
@@ -159,12 +205,13 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-const PER = { mile: '/mile', day: '/day', stop: '/stop', hour: '/hour', load: '/load' };
+const UNITS = { mile: 'mile', stop: 'stop', day: 'day', hour: 'hour', load: 'load', each: 'each time', week: 'week', percent: '% of revenue' };
+const fmtRate = (r, unit) => r == null ? '' : unit === 'percent' ? `${Number(r)}%` : `$${Number(r) < 1 ? Number(r).toFixed(3).replace(/0$/, '') : Number(r).toFixed(2)}/${unit}`;
 const FIELDS = ['full_name', 'employee_no', 'phone', 'email', 'address', 'emergency_name', 'emergency_phone', 'cdl_number', 'cdl_class', 'cdl_state',
-                'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'hire_date', 'pay_basis', 'pay_rate', 'end_date', 'notes'];
+                'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'home_customer_id', 'home_terminal_id', 'hire_date', 'end_date', 'notes'];
 const MANAGERS = ['owner', 'dispatcher', 'safety'];
 const SOON_DAYS = 30;
-let me = null, drivers = [], cur = null;
+let me = null, drivers = [], cur = null, items = [], rates = [], customers = [], terminals = [], showHist = false;
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -212,11 +259,43 @@ async function load() {
     return;
   }
   drivers = data || [];
+  const [I, R, C, T] = await Promise.all([
+    sb.from('activity_types').select('*').order('sort').order('name'),
+    sb.from('driver_pay_rates').select('*').order('effective_from', { ascending: false }),
+    sb.from('customers').select('*').order('name'),
+    sb.from('terminals').select('*').order('name'),
+  ]);
+  if (I.error) $('types-msg').innerHTML = `<span class="error">${esc(I.error.message)} · Run 33_driver_pay.sql in the Supabase SQL Editor.</span>`;
+  items = I.data || []; rates = R.data || []; customers = C.data || [];
+  const kidsOf = (id) => customers.filter(c => c.parent_customer_id === id);
+  customers = customers.filter(c => !c.parent_customer_id || !customers.some(p => p.id === c.parent_customer_id)).flatMap(c => [c, ...kidsOf(c.id)]);
+  const opts = customers.map(c => `<option value="${c.id}">${c.parent_customer_id ? '\u00a0\u00a0\u00a0› ' : ''}${esc(c.name)}</option>`).join('');
+  const keepA = $('acct').value, keepF = $('f-home_customer_id').value;
+  $('acct').innerHTML = '<option value="">All accounts</option><option value="none">No home account</option>' + opts; $('acct').value = keepA;
+  $('f-home_customer_id').innerHTML = '<option value="">None (floater)</option>' + opts; $('f-home_customer_id').value = keepF;
+  terminals = T.data || [];
+  const keepT = $('f-home_terminal_id').value;
+  $('f-home_terminal_id').innerHTML = '<option value="">–</option>' + terminals.filter(t => t.active || t.id === keepT).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  $('f-home_terminal_id').value = keepT;
+  renderTerminals();
+  renderTypes();
   render();
 }
+const todayISO = () => localISO(new Date());
+const itemOf = (id) => items.find(i => i.id === id);
+const custName = (id) => { if (!id) return 'All customers'; const c = customers.find(x => x.id === id); if (!c) return 'customer';
+  const p = c.parent_customer_id && customers.find(x => x.id === c.parent_customer_id); return p && !c.name.startsWith(p.name) ? `${p.name} › ${c.name}` : c.name; };
+const currentRates = (driverId) => rates.filter(r => r.driver_id === driverId && r.effective_from <= todayISO() && (!r.effective_to || r.effective_to >= todayISO()));
+function paySummary(d) {
+  const cur = currentRates(d.id).map(r => ({ r, i: itemOf(r.activity_type_id) })).filter(x => x.i).sort((a, b) => a.i.sort - b.i.sort);
+  if (!cur.length) return '<span class="hint">defaults only</span>';
+  const first = cur[0];
+  return `${esc(fmtRate(first.r.rate, first.i.unit))}${first.r.customer_id ? '*' : ''}${cur.length > 1 ? ` <span class="hint">+${cur.length - 1} more</span>` : ''}`;
+}
 function render() {
-  const show = $('show').value, q = $('q').value.trim().toLowerCase();
+  const show = $('show').value, q = $('q').value.trim().toLowerCase(), acct = $('acct').value;
   const list = drivers.filter(d => (show === 'all' || (show === 'active') === d.active) &&
+    (!acct || (acct === 'none' ? !d.home_customer_id : d.home_customer_id === acct || customers.find(c => c.id === d.home_customer_id)?.parent_customer_id === acct)) &&
     (!q || [d.full_name, d.phone, d.email, d.employee_no, d.cdl_number].some(v => String(v || '').toLowerCase().includes(q))));
   const active = drivers.filter(d => d.active);
   const flagged = active.filter(d => expiry(d.cdl_expires).level || expiry(d.med_card_expires).level).length;
@@ -226,17 +305,18 @@ function render() {
     const cdl = [d.cdl_class && d.cdl_class !== 'none' ? 'Class ' + d.cdl_class : d.cdl_class === 'none' ? 'No CDL' : '', d.cdl_state, d.cdl_endorsements].filter(Boolean).join(' · ');
     return `<tr data-id="${d.id}" class="${cur && cur.id === d.id ? 'sel' : ''}">
       <td><b>${esc(d.full_name)}</b>${d.employee_no ? ` <span class="hint mono">#${esc(d.employee_no)}</span>` : ''}${!d.active ? ' <span class="pill p-none">Inactive</span>' : ''}
-        ${d.hire_date ? `<div class="hint" style="margin:0">Hired ${fmtDate(d.hire_date)}</div>` : ''}</td>
+        <div class="hint" style="margin:0">${d.home_customer_id ? esc(custName(d.home_customer_id)) : 'No home account'}${d.home_terminal_id ? ` · ${esc(terminals.find(t => t.id === d.home_terminal_id)?.name || '')}` : ''}${d.hire_date ? ` · hired ${fmtDate(d.hire_date)}` : ''}</div></td>
       <td>${esc(d.phone || '')}</td>
       <td>${esc(cdl)}</td>
       <td class="${c.cls}">${c.txt}</td>
       <td class="${m.cls}">${m.txt}</td>
-      <td class="mono">${d.pay_rate != null ? '$' + Number(d.pay_rate).toFixed(2) + (PER[d.pay_basis] || '') : ''}</td>
+      <td class="mono">${paySummary(d)}</td>
       <td>${loginPill(d)}</td></tr>`;
   }).join('') || `<tr><td colspan="7" class="hint">${drivers.length ? 'No drivers match.' : 'No drivers yet. Click + New driver.'}</td></tr>`;
 }
 $('q').oninput = render;
 $('show').onchange = render;
+$('acct').onchange = render;
 $('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (tr) edit(drivers.find(d => d.id === tr.dataset.id)); };
 
 // ---------- Editor ----------
@@ -255,6 +335,7 @@ function edit(d) {
   $('ed-msg').textContent = '';
   $('login-msg').textContent = '';
   renderLogin();
+  renderPay();
   $('editor').hidden = false;
   history.replaceState(null, '', d ? `drivers.html?id=${d.id}` : 'drivers.html');
   render();
@@ -283,7 +364,6 @@ function renderLogin() {
 function readForm() {
   const v = {};
   FIELDS.forEach(f => { const x = $('f-' + f).value.trim(); v[f] = x === '' ? null : x; });
-  if (v.pay_rate != null) v.pay_rate = Number(v.pay_rate);
   if (v.cdl_state) v.cdl_state = v.cdl_state.toUpperCase();
   if (v.email) v.email = v.email.toLowerCase();
   if (cur && cur.active) delete v.end_date;   // only editable once inactive
@@ -293,14 +373,12 @@ function niceError(e) {
   const m = e.message || String(e);
   if (/drivers_carrier_email_uq/.test(m)) return 'Another driver already has that email.';
   if (/drivers_email_chk/.test(m)) return 'That email doesn\'t look right.';
-  if (/pay_basis/.test(m)) return 'Pick a pay basis.';
   return m;
 }
 
 $('save-btn').onclick = async () => {
   const v = readForm();
   if (!v.full_name) { $('ed-msg').innerHTML = '<span class="error">Enter the driver\'s full name.</span>'; return; }
-  if (v.pay_rate != null && !v.pay_basis) { $('ed-msg').innerHTML = '<span class="error">Pick a pay basis for the pay rate.</span>'; return; }
   const emailChanged = cur && cur.user_id && (cur.email || '') !== (v.email || '');
   if (cur && cur.user_id && !v.email) { $('ed-msg').innerHTML = '<span class="error">This driver has a login, so the email can\'t be blank. Use Remove login first.</span>'; return; }
   $('save-btn').disabled = true;
@@ -353,6 +431,139 @@ $('remove-btn').onclick = async () => {
     $('login-msg').innerHTML = '<span class="ok">Login removed.</span>';
   } catch (e) { $('login-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
   $('remove-btn').disabled = false;
+};
+
+// ---------- Pay rates on a driver ----------
+function renderPay() {
+  const d = cur;
+  $('pay-sec').hidden = !d;
+  if (!d) return;
+  const today = todayISO();
+  const mine = rates.filter(r => r.driver_id === d.id && (showHist || !r.effective_to || r.effective_to >= today))
+    .map(r => ({ r, i: itemOf(r.activity_type_id) })).filter(x => x.i)
+    .sort((a, b) => a.i.sort - b.i.sort || custName(a.r.customer_id).localeCompare(custName(b.r.customer_id)) || (b.r.effective_from > a.r.effective_from ? 1 : -1));
+  const covered = new Set(currentRates(d.id).filter(r => !r.customer_id).map(r => r.activity_type_id));
+  const defs = items.filter(i => i.active && i.pays_driver && i.pay_default != null && !covered.has(i.id));
+  const rows = mine.map(({ r, i }) => {
+    const ended = r.effective_to && r.effective_to < today, future = r.effective_from > today;
+    return `<tr class="${ended ? 'old' : ''}"><td>${esc(i.name)}${i.applies_to !== 'all' ? ` <span class="hint">(${i.applies_to} stops)</span>` : ''}</td><td>${esc(custName(r.customer_id))}</td>
+      <td class="mono">${esc(fmtRate(r.rate, i.unit))}</td>
+      <td>${fmtDate(r.effective_from)}${future ? ' <span class="pill p-warn">starts later</span>' : ''}${r.effective_to ? ` – ${fmtDate(r.effective_to)}` : ''}</td>
+      <td class="hint">${esc(r.note || '')}</td>
+      <td style="white-space:nowrap">${ended ? '' : `<button class="btn small" data-chg="${r.id}" type="button">Change</button> <button class="btn small danger" data-end="${r.id}" type="button">End</button>`}</td></tr>`;
+  }).concat(defs.map(i => `<tr class="def"><td>${esc(i.name)}</td><td>All customers</td><td class="mono">${esc(fmtRate(i.pay_default, i.unit))}</td><td>company default</td><td></td>
+      <td><button class="btn small" data-own="${i.id}" type="button">Set own rate</button></td></tr>`));
+  $('pay-body').innerHTML = rows.join('') || '<tr><td colspan="6" class="hint">No pay set yet. Add the first rate below.</td></tr>';
+  $('ap-item').innerHTML = items.filter(i => i.active && i.pays_driver).map(i => `<option value="${i.id}">${esc(i.name)} (per ${esc(UNITS[i.unit])})</option>`).join('');
+  $('ap-cust').innerHTML = '<option value="">All customers</option>' + customers.map(c => `<option value="${c.id}">${c.parent_customer_id ? '\u00a0\u00a0\u00a0› ' : ''}${esc(c.name)}</option>`).join('');
+  if (!$('ap-from').value) $('ap-from').value = today;
+}
+$('hist-toggle').onclick = (e) => { e.preventDefault(); showHist = !showHist; $('hist-toggle').textContent = showHist ? 'hide past rates' : 'show past rates'; renderPay(); };
+$('pay-body').onclick = async (ev) => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.chg || b.dataset.own) {
+    const r = rates.find(x => x.id === b.dataset.chg);
+    $('ap-item').value = r ? r.activity_type_id : b.dataset.own;
+    $('ap-cust').value = r?.customer_id || '';
+    $('ap-rate').value = ''; $('ap-note').value = ''; $('ap-from').value = todayISO();
+    $('pay-msg').textContent = r ? 'Enter the new rate and the day it starts; the old rate ends the day before.' : 'Enter this driver\'s own rate.';
+    $('ap-rate').focus(); return;
+  }
+  if (b.dataset.end) {
+    const r = rates.find(x => x.id === b.dataset.end), i = itemOf(r.activity_type_id);
+    const last = prompt(`Last day ${cur.full_name} gets ${i.name} at ${fmtRate(r.rate, i.unit)} (YYYY-MM-DD):`, todayISO());
+    if (!last) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(last) || last < r.effective_from) { $('pay-msg').innerHTML = '<span class="error">Use a date like 2026-09-30, on or after the start date.</span>'; return; }
+    const { error } = await sb.from('driver_pay_rates').update({ effective_to: last }).eq('id', r.id);
+    $('pay-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Rate ended.</span>';
+    await reloadPay();
+  }
+};
+$('ap-btn').onclick = async () => {
+  if (!cur) return;
+  const rate = $('ap-rate').value;
+  if (rate === '' || Number(rate) < 0) { $('pay-msg').innerHTML = '<span class="error">Enter a rate.</span>'; return; }
+  $('ap-btn').disabled = true;
+  const { error } = await sb.rpc('set_driver_pay_rate', { p_driver: cur.id, p_item: $('ap-item').value, p_customer: $('ap-cust').value || null,
+    p_rate: Number(rate), p_from: $('ap-from').value || todayISO(), p_note: $('ap-note').value });
+  $('ap-btn').disabled = false;
+  if (error) { $('pay-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  $('ap-rate').value = ''; $('ap-note').value = '';
+  await reloadPay();
+  $('pay-msg').innerHTML = '<span class="ok">Rate saved.</span>';
+};
+async function reloadPay() {
+  const { data } = await sb.from('driver_pay_rates').select('*').order('effective_from', { ascending: false });
+  rates = data || []; renderPay(); render();
+}
+
+// ---------- Pay types (company list) ----------
+function renderTypes() {
+  const unitOpts = (u) => Object.entries(UNITS).map(([k, v]) => `<option value="${k}" ${k === u ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  const row = (i) => `<tr data-type="${i ? i.id : 'new'}">
+    <td><input data-f="name" value="${esc(i?.name || '')}" placeholder="${i ? '' : 'New type, e.g. Hazmat load'}"></td>
+    <td><select data-f="unit">${unitOpts(i?.unit || 'each')}</select></td>
+    <td><select data-f="applies_to" ${(i?.unit || 'each') !== 'stop' ? 'disabled' : ''}><option value="all">All</option><option value="pickup" ${i?.applies_to === 'pickup' ? 'selected' : ''}>Pickups</option><option value="delivery" ${i?.applies_to === 'delivery' ? 'selected' : ''}>Deliveries</option></select></td>
+    <td><input data-f="pays_driver" type="checkbox" ${!i || i.pays_driver ? 'checked' : ''} style="height:auto"></td>
+    <td><input data-f="pay_default" type="number" min="0" step="0.01" value="${i?.pay_default ?? ''}" placeholder="none" style="width:96px"></td>
+    <td><input data-f="bills_customer" type="checkbox" ${i?.bills_customer ? 'checked' : ''} ${(i?.unit) === 'percent' ? 'disabled' : ''} style="height:auto"></td>
+    <td><input data-f="bill_default" type="number" min="0" step="0.01" value="${i?.bill_default ?? ''}" placeholder="none" style="width:96px"></td>
+    <td><input data-f="only_listed_customers" type="checkbox" ${i?.only_listed_customers ? 'checked' : ''} style="height:auto"></td>
+    <td><input data-f="gl_account" value="${esc(i?.gl_account || '')}" style="width:100px"></td>
+    <td>${i ? `<input data-f="active" type="checkbox" ${i.active ? 'checked' : ''} style="height:auto">` : ''}</td>
+    <td><button class="btn small ${i ? '' : 'primary'}" data-save type="button">${i ? 'Save' : 'Add'}</button></td></tr>`;
+  $('types-body').innerHTML = items.map(row).join('') + row(null);
+}
+$('types-body').onchange = (ev) => {
+  if (ev.target.dataset.f === 'unit') {
+    const tr = ev.target.closest('tr'), a = tr.querySelector('[data-f="applies_to"]'), b = tr.querySelector('[data-f="bills_customer"]');
+    a.disabled = ev.target.value !== 'stop'; if (a.disabled) a.value = 'all';
+    b.disabled = ev.target.value === 'percent'; if (b.disabled) b.checked = false;
+  }
+};
+$('types-body').onclick = async (ev) => {
+  const b = ev.target.closest('button[data-save]'); if (!b) return;
+  const tr = b.closest('tr'), id = tr.dataset.type, f = (k) => tr.querySelector(`[data-f="${k}"]`);
+  const num = (k) => f(k).value === '' ? null : Number(f(k).value);
+  const v = { name: f('name').value.trim(), unit: f('unit').value, applies_to: f('unit').value === 'stop' ? f('applies_to').value : 'all',
+              pays_driver: f('pays_driver').checked, pay_default: num('pay_default'),
+              bills_customer: f('unit').value !== 'percent' && f('bills_customer').checked, bill_default: num('bill_default'),
+              only_listed_customers: f('only_listed_customers').checked, gl_account: f('gl_account').value.trim() || null };
+  if (!v.name) { $('types-msg').innerHTML = '<span class="error">Give the type a name.</span>'; return; }
+  if (!v.pays_driver && !v.bills_customer) { $('types-msg').innerHTML = '<span class="error">Tick Pay driver, Bill customer, or both.</span>'; return; }
+  if (id === 'new') v.code = v.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40) || 'type_' + Date.now();
+  if (id !== 'new') v.active = f('active').checked;
+  else v.sort = (Math.max(0, ...items.map(i => i.sort)) + 10);
+  b.disabled = true;
+  const { error } = id === 'new' ? await sb.from('activity_types').insert(v) : await sb.from('activity_types').update(v).eq('id', id);
+  b.disabled = false;
+  if (error) { $('types-msg').innerHTML = `<span class="error">${esc(/duplicate|unique/.test(error.message) ? 'There is already a type with that name.' : error.message)}</span>`; return; }
+  const { data } = await sb.from('activity_types').select('*').order('sort').order('name');
+  items = data || []; renderTypes(); if (cur) renderPay(); render();
+  $('types-msg').innerHTML = '<span class="ok">Saved.</span>';
+};
+
+// ---------- Terminals ----------
+function renderTerminals() {
+  const row = (t) => `<tr data-term="${t ? t.id : 'new'}">
+    <td><input data-f="name" value="${esc(t?.name || '')}" placeholder="${t ? '' : 'New terminal, e.g. North Jersey yard'}"></td>
+    <td><input data-f="address" value="${esc(t?.address || '')}" style="width:100%"></td>
+    <td>${t ? `<input data-f="active" type="checkbox" ${t.active ? 'checked' : ''} style="height:auto">` : ''}</td>
+    <td><button class="btn small ${t ? '' : 'primary'}" data-save type="button">${t ? 'Save' : 'Add'}</button></td></tr>`;
+  $('terms-body').innerHTML = terminals.map(row).join('') + row(null);
+}
+$('terms-body').onclick = async (ev) => {
+  const b = ev.target.closest('button[data-save]'); if (!b) return;
+  const tr = b.closest('tr'), id = tr.dataset.term, f = (k) => tr.querySelector(`[data-f="${k}"]`);
+  const v = { name: f('name').value.trim(), address: f('address').value.trim() || null };
+  if (!v.name) { $('terms-msg').innerHTML = '<span class="error">Give the terminal a name.</span>'; return; }
+  if (id !== 'new') v.active = f('active').checked;
+  b.disabled = true;
+  const { error } = id === 'new' ? await sb.from('terminals').insert(v) : await sb.from('terminals').update(v).eq('id', id);
+  b.disabled = false;
+  if (error) { $('terms-msg').innerHTML = `<span class="error">${esc(/duplicate|unique/.test(error.message) ? 'There is already a terminal with that name.' : error.message)}</span>`; return; }
+  await load(); if (cur) edit(drivers.find(d => d.id === cur.id));
+  $('terms-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
 
 start();

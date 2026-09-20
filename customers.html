@@ -100,10 +100,24 @@
     <section class="card">
       <div class="row">
         <label for="cust" style="flex:1 1 260px">Customer (bill to)<select id="cust"></select></label>
+        <label for="parent" style="flex:0 1 240px">Part of<select id="parent"></select></label>
         <button class="btn" id="nc-btn" type="button">+ New customer</button>
         <a class="btn" id="rates-link" href="rates.html" style="display:inline-flex;align-items:center;text-decoration:none">Rates &amp; billing settings</a>
       </div>
       <p class="hint" id="cust-info" style="margin:10px 0 0"></p>
+    </section>
+
+    <section class="card" id="act-card">
+      <details id="act-det"><summary style="cursor:pointer"><h2 style="display:inline">Activities &amp; driver pay on this customer</h2></summary>
+      <p class="hint">Extras this customer pays for (strapping, detention, liftgate…) and what drivers earn on this account. Blank = the company default from Drivers › Pay &amp; billing types.
+        Types marked <b>only chosen customers</b> apply here only when turned on. Changes are dated: the new price starts on the date you pick and the old one ends the day before.</p>
+      <div class="tablewrap" style="margin-top:8px"><table style="min-width:900px">
+        <thead><tr><th>Type</th><th>Counted per</th><th>Used here</th><th>Price to customer</th><th>Driver pay (all drivers)</th><th>Starts</th><th></th></tr></thead>
+        <tbody id="act-body"></tbody></table></div>
+      <div id="act-msg" class="hint"></div>
+      <h3 style="font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Driver-specific rates on this customer</h3>
+      <div id="act-drivers" class="hint" style="margin:0"></div>
+      </details>
     </section>
 
     <section class="card">
@@ -221,9 +235,17 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 
 // ---------- Bill-to customers ----------
 async function loadCustList() {
-  const { data } = await sb.from('customers').select('id, name, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name');
+  let { data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name');
+  if (error && /parent_customer_id/.test(error.message)) {   // before 33_driver_pay.sql: no parent accounts yet
+    ({ data } = await sb.from('customers').select('id, name, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name'));
+    $('parent').closest('label').hidden = true;
+  }
   customers = data || [];
-  $('cust').innerHTML = customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('') || '<option value="">No customers yet</option>';
+  // Main customers with their accounts right under them: "Whole Foods", "  › DC North"...
+  const kids = (id) => customers.filter(c => c.parent_customer_id === id);
+  const ordered = customers.filter(c => !c.parent_customer_id || !customers.some(p => p.id === c.parent_customer_id))
+    .flatMap(c => [c, ...kids(c.id)]);
+  $('cust').innerHTML = ordered.map(c => `<option value="${c.id}">${c.parent_customer_id ? '\u00a0\u00a0\u00a0› ' : ''}${esc(c.name)}</option>`).join('') || '<option value="">No customers yet</option>';
 }
 function pickCustomer() {
   const c = customers.find(x => x.id === $('cust').value);
@@ -231,8 +253,27 @@ function pickCustomer() {
   $('cust-info').innerHTML = c ? [c.customer_code && `Code ${esc(c.customer_code)}`, c.contact_name && esc(c.contact_name), c.contact_phone && esc(c.contact_phone), c.contact_email && esc(c.contact_email),
     c.master_bill ? 'Weekly master bill' : 'Invoice per load',
     `Bills ${({ delivered: 'loads delivered', started: 'loads started', service_date: 'by service date' })[c.bill_basis] || 'by service date'} from ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][c.week_start_dow ?? 0]} ${String(c.bill_start_time || '00:00').slice(0, 5)}`, ({ hub: 'Hub miles', pcmiler: 'PC*MILER miles' })[c.miles_basis] || 'Route miles', c.start_name && `Trucks start at ${esc(c.start_name)}`].filter(Boolean).join(' · ') : '';
-  if (c) loadDl();
+  if (c) {
+    const kids = customers.filter(k => k.parent_customer_id === c.id), par = customers.find(p => p.id === c.parent_customer_id);
+    $('parent').innerHTML = '<option value="">– main customer –</option>' + customers.filter(p => !p.parent_customer_id && p.id !== c.id)
+      .map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    $('parent').value = c.parent_customer_id || '';
+    $('parent').disabled = kids.length > 0;
+    $('parent').title = kids.length ? 'This customer has accounts under it' : 'Put this account under a main customer (e.g. a DC under Whole Foods)';
+    const extra = par ? `Account under <a href="#" data-go="${par.id}">${esc(par.name)}</a>; anything not set here uses the settings on ${esc(par.name)}`
+      : kids.length ? `Accounts under it: ${kids.map(k => `<a href="#" data-go="${k.id}">${esc(k.name)}</a>`).join(', ')}` : '';
+    if (extra) $('cust-info').innerHTML += (($('cust-info').innerHTML ? '<br>' : '') + extra);
+    loadDl(); loadAct();
+  }
 }
+$('cust-info').onclick = (e) => { const a = e.target.closest('a[data-go]'); if (!a) return; e.preventDefault(); $('cust').value = a.dataset.go; $('cust').onchange(); };
+$('parent').onchange = async () => {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const { error } = await sb.from('customers').update({ parent_customer_id: $('parent').value || null }).eq('id', c.id);
+  if (error) { flash(error.message); $('parent').value = c.parent_customer_id || ''; return; }
+  await loadCustList(); $('cust').value = c.id; pickCustomer();
+  flash($('parent').value ? `${c.name} is now an account under ${customers.find(p => p.id === $('parent').value)?.name}.` : `${c.name} is now a main customer.`);
+};
 $('cust').onchange = () => { dlFilter = 'all'; $('dl-edit').open = false; pickCustomer(); };
 $('nc-btn').onclick = () => RCNewCustomer.open(sb, async (c) => { await loadCustList(); $('cust').value = c.id; pickCustomer(); flash(`${c.name} added.`); });
 document.querySelectorAll('.kpi').forEach(k => k.onclick = () => { dlFilter = k.dataset.f; drawDl(); });
@@ -507,6 +548,62 @@ function dlDraw() {
     await loadDl();
   };
 }
+
+// ---------- Activities & driver pay on this customer ----------
+const ACT_UNITS = { mile: 'mile', stop: 'stop', day: 'day', hour: 'hour', load: 'load', each: 'each time', week: 'week', percent: '% of revenue' };
+let actTypes = [], actRows = [];
+const isoToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+async function loadAct() {
+  const cid = $('cust').value; if (!cid) return;
+  const parId = customers.find(c => c.id === cid)?.parent_customer_id || null;
+  const [T, R, D] = await Promise.all([
+    sb.from('activity_types').select('*').eq('active', true).order('sort').order('name'),
+    sb.from('customer_activity_rates').select('*').in('customer_id', parId ? [cid, parId] : [cid]).order('effective_from', { ascending: false }),
+    sb.from('driver_pay_rates').select('id, rate, effective_from, effective_to, activity_type_id, drivers(id, full_name, active)').eq('customer_id', cid),
+  ]);
+  if (T.error) { $('act-card').hidden = true; return; }   // 33_driver_pay.sql not run yet
+  $('act-card').hidden = false;
+  actTypes = T.data || []; actRows = R.data || [];
+  const par = customers.find(p => p.id === customers.find(c => c.id === cid)?.parent_customer_id);
+  $('act-msg').innerHTML = par ? `Blank here = the setting on ${esc(par.name)}, then the company default. Types turned on for ${esc(par.name)} are on here too.` : '';
+  const today = isoToday();
+  const live = (r, tid) => r.activity_type_id === tid && (!r.effective_to || r.effective_to >= today);
+  const curOf = (tid) => actRows.find(r => r.customer_id === cid && live(r, tid));
+  const parOf = (tid) => parId && actRows.find(r => r.customer_id === parId && live(r, tid));
+  $('act-body').innerHTML = actTypes.map(t => {
+    const r = curOf(t.id), pr = parOf(t.id), on = t.only_listed_customers ? !!r : true;
+    const used = t.only_listed_customers
+      ? (pr && !r ? `<span class="hint" style="margin:0">On (from the main customer)</span><input type="checkbox" data-f="on" checked hidden>`
+          : `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:400"><input type="checkbox" data-f="on" ${on ? 'checked' : ''} style="height:auto"> ${on ? 'On' : 'Off'}</label>`)
+      : '<span class="hint" style="margin:0">All customers</span>';
+    const inh = (k, dflt) => pr && pr[k] != null ? 'main ' + pr[k] : dflt;
+    const bill = t.bills_customer ? `<input data-f="bill" type="number" min="0" step="0.01" value="${r?.bill_price ?? ''}" placeholder="${inh('bill_price', t.bill_default != null ? 'default ' + t.bill_default : 'set a price')}" style="width:120px">` : '<span class="hint" style="margin:0">not billed</span>';
+    const pay = t.pays_driver ? `<input data-f="pay" type="number" min="0" step="0.01" value="${r?.driver_pay ?? ''}" placeholder="${inh('driver_pay', t.pay_default != null ? 'default ' + t.pay_default : 'none')}" style="width:120px">` : '<span class="hint" style="margin:0">no pay</span>';
+    const since = r ? `<div class="hint" style="margin:2px 0 0">since ${esc(r.effective_from)}${r.effective_from > today ? ' (starts later)' : ''}</div>` : '';
+    return `<tr data-t="${t.id}"><td><b>${esc(t.name)}</b>${t.only_listed_customers ? '<div class="hint" style="margin:0">only chosen customers</div>' : ''}</td>
+      <td>${esc(ACT_UNITS[t.unit] || t.unit)}</td><td>${used}</td><td>${bill}${since}</td><td>${pay}</td>
+      <td><input data-f="from" type="date" value="${today}" style="width:150px"></td>
+      <td><button class="btn small" data-save type="button">Save</button></td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="hint">No pay &amp; billing types yet (Drivers page).</td></tr>';
+  const dr = (D.data || []).filter(x => x.drivers && (!x.effective_to || x.effective_to >= today));
+  $('act-drivers').innerHTML = dr.length ? dr.map(x => {
+    const t = actTypes.find(y => y.id === x.activity_type_id);
+    return `<a href="drivers.html?id=${x.drivers.id}">${esc(x.drivers.full_name)}</a>: ${esc(t?.name || 'type')} ${t?.unit === 'percent' ? Number(x.rate) + '%' : '$' + Number(x.rate) + '/' + (t?.unit || '')}${x.effective_from > today ? ' (starts ' + esc(x.effective_from) + ')' : ''}`;
+  }).join(' · ') : 'None. Set one on a driver (Drivers › driver › Pay, pick this customer).';
+}
+$('act-body').onclick = async (ev) => {
+  const b = ev.target.closest('button[data-save]'); if (!b) return;
+  const tr = b.closest('tr'), t = actTypes.find(x => x.id === tr.dataset.t), f = (k) => tr.querySelector(`[data-f="${k}"]`);
+  const num = (k) => f(k) && f(k).value !== '' ? Number(f(k).value) : null;
+  const bill = num('bill'), pay = num('pay');
+  let on = t.only_listed_customers ? f('on').checked : (bill != null || pay != null);   // normal types: a row only holds this customer's own prices
+  b.disabled = true;
+  const { error } = await sb.rpc('set_customer_activity', { p_customer: $('cust').value, p_type: t.id, p_on: on, p_bill: bill, p_pay: pay, p_from: f('from').value || isoToday(), p_note: null });
+  b.disabled = false;
+  if (error) { $('act-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  await loadAct();
+  $('act-msg').innerHTML = `<span class="ok">${esc(t.name)} saved.</span>`;
+};
 
 start();
 </script>
