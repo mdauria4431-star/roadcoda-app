@@ -157,6 +157,11 @@
       </div>
       <div id="ed-msg" class="hint"></div>
 
+      <div id="miles-sec" hidden>
+        <h3>Miles driven</h3>
+        <div id="miles-body" class="hint">Loading…</div>
+      </div>
+
       <div id="dev-sec" hidden>
         <h3>Truck device</h3>
         <div class="loginbox">
@@ -339,10 +344,56 @@ function edit(u, quiet) {
   $('editor').hidden = false;
   history.replaceState(null, '', u ? `equipment.html?id=${u.id}` : 'equipment.html');
   render();
+  drawMiles();
   if (quiet) return;
   $('editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
   if (!u) $('f-unit_no').focus();
 }
+// ── Miles driven, from the odometer history (39_eld_mileage.sql) ──────
+// The ELD writes a reading every sync; drivers' stop readings land in the
+// same table. This shows the last two weeks and where the numbers came from.
+async function drawMiles() {
+  const sec = $('miles-sec'), body = $('miles-body');
+  if (!cur || !cur.id) { sec.hidden = true; return; }
+  sec.hidden = false;
+  body.textContent = 'Loading…';
+  const since = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
+  const { data, error } = await sb.from('truck_daily_miles')
+    .select('day, first_miles, last_miles, driven_miles, readings, eld_readings')
+    .eq('equipment_id', cur.id).gte('day', since).order('day', { ascending: false });
+
+  if (error) {
+    // the carrier may not have run 39_eld_mileage.sql yet
+    body.textContent = /does not exist|schema cache/i.test(error.message)
+      ? 'Mileage history is not installed yet (39_eld_mileage.sql).'
+      : error.message;
+    return;
+  }
+  if (!data || !data.length) {
+    body.textContent = 'No odometer readings in the last 14 days. They arrive from the ELD once this truck is matched, or from drivers entering the odometer at a stop.';
+    return;
+  }
+  const total = data.reduce((a, d) => a + Number(d.driven_miles || 0), 0);
+  const days = data.filter(d => Number(d.driven_miles) > 0).length;
+  body.innerHTML =
+    `<div class="row" style="gap:18px;margin-bottom:8px">
+       <span><b>${Math.round(total).toLocaleString()}</b> miles over ${days} working day${days === 1 ? '' : 's'}</span>
+       <span class="muted">average ${days ? Math.round(total / days).toLocaleString() : 0} a day</span>
+     </div>
+     <div class="tablewrap"><table class="imp-tbl"><thead><tr>
+       <th>Day</th><th class="num">Start</th><th class="num">End</th><th class="num">Driven</th><th>Source</th>
+     </tr></thead><tbody>` +
+    data.map(d => `<tr>
+       <td>${fmtDate(d.day)}</td>
+       <td class="mono num">${d.first_miles == null ? '–' : Math.round(d.first_miles).toLocaleString()}</td>
+       <td class="mono num">${d.last_miles == null ? '–' : Math.round(d.last_miles).toLocaleString()}</td>
+       <td class="mono num">${Math.round(d.driven_miles).toLocaleString()}</td>
+       <td class="muted">${d.eld_readings > 0 ? `ELD · ${d.eld_readings} reading${d.eld_readings === 1 ? '' : 's'}`
+                                              : `Driver · ${d.readings} reading${d.readings === 1 ? '' : 's'}`}</td>
+     </tr>`).join('') +
+    `</tbody></table></div>`;
+}
+
 function pmStatus() {
   if (!cur) { $('pm-status').textContent = ''; return; }
   const odo = odometerOf(cur), pm = pmDue(cur);

@@ -276,6 +276,31 @@ $('login-btn').onclick = async () => {
   start();
 };
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+// ── What the ELD says this load actually ran (39_eld_mileage.sql) ─────
+// Planned miles come from PC*MILER, the driver writes an odometer, and the
+// truck's own box has a third opinion. Showing all three is the point: a
+// persistent gap is either a routing problem or an off-route move.
+async function drawEldMiles(l) {
+  const el = $('d-eld'); if (!el) return;
+  el.hidden = true;
+  if (!l || !l.id) return;
+  const { data, error } = await sb.from('load_eld_miles')
+    .select('eld_miles, planned_miles, driver_miles, variance_pct, started_at, ended_at')
+    .eq('load_id', l.id).maybeSingle();
+  if (error || !data) return;                       // not installed, or nothing to say yet
+  if (data.eld_miles == null) return;
+
+  const v = data.variance_pct;
+  const tone = v == null ? '' : Math.abs(v) <= 8 ? 'ok' : 'error';
+  const gap = v == null ? '' :
+    ` · <span class="${tone}">${v > 0 ? '+' : ''}${v}% against plan</span>`;
+  const drv = data.driver_miles == null ? '' :
+    ` · driver wrote ${Math.round(data.driver_miles).toLocaleString()}`;
+  el.innerHTML = `ELD odometer: <b class="mono">${Math.round(data.eld_miles).toLocaleString()}</b> miles run${gap}${drv}` +
+    (Math.abs(v ?? 0) > 8 ? ' — worth a look before this pays by the mile.' : '');
+  el.hidden = false;
+}
+
 $('day').onchange = () => { $('detail').hidden = true; loadList(); };
 
 // ---------- New bill-to customer ----------
@@ -612,6 +637,7 @@ async function showDetail(id) {
       miles ${({ google: 'from Google', pcmiler: `from ${esc(l.pcm_version || 'PC*MILER')}`, hub: 'from hub odometer', adjusted: 'adjusted by office' })[l.miles_source] || 'typed in'}${l.miles_source === 'pcmiler' && l.pcm_state_miles?.length ? ` (${l.pcm_state_miles.map(x => `${esc(x.state)} ${x.miles}`).join(', ')})` : ''}${l.route_miles != null && Number(l.route_miles) !== Number(l.miles) ? ` (planned ${Math.round(l.route_miles)})` : ''}
       ${l.ask_odometer || l.hub_start != null ? ` · ${l.hub_required ? 'hub miles customer · ' : ''}odometer ${l.hub_start ?? '–'} → ${l.hub_end ?? '–'}${l.hub_start != null && l.hub_end != null ? ` (${(l.hub_end - l.hub_start).toFixed(1)} actual mi)` : ''}${l.deadhead_miles != null ? ` · deadhead ${Number(l.deadhead_miles).toFixed(1)} mi` : ''}${l.ask_odometer && (l.hub_start == null || l.hub_end == null) && l.status !== 'cancelled' ? ' <b style="color:var(--late)">waiting for driver</b>' : ''}` : ''}
       ${l.miles_note ? ` · note: ${esc(l.miles_note)}` : ''}</p>
+    <p id="d-eld" class="hint" hidden></p>
     ${b?.pricing_note ? `<div class="note money">${esc(b.pricing_note)}</div>` : ''}
     ${stops}
     ${editable ? `<details id="as-box" style="margin-top:10px"><summary class="btn" style="display:inline-flex;align-items:center;cursor:pointer;list-style:none">+ Add stop / pickup to this load</summary>
@@ -709,6 +735,8 @@ async function showDetail(id) {
     const { error } = amt > 0 ? await sb.from('load_costs').insert({ load_id: id, cost_type: 'tolls', amount: amt }) : { error: null };
     $('d-tolls-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Tolls saved.</span>';
   };
+  drawEldMiles(l);
+
   if ($('d-recalc')) $('d-recalc').onclick = async () => {
     const m = $('d-msg'); m.hidden = false; m.textContent = 'Working…'; $('d-recalc').disabled = true;
     try {
