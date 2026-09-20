@@ -380,3 +380,21 @@ input,select,textarea {
 html[data-rc-theme="light"]{ --late-bg:#fdf1ef; --late-line:#f0c9c2; --warn:#9a6208; }
 /* pale text colours that were chosen for a light card */
 .banner, .alert, .issue{ color:var(--ink); }
+
+/* ── Dispatch: the one-line summary for issues that can wait ───────── */
+.rc-later{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:8px 12px;margin-bottom:10px;border-radius:9px;font-size:13px;
+  border:1px solid color-mix(in srgb,var(--risk) 40%,var(--line));
+  background:color-mix(in srgb,var(--risk) 10%,transparent);
+}
+.rc-later b{font-family:var(--ui);font-weight:600;color:var(--risk)}
+.rc-later .muted{color:var(--ink-3)}
+.rc-later .rc-more{margin-left:auto}
+#later-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+#later-list .banner{margin-bottom:0;cursor:pointer}
+/* these already happened — amber, not the red reserved for a truck in trouble */
+.banner.soft{
+  border-color:color-mix(in srgb,var(--risk) 35%,var(--line));
+  background:color-mix(in srgb,var(--risk) 9%,transparent);
+}

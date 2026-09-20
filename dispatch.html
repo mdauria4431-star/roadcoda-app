@@ -97,6 +97,7 @@
       <div class="card kpi"><small>Delivered loads</small><b id="k-done">–</b></div>
     </div>
     <div id="banners"></div>
+      <div id="later-wrap"></div>
     <div class="card">
       <div class="tablewrap">
         <table>
@@ -215,7 +216,12 @@ async function loadBoard() {
     .eq('service_date', day).order('load_no');
   if (error) { $('loads-body').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}</td></tr>`; return; }
 
+  // Two different kinds of trouble, and only one of them is urgent.
+  // A truck past its window is work right now — that gets a banner.
+  // An OS&D or a damaged box happened already and is paperwork; it is
+  // collapsed to one line and is on the load's row as a pill anyway.
   let stopCount = 0, lateCount = 0, doneCount = 0, banners = '', rows = '';
+  let later = '', laterCount = 0;
   for (const l of loads) {
     const stops = (l.stops || []).sort((a, b) => a.seq - b.seq);
     stopCount += stops.length;
@@ -223,7 +229,8 @@ async function loadBoard() {
     const next = stops.find(s => !['delivered', 'exception'].includes(s.status));
     const problems = stops.filter(s => s.status === 'exception');
     for (const p of problems) {
-      banners += `<div class="banner"><div><strong>Load ${esc(l.load_no)}, Stop ${p.seq} · ${esc(p.consignee)}</strong> — ${esc(ISSUE[p.issue_type] || 'Delivery issue')}${p.late_reason ? ': ' + esc(p.late_reason) : ''}</div></div>`;
+      laterCount++;
+      later += `<div class="banner soft click" data-load="${l.id}"><div><strong>Load ${esc(l.load_no)}, Stop ${p.seq} · ${esc(p.consignee)}</strong> — ${esc(ISSUE[p.issue_type] || 'Delivery issue')}${p.late_reason ? ': ' + esc(p.late_reason) : ''}</div></div>`;
     }
     const probTag = problems.length ? ` <span class="pill p-late">${problems.length === 1 ? esc(ISSUE[problems[0].issue_type] || 'Delivery issue') : problems.length + ' delivery issues'}</span>` : '';
     const state = next ? stopState(next) : 'done';
@@ -248,6 +255,28 @@ async function loadBoard() {
   }
   $('loads-body').innerHTML = rows || '<tr><td colspan="8">No loads on this date.</td></tr>';
   $('banners').innerHTML = banners;
+
+  // One line, closed by default. It remembers if you opened it.
+  const wrap = $('later-wrap');
+  if (!laterCount) { wrap.innerHTML = ''; }
+  else {
+    let open = false;
+    try { open = localStorage.getItem('rc-dispatch-issues') === 'open'; } catch (e) {}
+    wrap.innerHTML =
+      `<div class="rc-later"><b>${laterCount}</b> delivery issue${laterCount === 1 ? '' : 's'} to clear` +
+      ` <span class="muted">— nothing to chase in the moment</span>` +
+      `<button class="btn small rc-more" id="later-toggle">${open ? 'Hide' : 'Show'}</button></div>` +
+      `<div id="later-list"${open ? '' : ' hidden'}>${later}</div>`;
+    $('later-toggle').onclick = () => {
+      const list = $('later-list');
+      list.hidden = !list.hidden;
+      $('later-toggle').textContent = list.hidden ? 'Show' : 'Hide';
+      try { localStorage.setItem('rc-dispatch-issues', list.hidden ? 'shut' : 'open'); } catch (e) {}
+    };
+    wrap.querySelectorAll('#later-list .click').forEach(el => {
+      el.onclick = () => { location.href = 'loads.html?load=' + el.dataset.load; };
+    });
+  }
   $('k-loads').textContent = loads.length; $('k-stops').textContent = stopCount;
   $('k-late').textContent = lateCount; $('k-done').textContent = doneCount;
   $('iso').textContent = `Signed in to ${profile.carriers?.name}. The database returned ${loads.length} load(s) for this date, all from this carrier.`;
