@@ -39,9 +39,9 @@
   var ICON = {
     'index.html': '◎', 'dispatch.html': '▤', 'loads.html': '▸',
     'invoices.html': '§', 'tolls.html': '¤',
-    'customers.html': '☰', 'drivers.html': '☰', 'equipment.html': '☰',
-    'rates.html': '☰', 'integrations.html': '☰', 'users.html': '☰',
-    'driver.html': '▢', 'account.html': '◔',
+    'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
+    'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
+    'driver.html': '▢', 'account.html': '⊙',
   };
   var NAME = { 'index.html': 'Home', 'dispatch.html': 'Dispatch', 'loads.html': 'Loads',
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
@@ -50,6 +50,26 @@
     'account.html': 'My account' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
+
+  // Give a link its icon and wrap its text. The wrap matters: collapsed, the
+  // rail hides .rc-lbl, and a bare text node can't be hidden by CSS.
+  function dress(a, key, noIcon) {
+    if (!a || a.dataset.rcDressed) return;
+    a.dataset.rcDressed = '1';
+    var text = (a.textContent || '').trim();
+    a.textContent = '';
+    var lb = document.createElement('span');
+    lb.className = 'rc-lbl';
+    lb.textContent = text || NAME[key] || key;
+    if (!noIcon) {
+      var ic = document.createElement('span');
+      ic.className = 'rc-ic';
+      ic.textContent = ICON[key] || '·';
+      a.appendChild(ic);
+    }
+    a.appendChild(lb);
+    a.title = lb.textContent;          // the tooltip is the label when collapsed
+  }
 
   function build() {
     var header = document.querySelector('header');
@@ -100,8 +120,16 @@
         var open = true;
         try { open = localStorage.getItem('rc-fold-' + g.name) !== 'shut'; } catch (e) {}
         sub.hidden = !open;
+        toggle.title = g.name;
         toggle.onclick = function (ev) {
           ev.preventDefault();
+          // Collapsed, the sub-list is hidden anyway — open the rail instead
+          if (document.documentElement.classList.contains('rc-rail-in')) {
+            document.documentElement.classList.remove('rc-rail-in');
+            try { localStorage.setItem('rc-rail', 'out'); } catch (e) {}
+            sub.hidden = false;
+            return;
+          }
           sub.hidden = !sub.hidden;
           try { localStorage.setItem('rc-fold-' + g.name, sub.hidden ? 'shut' : 'open'); } catch (e) {}
         };
@@ -112,12 +140,7 @@
       }
       present.forEach(function (k) {
         var a = links[k]; used[k] = 1;
-        if (!a.querySelector('.rc-ic')) {
-          var ic = document.createElement('span');
-          ic.className = 'rc-ic';
-          ic.textContent = ICON[k] || '·';
-          a.insertBefore(ic, a.firstChild);
-        }
+        dress(a, k, !!g.fold);      // folded children are text, indented under the fold
         box.appendChild(a);
       });
       // A group whose links this user can't open shouldn't leave a heading behind
@@ -129,14 +152,8 @@
     var foot = document.createElement('div');
     foot.className = 'rc-foot';
     rest.forEach(function (k) {
-      var a = links[k];
-      if (!a.querySelector('.rc-ic')) {
-        var ic = document.createElement('span');
-        ic.className = 'rc-ic';
-        ic.textContent = ICON[k] || '·';
-        a.insertBefore(ic, a.firstChild);
-      }
-      foot.appendChild(a);
+      dress(links[k], k);
+      foot.appendChild(links[k]);
     });
 
     nav.innerHTML = '';
