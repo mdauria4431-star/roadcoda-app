@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
+<script src="access.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;
         --ok-bg:#e3f1e6;--ok:#1e6b34;--info-bg:#e3edf6;--info:#1d4e89;--risk-bg:#fbeed8;--risk:#8a4b08}
@@ -195,7 +196,7 @@ async function load() {
     <a class="kpi ${late.length ? 'warn' : ''}" href="dispatch.html"><span>Running late</span><b>${late.length}</b><small>stops past their window</small></a>
     <a class="kpi ${issues.length ? 'warn' : ''}" href="loads.html?day=${day}"><span>Delivery issues</span><b>${issues.length}</b><small>OS&amp;D, refused, closed</small></a>
     <div class="kpi"><span>Miles</span><b>${Math.round(miles).toLocaleString()}</b><small>planned / hub</small></div>
-    <div class="kpi"><span>Revenue</span><b>${money(billed)}</b><small>${billed ? `margin ${money(billed - cost)} (${Math.round((billed - cost) / billed * 100)}%)` : 'per-load pricing only'}</small></div>`;
+    <div class="kpi money"><span>Revenue</span><b>${money(billed)}</b><small>${billed ? `margin ${money(billed - cost)} (${Math.round((billed - cost) / billed * 100)}%)` : 'per-load pricing only'}</small></div>`;
 
   // Needs attention
   const att = [];
@@ -259,7 +260,7 @@ async function load() {
     ['blue', `Approved / sent, unpaid: ${open.length} (${money(open.reduce((a, i) => a + Number(i.total), 0))})`],
     [overdue.length ? 'red' : 'blue', `Past due: ${overdue.length}${overdue.length ? ` (${money(overdue.reduce((a, i) => a + Number(i.total), 0))}) · ${overdue.slice(0, 3).map(i => esc(i.customers?.name)).join(', ')}` : ''}`]
   ];
-  $('ahead').innerHTML = ahead.map(([c, t]) => `<li><span class="dot ${c}"></span><span>${t}</span></li>`).join('');
+  $('ahead').innerHTML = ahead.map(([c, t], i) => `<li class="${i > 0 ? 'money' : ''}"><span class="dot ${c}"></span><span>${t}</span></li>`).join('');
 }
 
 start();

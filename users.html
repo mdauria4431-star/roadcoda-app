@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadCoda · Users</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#1c1f24">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<style>
+  :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--warn:#8a4b08;--ok:#1e6b34}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
+  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
+  header a{color:#d9d5cc}header a.on{color:#fff}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px}.brand span{color:#5fc2c7}
+  .who{margin-left:auto;font-size:14px;color:#d9d5cc}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:40px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600}
+  .btn.primary{background:var(--accent);color:#fff;border:none}
+  .btn.small{height:32px;padding:0 12px;font-size:13px}
+  .btn.danger{color:var(--late)}
+  .btn[disabled]{opacity:.5;cursor:default}
+  main{max-width:1180px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+  input,select,textarea{height:40px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff;min-width:0}
+  textarea{height:64px;padding:8px 10px;resize:vertical}
+  .error{color:var(--late);font-size:14px}.ok{color:var(--ok);font-size:14px}
+  h1{font-family:Archivo,sans-serif;font-size:28px;margin:0}
+  h2{font-family:Archivo,sans-serif;font-size:18px;margin:0}
+  h3{font-size:13px;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+  .hint{font-size:13px;color:var(--muted);line-height:1.5;margin:6px 0 0}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .span2{grid-column:span 2}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:900px}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
+  td{padding:10px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
+  #list tr{cursor:pointer}#list tr:hover{background:#faf8f4}
+  tr.sel{background:#eef6f6!important}
+  .mono{font-family:'IBM Plex Mono',monospace;font-size:13px}
+  .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+  .p-ok{background:#e3f1e6;color:var(--ok)}.p-bad{background:#fbe0db;color:var(--late)}.p-warn{background:#fdf0d9;color:var(--warn)}.p-none{background:#ecebe8;color:#45423d}
+  .exp-bad{color:var(--late);font-weight:600}.exp-warn{color:var(--warn);font-weight:600}
+  .loginbox{display:flex;flex-direction:column;gap:8px;background:#f7f5f0;border-radius:10px;padding:12px 14px}
+  .count{font-size:14px;color:var(--muted)}
+  .modal{position:fixed;inset:0;background:rgba(20,22,26,.55);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+  .modal .box{background:#fff;border-radius:14px;padding:22px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center}
+  .modal .qr{padding:10px;background:#fff;border:1px solid var(--line);border-radius:10px}
+  .events{list-style:none;margin:6px 0 0;padding:0;font-size:13px}
+  .events li{display:flex;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid #efebe4;flex-wrap:wrap}
+  .events li.flag{color:var(--warn);font-weight:600}
+  .paytbl{min-width:640px}.paytbl td,.paytbl th{padding:7px 6px}
+  .paytbl tr.def td{color:var(--muted)}
+  .paytbl tr.old td{color:#8a857c;text-decoration:line-through}
+  .addpay{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.6fr) minmax(0,.9fr) minmax(0,1.2fr) minmax(0,1.5fr) auto;gap:10px;align-items:end;margin-top:10px}
+  details.types summary{cursor:pointer;font-family:Archivo,sans-serif;font-size:18px;font-weight:700}
+  .types td input,.types td select{height:34px;font-size:14px}
+  @media (max-width:900px){.addpay{grid-template-columns:1fr 1fr}}
+  @media (max-width:900px){.grid{grid-template-columns:1fr 1fr}}
+  @media (max-width:560px){main{padding:16px}.grid{grid-template-columns:1fr}.span2{grid-column:auto}}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{border:none;background:#fff;padding:6px 12px;font-size:13px;font-weight:600;color:var(--muted);height:32px}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button.on{background:var(--accent);color:#fff}
+  .seg button.on[data-v="off"]{background:#6b665e}
+  .seg.dis{opacity:.5;pointer-events:none}
+  .agrid{display:grid;grid-template-columns:minmax(0,1.3fr) auto;gap:8px 16px;align-items:center}
+  .agrid .nm b{display:block}.agrid .nm span{font-size:12px;color:var(--muted)}
+  .chip{display:inline-block;border-radius:6px;padding:1px 6px;font-size:11px;font-weight:600;margin:1px 2px 1px 0;background:#ecebe8;color:#45423d}
+  .chip.e{background:#e3f1e6;color:var(--ok)}
+  @media (max-width:560px){.agrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px;flex-wrap:wrap"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a class="on" href="users.html">Users</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
+    <div class="row">
+      <h1 style="flex-grow:1">Users</h1>
+      <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Deactivated</option><option value="all">All</option></select>
+      <button class="btn primary" id="new-btn" type="button">+ Invite a user</button>
+    </div>
+    <p class="hint" style="margin:0">Office staff sign in with their work email and a password. Drivers are set up on the <a href="drivers.html">Drivers</a> page (no passwords).</p>
+
+    <section class="card" id="editor" hidden>
+      <div class="row" style="align-items:center"><h2 id="ed-title" style="flex-grow:1">Invite a user</h2><span id="ed-status"></span></div>
+      <div class="grid" style="margin-top:12px">
+        <label class="span2">Name *<input id="f-name" autocomplete="off"></label>
+        <label class="span2">Work email *<input id="f-email" type="email" autocomplete="off"></label>
+        <label>Role<select id="f-role"><option value="dispatcher">Dispatcher</option><option value="billing">Billing</option><option value="safety">Safety</option><option value="payroll">Payroll</option><option value="accountant">Accountant</option><option value="owner">Owner</option></select></label>
+        <div class="span2" style="align-self:end"><button class="btn small" id="preset-btn" type="button">Use the role's usual screens</button></div>
+        <label style="flex-direction:row;align-items:center;gap:8px;align-self:end;height:40px"><input id="f-super" type="checkbox" style="height:auto"> Super user</label>
+      </div>
+      <p class="hint">Super user: can manage users (and later reopen locked invoices and payroll).</p>
+
+      <h3>What they can open</h3>
+      <div id="owner-note" class="hint" hidden style="margin:0">Owners can open and change everything.</div>
+      <div class="agrid" id="agrid"></div>
+
+      <div class="row" style="margin-top:16px">
+        <button class="btn primary" id="save-btn" type="button">Send invite</button>
+        <button class="btn" id="cancel-btn" type="button">Close</button>
+        <span style="flex-grow:1"></span>
+        <button class="btn" id="resend-btn" type="button" hidden>Send a new login email</button>
+        <button class="btn danger" id="active-btn" type="button" hidden>Deactivate</button>
+      </div>
+      <div id="ed-msg" class="hint"></div>
+    </section>
+
+    <section class="card">
+      <div class="tablewrap"><table>
+        <thead><tr><th>Name</th><th>Role</th><th>Can open</th><th>Last sign-in</th><th>Status</th></tr></thead>
+        <tbody id="list"></tbody></table></div>
+    </section>
+
+    <section class="card">
+      <details><summary style="cursor:pointer;font-family:Archivo,sans-serif;font-size:18px;font-weight:700">Access changes</summary>
+        <ul class="events" id="log" style="margin-top:8px"></ul></details>
+    </section>
+  </div>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
+    '<h2 style="margin-top:0">RoadCoda can\'t find its settings</h2>' +
+    (window.RC_CONFIG ? '<p><b>config.js</b> still has the placeholder key. Open it and paste your Publishable key (Supabase &gt; Project Settings &gt; API Keys).</p>'
+                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder (right-click the zip &gt; <b>Extract All</b>), then open the page from that folder.</p>') +
+    '</div>';
+  throw new Error('RoadCoda settings missing');
+}
+
+
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const when = (t) => t ? new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+const SCREENS = [
+  ['dispatch', 'Dispatch', 'Dispatch board, running late, driver status'],
+  ['loads', 'Loads', 'Create and change loads and stops'],
+  ['customers', 'Customers', 'Bill-to customers, DCs, delivery points'],
+  ['drivers', 'Drivers', 'Driver files, CDL and medical, phone app setup'],
+  ['equipment', 'Equipment', 'Trucks, trailers, due dates, truck devices'],
+  ['rates', 'Rates', 'Rate sheets, fuel surcharge, contracts'],
+  ['invoices', 'Invoices', 'Build, approve and send invoices'],
+  ['tolls', 'Tolls', 'Toll statements and matching'],
+  ['payroll', 'Payroll', 'Driver pay rates (payroll screen coming soon)'],
+  ['safety', 'Safety', 'Coming soon'],
+  ['integrations', 'Integrations', 'PC*MILER and ELD connections'],
+  ['users', 'Users', 'Invite people and set what they can open'],
+  ['money', 'See prices, revenue & costs', 'Rates, load prices, costs, margins and invoice amounts on any screen'],
+];
+const ROLE = { owner: 'Owner', dispatcher: 'Dispatcher', billing: 'Billing', safety: 'Safety', payroll: 'Payroll', accountant: 'Accountant' };
+const PRESETS = {
+  dispatcher: { dispatch: 'edit', loads: 'edit', customers: 'edit', drivers: 'edit', equipment: 'edit' },
+  billing: { dispatch: 'view', loads: 'edit', customers: 'edit', rates: 'edit', invoices: 'edit', tolls: 'edit', money: 'edit' },
+  safety: { dispatch: 'view', drivers: 'edit', equipment: 'edit', safety: 'edit' },
+  payroll: { drivers: 'view', loads: 'view', payroll: 'edit' },
+  accountant: { customers: 'view', rates: 'view', invoices: 'view', tolls: 'view', payroll: 'view', money: 'view' },
+  owner: {},
+};
+let me = null, users = [], cur = null, access = {}, myId = null, myRole = null;
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
+  if (p.role === 'driver') { location.href = 'driver.html'; return; }
+  me = p;
+  $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
+  $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  await load();
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; }
+  start();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function fn(body) {
+  const { data, error } = await sb.functions.invoke('office-users', { body });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (data && data.ok === false) throw new Error(data.error || 'Failed');
+  return data;
+}
+async function load() {
+  try { const r = await fn({ action: 'list' }); users = r.users || []; myId = r.me; myRole = r.my_role; }
+  catch (e) { $('list').innerHTML = `<tr><td colspan="5" class="error">${esc(e.message)}${/Unknown|404|not found/i.test(e.message) ? ' · Deploy the office-users server function first.' : ''}</td></tr>`; return; }
+  render(); loadLog();
+}
+function chips(u) {
+  if (u.role === 'owner') return '<span class="chip e">everything</span>';
+  const a = u.access || {};
+  const list = SCREENS.filter(([k]) => a[k]).map(([k, n]) => `<span class="chip ${a[k] === 'edit' ? 'e' : ''}" title="${a[k] === 'edit' ? 'Edit' : 'View only'}">${esc(k === 'money' ? '$ money' : n)}</span>`);
+  if (u.super_user && !a.users) list.push('<span class="chip e">Users</span>');
+  return list.join('') || '<span class="hint" style="margin:0">nothing yet</span>';
+}
+function render() {
+  const show = $('show').value;
+  const list = users.filter(u => show === 'all' || (show === 'active') === u.active);
+  $('list').innerHTML = list.map(u => `<tr data-id="${u.user_id}" class="${cur && cur.user_id === u.user_id ? 'sel' : ''}">
+    <td><b>${esc(u.full_name || '')}</b>${u.user_id === myId ? ' <span class="hint">(you)</span>' : ''}<div class="hint" style="margin:0">${esc(u.email)}</div></td>
+    <td>${esc(ROLE[u.role] || u.role)}${u.super_user ? ' <span class="pill p-ok">Super user</span>' : ''}</td>
+    <td style="max-width:420px">${chips(u)}</td>
+    <td>${u.last_sign_in_at ? esc(when(u.last_sign_in_at)) : u.invited_at ? `<span class="hint" style="margin:0">invited ${esc(when(u.invited_at))}, not signed in yet</span>` : '–'}</td>
+    <td>${u.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-none">Deactivated</span>'}</td></tr>`).join('')
+    || '<tr><td colspan="5" class="hint">No users.</td></tr>';
+}
+$('show').onchange = render;
+$('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (tr) edit(users.find(u => u.user_id === tr.dataset.id)); };
+
+// ---------- Editor ----------
+function drawGrid() {
+  const owner = $('f-role').value === 'owner';
+  $('owner-note').hidden = !owner; $('agrid').hidden = owner; $('preset-btn').hidden = owner;
+  $('agrid').innerHTML = SCREENS.map(([k, n, hint]) => {
+    const lv = access[k] || 'off';
+    return `<div class="nm"><b>${esc(n)}</b><span>${esc(hint)}</span></div>
+      <div class="seg" data-s="${k}">${['off', 'view', 'edit'].map(v => `<button type="button" data-v="${v}" class="${lv === v ? 'on' : ''}">${v === 'off' ? 'Off' : v === 'view' ? 'View' : 'Edit'}</button>`).join('')}</div>`;
+  }).join('');
+}
+$('agrid').onclick = (ev) => {
+  const b = ev.target.closest('button[data-v]'); if (!b) return;
+  const k = b.closest('.seg').dataset.s;
+  if (b.dataset.v === 'off') delete access[k]; else access[k] = b.dataset.v;
+  drawGrid();
+};
+$('f-role').onchange = () => { if (!cur) access = { ...(PRESETS[$('f-role').value] || {}) }; drawGrid(); };
+$('preset-btn').onclick = () => { access = { ...(PRESETS[$('f-role').value] || {}) }; drawGrid(); };
+
+$('new-btn').onclick = () => edit(null);
+$('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; render(); };
+function edit(u) {
+  cur = u;
+  $('f-name').value = u ? (u.full_name || '') : ''; $('f-email').value = u ? u.email : '';
+  $('f-name').disabled = !!u; $('f-email').disabled = !!u;
+  $('f-role').value = u ? u.role : 'dispatcher'; $('f-super').checked = !!(u && u.super_user);
+  access = u ? { ...(u.access || {}) } : { ...PRESETS.dispatcher };
+  $('ed-title').textContent = u ? (u.full_name || u.email) : 'Invite a user';
+  $('ed-status').innerHTML = u ? (u.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-none">Deactivated</span>') : '';
+  $('save-btn').textContent = u ? 'Save access' : 'Send invite';
+  $('resend-btn').hidden = !u || !u.active;
+  $('active-btn').hidden = !u || u.user_id === myId;
+  $('active-btn').textContent = u && !u.active ? 'Reactivate' : 'Deactivate';
+  $('active-btn').classList.toggle('danger', !!(u && u.active));
+  const self = u && u.user_id === myId && myRole !== 'owner';
+  $('save-btn').disabled = !!self;
+  $('ed-msg').textContent = self ? 'Ask the owner to change your own access.' : '';
+  // Only an owner can make or change an owner
+  [...$('f-role').options].forEach(o => { if (o.value === 'owner') o.disabled = myRole !== 'owner'; });
+  $('f-role').disabled = !!(u && u.role === 'owner' && myRole !== 'owner');
+  drawGrid();
+  $('editor').hidden = false; render();
+  $('editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!u) $('f-name').focus();
+}
+$('save-btn').onclick = async () => {
+  const role = $('f-role').value, sup = $('f-super').checked, acc = role === 'owner' ? {} : access;
+  $('save-btn').disabled = true; $('ed-msg').textContent = cur ? 'Saving…' : 'Sending the invite…';
+  try {
+    if (!cur) {
+      const name = $('f-name').value.trim(), email = $('f-email').value.trim();
+      if (!name || !email) throw new Error('Enter their name and work email.');
+      const r = await fn({ action: 'invite', full_name: name, email, role, super_user: sup, access: acc });
+      await load(); edit(users.find(u => u.user_id === r.user_id) || null);
+      $('ed-msg').innerHTML = `<span class="ok">Invite sent to ${esc(r.sent_to)}.</span>${r.test_mode ? ' (Test mode: emails go to your test address until you go live.)' : ' The link works once, for 24 hours.'}`;
+    } else {
+      const { error } = await sb.rpc('set_user_access', { p_user: cur.user_id, p_role: role, p_super: sup, p_access: acc });
+      if (error) throw error;
+      const id = cur.user_id; await load(); edit(users.find(u => u.user_id === id));
+      $('ed-msg').innerHTML = '<span class="ok">Saved. It applies the next time they open a page.</span>';
+    }
+  } catch (e) { $('ed-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('save-btn').disabled = false;
+};
+$('resend-btn').onclick = async () => {
+  if (!cur) return;
+  $('resend-btn').disabled = true;
+  try { await fn({ action: 'resend', user_id: cur.user_id }); $('ed-msg').innerHTML = `<span class="ok">Sent a new login email to ${esc(cur.email)}.</span>`; }
+  catch (e) { $('ed-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('resend-btn').disabled = false;
+};
+$('active-btn').onclick = async () => {
+  if (!cur) return;
+  const off = cur.active;
+  if (off && !confirm(`Deactivate ${cur.full_name || cur.email}? They're signed out and can't sign in or see anything. You can reactivate them later.`)) return;
+  $('active-btn').disabled = true;
+  try { await fn({ action: off ? 'deactivate' : 'reactivate', user_id: cur.user_id });
+        const id = cur.user_id; await load(); if (off && $('show').value === 'active') $('show').value = 'all';
+        edit(users.find(u => u.user_id === id)); $('ed-msg').innerHTML = `<span class="ok">${off ? 'Deactivated.' : 'Reactivated.'}</span>`; }
+  catch (e) { $('ed-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('active-btn').disabled = false;
+};
+
+async function loadLog() {
+  const { data } = await sb.from('user_access_log').select('user_id, changed_by, change, at').order('at', { ascending: false }).limit(40);
+  const name = (id) => { const u = users.find(x => x.user_id === id); return u ? (u.full_name || u.email) : 'someone'; };
+  $('log').innerHTML = (data || []).map(l => `<li><span class="mono" style="min-width:150px">${esc(when(l.at))}</span><span style="flex:1"><b>${esc(name(l.user_id))}</b>: ${esc(l.change)}${l.changed_by ? ` <span class="hint">by ${esc(name(l.changed_by))}</span>` : ''}</span></li>`).join('')
+    || '<li class="hint" style="margin:0">No changes yet.</li>';
+}
+
+start();
+</script>
+</body>
+</html>

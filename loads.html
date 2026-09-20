@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="config.js"></script>
+<script src="access.js"></script>
 <script src="new-customer.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;
@@ -120,8 +121,8 @@
         <label for="f-miles">Miles<input id="f-miles" type="number" min="0" step="1"></label>
         <label for="f-driver">Driver<select id="f-driver"></select></label>
         <label for="f-truck">Truck<select id="f-truck"></select></label>
-        <label for="f-linehaul">Linehaul $<input id="f-linehaul" type="number" min="0" step="0.01"></label>
-        <label for="f-fsc">Fuel surcharge $<input id="f-fsc" type="number" min="0" step="0.01"></label>
+        <label for="f-linehaul" class="money">Linehaul $<input id="f-linehaul" type="number" min="0" step="0.01"></label>
+        <label for="f-fsc" class="money">Fuel surcharge $<input id="f-fsc" type="number" min="0" step="0.01"></label>
       </div>
       <div class="grid" style="margin-top:12px;grid-template-columns:3fr 1fr 1fr">
         <label for="f-origin">Start address (yard or pickup)<input id="f-origin"></label>
@@ -144,7 +145,7 @@
     <section class="card">
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Load</th><th>Customer</th><th>Driver · Truck</th><th class="num">Stops</th><th class="num">Miles</th><th class="num">Billed</th><th>Status</th></tr></thead>
+          <thead><tr><th>Load</th><th>Customer</th><th>Driver · Truck</th><th class="num">Stops</th><th class="num">Miles</th><th class="num money">Billed</th><th>Status</th></tr></thead>
           <tbody id="list"></tbody>
         </table>
       </div>
@@ -215,6 +216,8 @@ function allocate(total, stops) {
     });
   });
 }
+// Money (prices, revenue, costs) is only for users with "See prices, revenue & costs" (set by access.js)
+const hasMoney = () => !window.RC_ACCESS || window.RC_ACCESS.money !== false;
 const STATUS_LABEL = {planned:'Planned', dispatched:'Dispatched', in_progress:'In progress', delivered:'Delivered', cancelled:'Cancelled'};
 let lists = {customers: [], drivers: [], equipment: []};
 let yard = '', tollFactor = 1;
@@ -321,7 +324,7 @@ async function loadList() {
       <td class="mono">${esc(l.load_no)}</td><td>${esc(l.customers?.name)}</td>
       <td>${esc(l.drivers?.full_name || 'Unassigned')} · ${esc(l.equipment?.unit_no || '–')}</td>
       <td class="num mono">${l.stops.length}</td><td class="num mono">${Math.round(l.miles)}</td>
-      <td class="num mono">${money(billed)}</td>
+      <td class="num mono money">${money(billed)}</td>
       <td><span class="pill s-${l.status}">${STATUS_LABEL[l.status] || l.status}</span>${problemPill(l.stops)}${l.invoices ? ` <span class="pill s-delivered">Invoice ${esc(l.invoices.invoice_no)}</span>` : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="7">No loads on this date. Use New load to add one.</td></tr>';
   document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => showDetail(tr.dataset.id));
@@ -340,7 +343,7 @@ function stopRow(n) {
     <label>Window closes<input class="s-end" type="time" value="09:00"></label>
     <label>Unit<select class="s-unit">${UNITS.map(u => `<option>${u}</option>`).join('')}</select></label>
     <label>Quantity<input class="s-qty" type="number" min="0" step="1"></label>
-    <label>Billed $<input class="s-billed" type="number" min="0" step="0.01" placeholder="Auto"></label>
+    <label class="money">Billed $<input class="s-billed" type="number" min="0" step="0.01" placeholder="Auto"></label>
     <button class="btn small danger s-remove" type="button" aria-label="Remove stop ${n}">Remove</button>`;
   div.insertAdjacentHTML('beforeend', '<div class="s-hint"></div>');
   div.querySelector('.s-remove').onclick = () => { div.remove(); renumber(); };
@@ -442,10 +445,11 @@ $('calc').onclick = async () => {
       if (r.state_miles?.length) lines.push('Miles by state: ' + r.state_miles.map(x => `${esc(x.state)} ${x.miles}`).join(' · '));
       if (r.warning) lines.push(`<span class="error">${esc(r.warning)}</span>`);
       priced.toll_estimate = tollEst(r);
-      if (tollLine(r)) lines.push(tollLine(r));
+      if (tollLine(r) && hasMoney()) lines.push(tollLine(r));
     } catch (e) {
       lines.push(`<span class="error">${esc(e.message)}</span> Using the miles typed in.`);
     }
+    if (!hasMoney()) { lines.push('The price is worked out from the rate sheet when you save.'); return; }
     const p = await getPrice($('f-customer').value, $('f-date').value, parseFloat($('f-miles').value || '0'), stops.length, stops);
     if (p.linehaul != null) $('f-linehaul').value = p.linehaul;
     if (p.fuel_surcharge != null) $('f-fsc').value = p.fuel_surcharge;
@@ -499,7 +503,7 @@ $('save').onclick = async () => {
     if (e1) throw e1;
     loadId = load.id;
 
-    const { error: e2 } = await sb.from('load_billing').insert({
+    const { error: e2 } = !hasMoney() ? { error: null } : await sb.from('load_billing').insert({
       load_id: loadId, linehaul: parseFloat($('f-linehaul').value || '0'), fuel_surcharge: parseFloat($('f-fsc').value || '0'),
       customer_rate_id: priced?.customer_rate_id || null, fsc_rule_id: priced?.fsc_rule_id || null,
       doe_price: priced?.doe_price ?? null, doe_week: priced?.doe_week || null, pricing_note: priced?.note || null
@@ -522,7 +526,8 @@ $('save').onclick = async () => {
     if (e3) throw e3;
 
     const bySeq = Object.fromEntries(stopRows.map(r => [r.seq, r.id]));
-    if (stops.every(s => !s.billed)) {
+    if (!hasMoney()) stops.forEach(s => s.billed = 0);
+    else if (stops.every(s => !s.billed)) {
       const total = parseFloat($('f-linehaul').value || '0') + parseFloat($('f-fsc').value || '0');
       const dels = stops.filter(s => s.type !== 'pickup');   // pickups aren't billed; the delivery is
       const split = dels.length ? allocate(total, dels.map(s => ({ items: [{ qty: s.qty }] }))) : [];
@@ -532,6 +537,8 @@ $('save').onclick = async () => {
       stop_id: bySeq[s.seq], unit_type: s.unit, qty_ordered: s.qty, billed_amount: s.billed
     })));
     if (e4) throw e4;
+    // Users without the money switch: RoadCoda prices the load from the rate sheet (they never see the numbers)
+    if (!hasMoney()) { const { error: e5 } = await sb.rpc('auto_price_load', { p_load: loadId }); if (e5) throw e5; }
 
     $('form').hidden = true;
     $('day').value = date;
@@ -578,7 +585,7 @@ async function showDetail(id) {
   const stops = sortedStops.map(s => {
     const pu = s.stop_type === 'pickup';
     const open = editable && s.status === 'pending' && !s.arrived_at;
-    const items = s.stop_items.map(i => `${i.qty_delivered != null ? `${pu ? 'Picked up' : 'Delivered'} ${i.qty_delivered} of ${i.qty_ordered}` : `${i.qty_ordered} ${pu ? 'to pick up' : 'ordered'}`} ${esc(i.unit_type)} · billed ${Number(i.billed_amount) ? '$' + Number(i.billed_amount).toFixed(2) : '–'}`).join('<br>');
+    const items = s.stop_items.map(i => `${i.qty_delivered != null ? `${pu ? 'Picked up' : 'Delivered'} ${i.qty_delivered} of ${i.qty_ordered}` : `${i.qty_ordered} ${pu ? 'to pick up' : 'ordered'}`} ${esc(i.unit_type)}<span class="money"> · billed ${Number(i.billed_amount) ? '$' + Number(i.billed_amount).toFixed(2) : '–'}</span>`).join('<br>');
     return `<div class="detail-stop">
       <div><strong>Stop ${s.seq} · ${pu ? '<span class="tag-pu">Pickup</span> ' : ''}${esc(s.consignee)}</strong>
         ${s.added_by ? ` <span class="tag-new">Added by ${s.added_by === 'driver' ? 'driver' : 'office'}</span>` : ''}${s.needs_review ? ' <span class="pill s-cancelled">Needs review</span>' : ''}
@@ -597,13 +604,13 @@ async function showDetail(id) {
     <div class="toolbar"><h2 style="flex-grow:1;margin:0">Load ${esc(l.load_no)} · ${esc(l.customers?.name)}</h2>
       <span class="pill s-${l.status}">${STATUS_LABEL[l.status]}</span>${problemPill(l.stops)}
       ${editable ? '<button class="btn primary" id="d-addstop" type="button">+ Add stop / pickup</button>' : ''}</div>
-    <p>${esc(l.drivers?.full_name || 'No driver')} · ${esc(l.equipment?.unit_no || 'No truck')} · ${Math.round(l.miles)} miles ·
-       Linehaul ${money(b?.linehaul)} + fuel ${money(b?.fuel_surcharge)}</p>
+    <p>${esc(l.drivers?.full_name || 'No driver')} · ${esc(l.equipment?.unit_no || 'No truck')} · ${Math.round(l.miles)} miles<span class="money"> ·
+       Linehaul ${money(b?.linehaul)} + fuel ${money(b?.fuel_surcharge)}</span></p>
     <p style="color:var(--muted);font-size:13px;margin-top:-6px">Start: ${esc(l.origin_address || l.customers?.start_address || yard || 'not set')}${l.round_trip ? ' (round trip)' : ''} ·
       miles ${({ google: 'from Google', pcmiler: `from ${esc(l.pcm_version || 'PC*MILER')}`, hub: 'from hub odometer', adjusted: 'adjusted by office' })[l.miles_source] || 'typed in'}${l.miles_source === 'pcmiler' && l.pcm_state_miles?.length ? ` (${l.pcm_state_miles.map(x => `${esc(x.state)} ${x.miles}`).join(', ')})` : ''}${l.route_miles != null && Number(l.route_miles) !== Number(l.miles) ? ` (planned ${Math.round(l.route_miles)})` : ''}
       ${l.ask_odometer || l.hub_start != null ? ` · ${l.hub_required ? 'hub miles customer · ' : ''}odometer ${l.hub_start ?? '–'} → ${l.hub_end ?? '–'}${l.hub_start != null && l.hub_end != null ? ` (${(l.hub_end - l.hub_start).toFixed(1)} actual mi)` : ''}${l.deadhead_miles != null ? ` · deadhead ${Number(l.deadhead_miles).toFixed(1)} mi` : ''}${l.ask_odometer && (l.hub_start == null || l.hub_end == null) && l.status !== 'cancelled' ? ' <b style="color:var(--late)">waiting for driver</b>' : ''}` : ''}
       ${l.miles_note ? ` · note: ${esc(l.miles_note)}` : ''}</p>
-    ${b?.pricing_note ? `<div class="note">${esc(b.pricing_note)}</div>` : ''}
+    ${b?.pricing_note ? `<div class="note money">${esc(b.pricing_note)}</div>` : ''}
     ${stops}
     ${editable ? `<details id="as-box" style="margin-top:10px"><summary class="btn" style="display:inline-flex;align-items:center;cursor:pointer;list-style:none">+ Add stop / pickup to this load</summary>
       <div class="grid" style="margin-top:10px">
@@ -632,7 +639,7 @@ async function showDetail(id) {
       <button class="btn" id="d-miles-save" ${l.invoice_id ? 'disabled title="Already invoiced"' : ''}>Save miles</button>
       <span id="d-miles-msg"></span>
     </div>
-    <div class="row" style="margin-top:12px">
+    <div class="row money" style="margin-top:12px">
       <label for="d-tolls">Tolls on this load $<input id="d-tolls" type="number" min="0" step="0.01" style="width:140px"
         value="${(l.load_costs || []).filter(c => c.cost_type === 'tolls').reduce((a, c) => a + Number(c.amount), 0) || ''}"></label>
       <button class="btn" id="d-tolls-save" ${l.invoice_id || tollRows.length ? `disabled title="${tollRows.length ? 'Set by the toll statement' : 'Already invoiced'}"` : ''}>Save tolls</button>
@@ -641,7 +648,7 @@ async function showDetail(id) {
         : 'Filled in automatically when the toll statement is uploaded on the Tolls page. Billed on the weekly invoice when the contract has a tolls line.'}</span>
     </div>
     ${noticeSection(l)}
-    ${tollRows.length ? `<div class="hint" style="margin-top:6px">${tollRows.sort((a, b) => a.txn_at.localeCompare(b.txn_at)).map(t => `<span class="mono">${time(t.txn_at)}</span> ${esc([t.agency, t.exit_plaza].filter(Boolean).join(' '))} ${money2(t.amount)}${t.status !== 'matched' ? ' (' + ({ non_billable: 'not billable', disputed: 'disputed' })[t.status] + ')' : ''}`).join(' · ')}</div>` : ''}`;
+    ${tollRows.length ? `<div class="hint money" style="margin-top:6px">${tollRows.sort((a, b) => a.txn_at.localeCompare(b.txn_at)).map(t => `<span class="mono">${time(t.txn_at)}</span> ${esc([t.agency, t.exit_plaza].filter(Boolean).join(' '))} ${money2(t.amount)}${t.status !== 'matched' ? ' (' + ({ non_billable: 'not billable', disputed: 'disputed' })[t.status] + ')' : ''}`).join(' · ')}</div>` : ''}`;
   // ---- change stops mid-trip ----
   const stopMsg = (t, ok) => { const m = $('d-msg'); m.hidden = false; m.innerHTML = ok ? `<span class="ok">${esc(t)}</span>` : `<span class="error">${esc(t)}</span>`; };
   const afterChange = async (t) => { await loadList(); await showDetail(id); stopMsg(t + (l.hub_required ? '' : ' Click Recalculate miles & price to update miles and billing.'), true); };

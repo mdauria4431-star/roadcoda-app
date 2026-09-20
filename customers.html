@@ -14,6 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="config.js"></script>
+<script src="access.js"></script>
 <script src="new-customer.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
@@ -107,7 +108,7 @@
       <p class="hint" id="cust-info" style="margin:10px 0 0"></p>
     </section>
 
-    <section class="card" id="act-card">
+    <section class="card money" id="act-card">
       <details id="act-det"><summary style="cursor:pointer"><h2 style="display:inline">Activities &amp; driver pay on this customer</h2></summary>
       <p class="hint">Extras this customer pays for (strapping, detention, liftgate…) and what drivers earn on this account. Blank = the company default from Drivers › Pay &amp; billing types.
         Types marked <b>only chosen customers</b> apply here only when turned on. Changes are dated: the new price starts on the date you pick and the old one ends the day before.</p>

@@ -13,6 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="config.js"></script>
+<script src="access.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--warn:#8a4b08;--ok:#1e6b34}
   *{box-sizing:border-box}
@@ -401,7 +402,7 @@ function renderDevices() {
   const u = cur;
   $('dev-sec').hidden = !u || u.unit_type === 'trailer' || !u.active;
   if ($('dev-sec').hidden) return;
-  const can = MANAGERS.includes(me.role);
+  const can = window.RC_ACCESS ? RC_ACCESS.can('equipment', 'edit') : MANAGERS.includes(me.role);
   const dv = devices.filter(x => x.equipment_id === u.id);
   $('dev-list').innerHTML = dv.map(x => {
     const drv = drivers.find(d => d.id === x.current_driver_id);

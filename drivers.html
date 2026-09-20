@@ -13,6 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="config.js"></script>
+<script src="access.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--warn:#8a4b08;--ok:#1e6b34}
   *{box-sizing:border-box}
@@ -138,7 +139,7 @@
       </div>
       <div id="ed-msg" class="hint"></div>
 
-      <div id="pay-sec" hidden>
+      <div id="pay-sec" class="pay" hidden>
         <h3>Pay <span style="text-transform:none;letter-spacing:0;font-weight:400">· changes here save right away · <a href="#" id="hist-toggle">show past rates</a></span></h3>
         <div class="tablewrap"><table class="paytbl">
           <thead><tr><th>Pay type</th><th>Customer</th><th>Rate</th><th>Since</th><th>Note</th><th></th></tr></thead>
@@ -178,7 +179,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card pay">
       <details class="types" id="types"><summary>Pay &amp; billing types</summary>
         <p class="hint">One list of the work that gets paid and/or billed. Tick <b>Pay driver</b> and/or <b>Bill customer</b> and set the defaults; a driver's own rate (on their record) beats the pay default.
           <b>Each</b> = per time it happens (fueling, strapping…); <b>% of revenue</b> is pay only. <b>Only chosen customers</b> = it pays and bills only on customers that turn it on (Customers page › Activities &amp; driver pay), where you can also set that customer's price and driver pay. Miles, stops, days, hours and loads are billed from each customer's rate sheet or contract, so leave their Bill side off.</p>
@@ -217,7 +218,7 @@
     <section class="card">
       <div class="count" id="count"></div>
       <div class="tablewrap" style="margin-top:8px"><table>
-        <thead><tr><th>Driver</th><th>Phone</th><th>CDL</th><th>CDL expires</th><th>Medical card</th><th>Pay</th><th>App login</th></tr></thead>
+        <thead><tr><th>Driver</th><th>Phone</th><th>CDL</th><th>CDL expires</th><th>Medical card</th><th class="pay">Pay</th><th>App login</th></tr></thead>
         <tbody id="list"></tbody></table></div>
     </section>
   </div>
@@ -361,7 +362,7 @@ function render() {
       <td>${esc(cdl)}</td>
       <td class="${c.cls}">${c.txt}</td>
       <td class="${m.cls}">${m.txt}</td>
-      <td class="mono">${paySummary(d)}</td>
+      <td class="mono pay">${paySummary(d)}</td>
       <td>${loginPill(d)}</td></tr>`;
   }).join('') || `<tr><td colspan="7" class="hint">${drivers.length ? 'No drivers match.' : 'No drivers yet. Click + New driver.'}</td></tr>`;
 }
@@ -398,7 +399,7 @@ async function renderLogin() {
   const d = cur;
   $('login-sec').hidden = !d;
   if (!d) return;
-  const can = MANAGERS.includes(me.role);
+  const can = window.RC_ACCESS ? RC_ACCESS.can('drivers', 'edit') : MANAGERS.includes(me.role);
   const when = (t) => t ? new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
   const card = cards.find(c => c.driver_id === d.id);
   let txt;
@@ -416,7 +417,7 @@ async function renderLogin() {
   $('unlock-btn').hidden = !can || !card || !card.locked_at;
   $('cardx-btn').hidden = !can || !card;
   $('remove-btn').hidden = !can || (!d.user_id && !card);
-  if (!can) $('login-msg').textContent = 'Only the owner, dispatch or safety can set up phones or print cards.';
+  if (!can) $('login-msg').textContent = 'You need Edit on Drivers to set up phones or print cards.';
   // Recent activity, with follow-ups
   const { data: ev } = await sb.from('driver_access_events').select('id, kind, detail, needs_followup, handled_at, at').eq('driver_id', d.id).order('at', { ascending: false }).limit(8);
   const LABEL = { phone_linked: 'QR code shown to set up a phone', link_copied: 'Sign-in link copied', link_emailed: 'Sign-in link emailed', card_printed: 'Reset card printed',
