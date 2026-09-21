@@ -33,12 +33,12 @@
   // it folds away — that's what buys the dispatch board its width.
   var GROUPS = [
     { name: 'Daily', items: ['index.html', 'dispatch.html', 'templates.html', 'loads.html'] },
-    { name: 'Money', items: ['invoices.html', 'payroll.html', 'tolls.html'] },
+    { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'tolls.html'] },
     { name: 'Setup', items: ['customers.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
   ];
   var ICON = {
     'index.html': '◎', 'dispatch.html': '▤', 'templates.html': '↻', 'loads.html': '▸',
-    'invoices.html': '§', 'payroll.html': '$', 'tolls.html': '¤',
+    'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'tolls.html': '¤',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
     'driver.html': '▢', 'account.html': '⊙',
@@ -47,7 +47,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -115,6 +115,13 @@
       pl.href = 'payroll.html'; pl.textContent = 'Payroll';
       if (here === 'payroll.html') pl.className = 'on';
       nav.appendChild(pl); links['payroll.html'] = pl;
+    }
+    // The activity file lives with invoicing: whoever can open Invoices gets it
+    if (links['invoices.html'] && !links['activity.html']) {
+      var al = document.createElement('a');
+      al.href = 'activity.html'; al.textContent = 'Activity file';
+      if (here === 'activity.html') al.className = 'on';
+      nav.appendChild(al); links['activity.html'] = al;
     }
     if (links['dispatch.html'] && !links['templates.html']) {
       var tl = document.createElement('a');
