@@ -298,6 +298,7 @@ function draw() {
       ${l.invoice_id ? '<span class="chip">On an invoice</span>' : ''}
       <span class="sp"></span>
       ${edit && !l.invoice_id ? `<a class="btn small" href="loads.html?load=${l.id}&addstop=1">+ Stop</a>` : ''}
+      ${canEdit() && l.stops.length ? '<button class="btn small" id="as-tpl">Save as template</button>' : ''}
       <a class="btn small" href="loads.html?load=${l.id}${DAY ? '&day=' + DAY : ''}">Open in Loads</a>
     </div>
     <div class="facts">
@@ -567,6 +568,15 @@ function wire(edit) {
     if (error) return fail(error);
     window.open(data.signedUrl, '_blank', 'noopener');
   });
+
+  // Save as a recurring template (days are set on the Templates page)
+  if ($('as-tpl')) $('as-tpl').onclick = async () => {
+    const name = prompt('Name this template (e.g. "Whole Foods Edison — AM"). It will run Mon–Fri; change the days on the Templates page.', `${T.l.customers?.name || 'Route'} — ${T.l.load_no}`);
+    if (!name) return;
+    const { data, error } = await sb.rpc('save_load_as_template', { p_load: T.l.id, p_name: name, p_days: [1, 2, 3, 4, 5], p_keep_crew: true });
+    if (error) return fail(error);
+    toast(`Template saved. <a href="templates.html?t=${data}" style="color:var(--accent-hi)">Set its days and windows</a>`);
+  };
 
   // Sign-offs
   const note = () => ($('note')?.value || '').trim() || null;

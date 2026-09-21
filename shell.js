@@ -32,12 +32,12 @@
   // Six visible groups instead of eleven flat links. Setup is weekly work, so
   // it folds away — that's what buys the dispatch board its width.
   var GROUPS = [
-    { name: 'Daily', items: ['index.html', 'dispatch.html', 'loads.html'] },
+    { name: 'Daily', items: ['index.html', 'dispatch.html', 'templates.html', 'loads.html'] },
     { name: 'Money', items: ['invoices.html', 'tolls.html'] },
     { name: 'Setup', items: ['customers.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'loads.html': '▸',
+    'index.html': '◎', 'dispatch.html': '▤', 'templates.html': '↻', 'loads.html': '▸',
     'invoices.html': '§', 'tolls.html': '¤',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
@@ -47,7 +47,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -106,6 +106,14 @@
     // Index the links access.js left in place
     var links = {};
     Array.prototype.forEach.call(nav.querySelectorAll('a'), function (a) { links[href(a)] = a; });
+    // Templates lives under Dispatch: anyone who can open Dispatch gets it,
+    // without every page having to carry the link in its own header.
+    if (links['dispatch.html'] && !links['templates.html']) {
+      var tl = document.createElement('a');
+      tl.href = 'templates.html'; tl.textContent = 'Templates';
+      if (here === 'templates.html') tl.className = 'on';
+      nav.appendChild(tl); links['templates.html'] = tl;
+    }
 
     var frag = document.createDocumentFragment();
     var used = {};

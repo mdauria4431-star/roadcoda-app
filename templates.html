@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Templates · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .bar h1{margin:0;font-size:19px}
+  .n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .dim{color:var(--muted)}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .wk{font-family:var(--mono);font-size:13px;min-width:170px;text-align:center}
+
+  /* The week: one row per template, one cell per day */
+  .wrap{overflow-x:auto}
+  table.week{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+  .week th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;
+    padding:7px 9px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .week th.today{color:var(--accent-hi)}
+  .week td{padding:5px 6px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  .week td.nm{padding-left:12px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+  .week td.nm small{display:block;color:var(--ink-3);font-size:11.5px}
+  .cell{width:100%;min-width:92px;height:38px;border-radius:7px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);
+    font-family:inherit;font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;line-height:1.15;padding:0 4px}
+  .cell b{font-family:var(--mono);font-weight:600;font-size:12.5px}
+  .cell.off{background:transparent;border-style:dashed;border-color:var(--line-soft);color:var(--ink-3)}
+  .cell.run{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));color:var(--accent-hi);background:var(--accent-deep)}
+  .cell.add{border-color:color-mix(in srgb,var(--info) 55%,var(--line));color:var(--info);background:color-mix(in srgb,var(--info) 12%,transparent)}
+  .cell.skip{color:var(--ink-3);text-decoration:line-through;background:transparent}
+  .cell.made{border-color:color-mix(in srgb,var(--ok) 45%,var(--line));color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent);text-decoration:none}
+  .cell.warn{box-shadow:inset 0 0 0 1px var(--warn)}
+  .cell.past{opacity:.45;cursor:default}
+  button.cell:not(.past):hover{filter:brightness(1.15)}
+  .key{display:flex;gap:14px;flex-wrap:wrap;padding:9px 16px;font-size:12px;color:var(--muted);border-top:1px solid var(--line-soft)}
+  .key span{display:inline-flex;align-items:center;gap:6px}
+  .key i{display:inline-block;width:18px;height:12px;border-radius:3px;border:1px solid var(--line)}
+  .go{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line-soft)}
+  .go .msg{flex:1;min-width:240px;font-size:13px}
+  .warns{padding:0 16px 10px;font-size:12.5px;color:var(--warn)}
+
+  /* Template list and editor */
+  .tl{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--line-soft);cursor:pointer;flex-wrap:wrap}
+  .tl:hover{background:var(--row-hover)}
+  .tl .t{flex:1;min-width:220px}
+  .tl .t b{font-family:var(--ui);font-weight:600}
+  .tl .t span{display:block;font-size:12.5px;color:var(--muted)}
+  .days{display:inline-flex;gap:3px}
+  .days i{font-style:normal;width:22px;height:20px;border-radius:5px;display:inline-grid;place-items:center;font-size:10.5px;font-weight:700;
+    font-family:var(--ui);border:1px solid var(--line);color:var(--ink-3)}
+  .days i.on{color:var(--accent-hi);background:var(--accent-deep);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+  .chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .edit{padding:12px 16px 16px;background:var(--panel-2);border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px}
+  .pick{display:flex;gap:4px;flex-wrap:wrap}
+  .pick label{flex-direction:row;align-items:center;gap:0;font-weight:600}
+  .pick input{display:none}
+  .pick span{width:40px;height:30px;border-radius:7px;border:1px solid var(--line);display:grid;place-items:center;font-size:12px;cursor:pointer;background:var(--surface);color:var(--muted)}
+  .pick input:checked + span{background:var(--accent);color:#fff;border-color:var(--accent)}
+  table.st{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+  .st th{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  .st td{padding:5px 8px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  .st input[type=time]{width:112px;font-family:var(--mono)}
+  .st input[type=number]{width:70px;text-align:right;font-family:var(--mono)}
+  .st select{width:80px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .new{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:12px 16px}
+  .new input{min-width:120px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;
+    padding:10px 14px;border-radius:10px;background:var(--raise);border:1px solid var(--line);box-shadow:var(--card-sh);font-size:13px;max-width:92vw}
+  .toast.err{border-color:color-mix(in srgb,var(--late) 55%,var(--line))}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="templates.html">Templates</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>Load templates</h1>
+      <span class="sp"></span>
+      <button class="btn small" id="prev" aria-label="Previous week">‹</button>
+      <span class="wk" id="wk"></span>
+      <button class="btn small" id="next" aria-label="Next week">›</button>
+      <button class="btn small" id="thisweek">This week</button>
+    </div>
+
+    <div class="card">
+      <header><h2>The week</h2><span class="sp"></span><span class="mini" id="hint"></span></header>
+      <div class="wrap"><table class="week"><thead><tr id="whead"></tr></thead><tbody id="wbody"></tbody></table></div>
+      <div class="key">
+        <span><i style="background:var(--accent-deep);border-color:var(--accent)"></i>Runs — click to skip</span>
+        <span><i style="background:transparent;border-style:dashed"></i>Not a run day — click to add</span>
+        <span><i style="background:color-mix(in srgb,var(--info) 12%,transparent);border-color:var(--info)"></i>Added this week</span>
+        <span><i style="background:transparent"></i><s>Skipped</s> — click to put back</span>
+        <span><i style="background:color-mix(in srgb,var(--ok) 10%,transparent);border-color:var(--ok)"></i>Load made — click to open</span>
+      </div>
+      <div class="warns" id="warns"></div>
+      <div class="go">
+        <div class="msg" id="gomsg"></div>
+        <button class="btn primary" id="create" disabled>Create loads</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>Templates</h2><span class="sp"></span><span class="mini">Click one to change its days, crew, windows or counts. Changes apply to loads made from now on — never to loads already made.</span></header>
+      <div id="list"></div>
+      <div class="new" id="newbox">
+        <label>Load number to copy<input id="n-load" placeholder="e.g. 1035" class="n"></label>
+        <label style="flex:1;min-width:220px">Template name<input id="n-name" placeholder="e.g. Whole Foods Edison — AM"></label>
+        <label>Runs on<div class="pick" id="n-days"></div></label>
+        <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500;height:32px"><input type="checkbox" id="n-crew" checked style="height:auto"> Keep driver &amp; truck</label>
+        <button class="btn primary" id="n-save">Save as template</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d); };
+const monday = (s) => { const d = new Date(s + 'T12:00:00'); const k = (d.getDay() + 6) % 7; d.setDate(d.getDate() - k); return iso(d); };
+const DN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const label = (s) => { const d = new Date(s + 'T12:00:00'); return `${DN[(d.getDay() + 6) % 7]} ${d.getMonth() + 1}/${d.getDate()}`; };
+const hm = (t) => t ? String(t).slice(0, 5) : '';
+
+let WEEK = monday(new URLSearchParams(location.search).get('week') || iso(new Date()));
+let TPL = [], SCHED = [], OPEN = new URLSearchParams(location.search).get('t'), drivers = [], units = [];
+const TODAY = iso(new Date());
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('dispatch', 'edit') || window.RC_ACCESS.can('loads', 'edit');
+
+let tt = null;
+function toast(html, isErr) {
+  const t = $('toast'); t.className = 'toast' + (isErr ? ' err' : ''); t.innerHTML = html; t.hidden = false;
+  clearTimeout(tt); tt = setTimeout(() => t.hidden = true, isErr ? 9000 : 7000);
+}
+const fail = (e) => toast(esc(e.message || e), true);
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false; $('app').hidden = false;
+  await window.RC_ACCESS_READY;
+  $('newbox').hidden = !canEdit();
+  $('n-days').innerHTML = DN.map((d, i) => `<label><input type="checkbox" value="${i + 1}"${i < 5 ? ' checked' : ''}><span>${d}</span></label>`).join('');
+  const [d, u] = await Promise.all([
+    sb.from('drivers').select('id, full_name, active').order('full_name'),
+    sb.from('equipment').select('id, unit_no, unit_type, active').order('unit_no'),
+  ]);
+  drivers = d.data || []; units = u.data || [];
+  await load();
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; } location.reload();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('prev').onclick = () => { WEEK = addDays(WEEK, -7); load(); };
+$('next').onclick = () => { WEEK = addDays(WEEK, 7); load(); };
+$('thisweek').onclick = () => { WEEK = monday(TODAY); load(); };
+
+async function load() {
+  history.replaceState(null, '', `?week=${WEEK}${OPEN ? '&t=' + OPEN : ''}`);
+  const end = addDays(WEEK, 6);
+  $('wk').textContent = `${label(WEEK)} – ${label(end)}`;
+  const [t, s] = await Promise.all([
+    sb.from('load_templates').select('id, name, customer_id, driver_id, truck_id, trailer_id, run_days, starts_on, ends_on, active, notes, updated_at, customers(name), load_template_stops(id, seq, stop_type, consignee, address, window_start, window_end, day_offset, load_template_items(id, unit_type, qty_ordered)), load_template_dates(run_date, kind, note)').order('name'),
+    sb.rpc('template_schedule', { p_from: WEEK, p_to: end }),
+  ]);
+  if (t.error || s.error) {
+    const e = t.error || s.error;
+    $('wbody').innerHTML = `<tr><td colspan="8" class="empty error">${esc(e.message)}${/does not exist|schema cache/.test(e.message) ? ' — run 43_load_templates.sql in the SQL Editor.' : ''}</td></tr>`;
+    return;
+  }
+  TPL = t.data || []; SCHED = s.data || [];
+  TPL.forEach(x => x.load_template_stops.sort((a, b) => a.seq - b.seq));
+  drawWeek(); drawList();
+}
+
+// ── The week ─────────────────────────────────────────────────────────
+function drawWeek() {
+  const days = [...Array(7)].map((_, i) => addDays(WEEK, i));
+  $('whead').innerHTML = '<th>Template</th>' + days.map(d => `<th class="${d === TODAY ? 'today' : ''}">${label(d)}</th>`).join('');
+  const active = TPL.filter(t => t.active);
+  const edit = canEdit();
+  $('wbody').innerHTML = active.map(t => {
+    const cells = days.map(d => {
+      const r = SCHED.find(x => x.template_id === t.id && x.run_date === d);
+      const past = d < TODAY;
+      let cls = 'off', txt = '·', title = 'Not a run day', act = past ? '' : 'add';
+      if (r && r.load_id) { cls = 'made'; txt = `<b>${esc(r.load_no)}</b>${r.load_status === 'cancelled' ? 'cancelled' : 'made'}`; title = 'Open the load'; act = 'open'; }
+      else if (r && r.why === 'skipped') { cls = 'skip'; txt = 'skipped'; title = 'Skipped' + (r.note ? ' — ' + r.note : '') + (past ? '' : '. Click to put it back.'); act = past ? '' : 'clear'; }
+      else if (r) {
+        cls = r.why === 'added' ? 'add' : 'run';
+        txt = `${r.why === 'added' ? 'added' : 'runs'}${r.driver ? `<span class="mini" style="color:inherit">${esc(r.driver.split(' ')[0])}</span>` : ''}`;
+        title = (r.why === 'added' ? 'Added' + (r.note ? ' — ' + r.note : '') + '. Click to remove.' : 'Runs this day. Click to skip it.') + (r.warning ? '\n⚠ ' + r.warning : '');
+        act = past ? '' : (r.why === 'added' ? 'clear' : 'skip');
+        if (r.warning) cls += ' warn';
+      }
+      if (past && act !== 'open') cls += ' past';
+      const clickable = act === 'open' || (edit && act);
+      return `<td><button class="cell ${cls}" title="${esc(title)}" ${clickable ? `data-act="${act}" data-t="${t.id}" data-d="${d}" data-load="${r?.load_id || ''}"` : 'disabled'}>${txt}</button></td>`;
+    }).join('');
+    return `<tr><td class="nm" title="${esc(t.name)}">${esc(t.name)}<small>${esc(t.customers?.name || '')} · ${t.load_template_stops.length} stop${t.load_template_stops.length === 1 ? '' : 's'}</small></td>${cells}</tr>`;
+  }).join('') || `<tr><td colspan="8" class="empty">No active templates yet. Save one from a load below${canEdit() ? '' : ' (needs Edit on Dispatch or Loads)'}, or from the trip screen.</td></tr>`;
+
+  const todo = SCHED.filter(r => r.why !== 'skipped' && !r.load_id && r.run_date >= TODAY);
+  const made = SCHED.filter(r => r.load_id).length;
+  const warns = [...new Set(todo.filter(r => r.warning).map(r => `${label(r.run_date)} · ${r.name}: ${r.warning}`))];
+  $('warns').innerHTML = warns.map(w => `⚠ ${esc(w)}`).join('<br>');
+  $('gomsg').innerHTML = todo.length
+    ? `<b>${todo.length} load${todo.length === 1 ? '' : 's'}</b> ready to make for this week${made ? ` · ${made} already made` : ''}. They're priced from the rate sheet for each day and land on the board as ${todo.some(r => r.driver_id) ? 'dispatched (or planned where there is no driver)' : 'planned'}.`
+    : made ? `Every load for this week is already made (${made}).` : 'Nothing to make this week.';
+  $('create').disabled = !todo.length || !canEdit();
+  $('create').textContent = todo.length ? `Create ${todo.length} load${todo.length === 1 ? '' : 's'}` : 'Create loads';
+  $('hint').textContent = SCHED.some(r => r.run_date < TODAY && r.why !== 'skipped' && !r.load_id) ? 'Past days are never made — only today on.' : '';
+
+  document.querySelectorAll('button.cell[data-act]').forEach(b => b.onclick = () => cellClick(b.dataset));
+}
+
+async function cellClick({ act, t, d, load: loadId }) {
+  if (act === 'open') { location.href = `trip.html?load=${loadId}`; return; }
+  let note = null;
+  if (act === 'skip' || act === 'add') {
+    note = prompt(act === 'skip' ? `Skip ${label(d)}? Reason (optional — e.g. holiday, DC closed):` : `Add a run on ${label(d)}? Note (optional — e.g. extra Saturday):`, '');
+    if (note === null) return;
+  }
+  const { error } = await sb.rpc('set_template_date', { p_template: t, p_date: d, p_kind: act, p_note: note });
+  if (error) return fail(error);
+  toast(act === 'skip' ? `${label(d)} skipped` : act === 'add' ? `${label(d)} added` : `${label(d)} back to normal`);
+  load();
+}
+
+$('create').onclick = async () => {
+  const todo = SCHED.filter(r => r.why !== 'skipped' && !r.load_id && r.run_date >= TODAY);
+  if (!todo.length) return;
+  const from = todo.reduce((m, r) => r.run_date < m ? r.run_date : m, todo[0].run_date);
+  const to = addDays(WEEK, 6);
+  if (!confirm(`Create ${todo.length} load${todo.length === 1 ? '' : 's'} for ${label(from)} – ${label(to)}?`)) return;
+  $('create').disabled = true;
+  const { data, error } = await sb.rpc('create_template_loads', { p_from: from, p_to: to, p_templates: null });
+  if (error) { fail(error); return load(); }
+  const nos = (data || []).map(r => r.load_no);
+  toast(nos.length ? `Made ${nos.length} load${nos.length === 1 ? '' : 's'}: ${esc(nos.slice(0, 8).join(', '))}${nos.length > 8 ? '…' : ''}. <a href="dispatch.html">Open the board</a>` : 'Nothing new to make — those loads already exist.');
+  load();
+};
+
+// ── Template list + editor ──────────────────────────────────────────
+function daysHtml(run) { return `<span class="days">${['Mo','Tu','We','Th','Fr','Sa','Su'].map((d, i) => `<i class="${run.includes(i + 1) ? 'on' : ''}">${d}</i>`).join('')}</span>`; }
+function unitName(id) { return units.find(u => u.id === id)?.unit_no; }
+function drawList() {
+  const edit = canEdit();
+  $('list').innerHTML = TPL.map(t => {
+    const who = [drivers.find(d => d.id === t.driver_id)?.full_name, unitName(t.truck_id), unitName(t.trailer_id)].filter(Boolean).join(' · ') || 'no crew set';
+    const dates = (t.load_template_dates || []).filter(x => x.run_date >= TODAY).length;
+    return `<div class="tl" data-open="${t.id}">
+        <div class="t"><b>${esc(t.name)}</b><span>${esc(t.customers?.name || '')} · ${t.load_template_stops.length} stops · ${esc(who)}${t.ends_on ? ' · until ' + esc(t.ends_on) : ''}${dates ? ` · ${dates} upcoming skip/add` : ''}</span></div>
+        ${daysHtml(t.run_days)}
+        ${t.active ? '' : '<span class="chip">Paused</span>'}
+      </div>${OPEN === t.id ? editorHtml(t, edit) : ''}`;
+  }).join('') || '<div class="empty">No templates yet.</div>';
+  document.querySelectorAll('[data-open]').forEach(el => el.onclick = () => { OPEN = OPEN === el.dataset.open ? null : el.dataset.open; history.replaceState(null, '', `?week=${WEEK}${OPEN ? '&t=' + OPEN : ''}`); drawList(); });
+  if (OPEN) wireEditor(TPL.find(t => t.id === OPEN));
+}
+
+function editorHtml(t, edit) {
+  const dis = edit ? '' : ' disabled';
+  const opt = (list, cur, blank) => `<option value="">${blank}</option>` + list.map(x => `<option value="${x.id}"${x.id === cur ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
+  const drv = drivers.filter(d => d.active || d.id === t.driver_id).map(d => ({ id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') }));
+  const trk = units.filter(u => u.unit_type !== 'trailer' && (u.active || u.id === t.truck_id)).map(u => ({ id: u.id, label: u.unit_no + (u.active ? '' : ' (retired)') }));
+  const trl = units.filter(u => u.unit_type === 'trailer' && (u.active || u.id === t.trailer_id)).map(u => ({ id: u.id, label: u.unit_no }));
+  const stops = t.load_template_stops.map(s => `
+    <tr data-s="${s.id}">
+      <td class="n">${s.seq}</td>
+      <td><span class="mini">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span> ${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}</td>
+      <td><input type="time" data-f="window_start" value="${hm(s.window_start)}"${dis}></td>
+      <td><input type="time" data-f="window_end" value="${hm(s.window_end)}"${dis}></td>
+      <td><select data-f="day_offset"${dis}>${[0, 1, 2].map(n => `<option value="${n}"${s.day_offset === n ? ' selected' : ''}>${n === 0 ? 'same day' : '+' + n + ' day'}</option>`).join('')}</select></td>
+      <td>${s.load_template_items.map(i => `<span class="row" style="gap:5px"><input type="number" min="0" step="1" data-item="${i.id}" value="${i.qty_ordered}"${dis}><span class="mini">${esc(i.unit_type)}</span></span>`).join('') || '<span class="mini">—</span>'}</td>
+    </tr>`).join('');
+  return `<div class="edit" id="ed">
+    <div class="grid">
+      <label>Name<input id="e-name" value="${esc(t.name)}"${dis}></label>
+      <label>Runs on<div class="pick" id="e-days">${DN.map((d, i) => `<label><input type="checkbox" value="${i + 1}"${t.run_days.includes(i + 1) ? ' checked' : ''}${dis}><span>${d}</span></label>`).join('')}</div></label>
+    </div>
+    <div class="grid">
+      <label>Driver<select id="e-driver"${dis}>${opt(drv, t.driver_id, '— none —')}</select></label>
+      <label>Truck<select id="e-truck"${dis}>${opt(trk, t.truck_id, '— none —')}</select></label>
+      <label>Trailer<select id="e-trailer"${dis}>${opt(trl, t.trailer_id, '— none —')}</select></label>
+      <label>First day<input type="date" id="e-start" value="${t.starts_on}"${dis}></label>
+      <label>Last day (optional)<input type="date" id="e-end" value="${t.ends_on || ''}"${dis}></label>
+    </div>
+    <div class="wrap"><table class="st"><thead><tr><th>#</th><th>Stop</th><th>Window opens</th><th>Window closes</th><th>Day</th><th>Ordered</th></tr></thead><tbody>${stops}</tbody></table></div>
+    <div class="mini">To add, remove or re-order stops: fix a real load on the Loads page, then save it as a new template and pause this one. The trailer only goes out with a tractor.</div>
+    ${edit ? `<div class="row">
+      <button class="btn primary small" id="e-save">Save changes</button>
+      <button class="btn small" id="e-pause">${t.active ? 'Pause' : 'Resume'}</button>
+      <span class="sp"></span>
+      <button class="btn small danger" id="e-del">Delete template</button>
+    </div>` : ''}
+  </div>`;
+}
+
+function wireEditor(t) {
+  if (!t || !$('e-save')) return;
+  $('e-save').onclick = async () => {
+    const days = [...document.querySelectorAll('#e-days input:checked')].map(i => +i.value);
+    if (!days.length) return fail('Pick at least one day it runs.');
+    const upd = { name: $('e-name').value.trim(), run_days: days, driver_id: $('e-driver').value || null, truck_id: $('e-truck').value || null,
+      trailer_id: $('e-trailer').value || null, starts_on: $('e-start').value, ends_on: $('e-end').value || null };
+    if (!upd.name) return fail('Give it a name.');
+    let { error } = await sb.from('load_templates').update(upd).eq('id', t.id);
+    if (error) return fail(/load_templates_name/.test(error.message) ? 'Another template already has that name.' : error);
+    for (const tr of document.querySelectorAll('#ed tr[data-s]')) {
+      const s = t.load_template_stops.find(x => x.id === tr.dataset.s);
+      const u = { window_start: tr.querySelector('[data-f=window_start]').value || null, window_end: tr.querySelector('[data-f=window_end]').value || null,
+        day_offset: +tr.querySelector('[data-f=day_offset]').value };
+      if (hm(s.window_start) !== (u.window_start || '') || hm(s.window_end) !== (u.window_end || '') || s.day_offset !== u.day_offset) {
+        ({ error } = await sb.from('load_template_stops').update(u).eq('id', s.id)); if (error) return fail(error);
+      }
+      for (const inp of tr.querySelectorAll('[data-item]')) {
+        const it = s.load_template_items.find(x => x.id === inp.dataset.item), q = Math.max(0, parseInt(inp.value || '0', 10));
+        if (it.qty_ordered !== q) { ({ error } = await sb.from('load_template_items').update({ qty_ordered: q }).eq('id', it.id)); if (error) return fail(error); }
+      }
+    }
+    toast('Template saved. Loads already made are not changed.'); load();
+  };
+  $('e-pause').onclick = async () => {
+    const { error } = await sb.from('load_templates').update({ active: !t.active }).eq('id', t.id);
+    if (error) return fail(error); toast(t.active ? 'Paused — it makes nothing until resumed' : 'Resumed'); load();
+  };
+  $('e-del').onclick = async () => {
+    if (!confirm(`Delete "${t.name}"? Loads it already made stay exactly as they are.`)) return;
+    const { error } = await sb.from('load_templates').delete().eq('id', t.id);
+    if (error) return fail(error); OPEN = null; toast('Template deleted'); load();
+  };
+}
+
+$('n-save').onclick = async () => {
+  const no = $('n-load').value.trim(), name = $('n-name').value.trim();
+  const days = [...document.querySelectorAll('#n-days input:checked')].map(i => +i.value);
+  if (!no) return fail('Type the number of a load to copy.');
+  const { data: l, error: e1 } = await sb.from('loads').select('id').eq('load_no', no).maybeSingle();
+  if (e1) return fail(e1);
+  if (!l) return fail(`No load ${esc(no)} found.`);
+  const { data, error } = await sb.rpc('save_load_as_template', { p_load: l.id, p_name: name, p_days: days, p_keep_crew: $('n-crew').checked });
+  if (error) return fail(error);
+  OPEN = data; $('n-load').value = ''; $('n-name').value = '';
+  toast('Template saved — check its windows and days below.'); load();
+};
+
+start();
+</script>
+</body>
+</html>
