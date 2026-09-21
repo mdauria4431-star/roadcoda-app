@@ -99,6 +99,11 @@
   <section id="me-view" class="card login" hidden style="max-width:460px">
     <h2>My account</h2>
     <div id="me-info" class="hint" style="margin:0"></div>
+    <div id="clock-box" hidden style="border:1px solid var(--line, #d7dfea);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+      <h3 style="margin:0">My time</h3>
+      <div id="clock-state" class="hint" style="margin:0"></div>
+      <button class="btn primary" id="clock-btn" type="button"></button>
+    </div>
     <h3>Change password</h3>
     <label for="c1">New password (at least 8 characters)<input id="c1" type="password" autocomplete="new-password"></label>
     <label for="c2">Type it again<input id="c2" type="password" autocomplete="new-password"></label>
@@ -120,6 +125,19 @@ if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY |
 
 
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+// Office staff who clock in (65): clock in / out here
+async function myClock() {
+  const { data, error } = await sb.rpc('my_office_clock');
+  if (error || !data) return;                      // not set up to clock in (or before 65)
+  const open = data.open && data.open.clock_in ? data.open : null;
+  document.getElementById('clock-box').hidden = false;
+  document.getElementById('clock-state').textContent = open
+    ? `Clocked in since ${new Date(open.clock_in).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. This week so far: ${Number(data.week_hours || 0).toFixed(2)} h before this shift.`
+    : `Not clocked in. This week so far: ${Number(data.week_hours || 0).toFixed(2)} h.`;
+  const b = document.getElementById('clock-btn'); b.textContent = open ? 'Clock out' : 'Clock in';
+  b.onclick = async () => { b.disabled = true; const r = await sb.rpc('office_clock', { p_in: !open }); b.disabled = false;
+    if (r.error) { document.getElementById('clock-state').textContent = r.error.message; return; } myClock(); };
+}
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const QS = new URLSearchParams(location.search);
@@ -141,6 +159,7 @@ async function start() {
   if (p?.role === 'driver') { location.replace('driver.html'); return; }
   $('me-info').innerHTML = `${esc(p?.full_name || '')}<br>${esc(session.user.email)} · ${esc(p?.carriers?.name || '')} · ${esc(p?.role || '')}`;
   $('me-view').hidden = false;
+  myClock();
 }
 
 $('set-btn').onclick = async () => {

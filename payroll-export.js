@@ -48,19 +48,21 @@
     return { list: [...out.values()], unmapped: [...unmapped.values()] };
   }
 
-  // p = { provider, settings, lines, drivers: {id: {full_name, employee_no}}, types: {id: {name, unit, payroll_codes}}, from, approved }
+  // p = { provider, settings, lines, drivers: {id: {full_name, employee_no}}, types: {id: {name, unit, payroll_codes}}, from, to?, approved,
+  //       noun? ('driver' | 'person'), period? ('week' | 'period') }
   function build(p) {
     const P = PROVIDERS[p.provider]; if (!P || p.provider === 'quickbooks') throw new Error('Pick a payroll company');
-    const S = p.settings || {}, to = addDays(p.from, 6), blockers = [], warnings = [];
+    const S = p.settings || {}, to = p.to || addDays(p.from, 6), blockers = [], warnings = [];   // office periods pass their own end
     (P.needs || []).forEach(k => { if (!String(S[k] || '').trim()) blockers.push(`Enter ${NEED_LABEL[k]} under Payroll company settings.`); });
     const lines = (p.lines || []).filter(x => +x.amount !== 0 || +x.qty !== 0);
     const G = groups(p.provider, lines, p.types || {});
     if (G.unmapped.length) blockers.push(end(`Give these pay items their ${P.name} code: ${G.unmapped.sort().join(', ')}`));
     const id = (d) => String((p.drivers[d] || {}).employee_no || '').trim();
     const name = (d) => (p.drivers[d] || {}).full_name || 'Unknown driver';
+    const who = p.noun || 'driver', whos = who + 's';   // office payroll passes 'person' / 'people'
     const noId = [...new Set(G.list.map(g => g.driver_id))].filter(d => !id(d)).map(name).sort();
-    if (noId.length) (P.idOptional ? warnings : blockers).push(end(`${noId.length === 1 ? 'This driver has' : 'These drivers have'} no Employee # (their ${P.name} ID)${P.idOptional ? ' — Gusto will match them by name' : ''}: ${noId.join(', ')}`));
-    if (!p.approved) warnings.push('This week is not approved yet — approve and lock it before importing, or the payroll company gets numbers that can still change.');
+    if (noId.length) (P.idOptional ? warnings : blockers).push(end(`${noId.length === 1 ? `This ${who} has` : `These ${who === 'person' ? 'people' : whos} have`} no Employee # (their ${P.name} ID)${P.idOptional ? ' — Gusto will match them by name' : ''}: ${noId.join(', ')}`));
+    if (!p.approved) warnings.push(`This ${p.period || 'week'} is not approved yet — approve and lock it before importing, or the payroll company gets numbers that can still change.`);
     const ded = G.list.filter(g => g.ded), earn = G.list.filter(g => !g.ded);
     if (ded.length && !P.deductions) warnings.push(`${P.name} doesn't take deductions in its import file — enter these in ${P.name} yourself: ` +
       ded.map(g => `${name(g.driver_id)} ${g.code} $${n2(g.amount)}`).join('; ') + '.');
