@@ -99,6 +99,16 @@
   <section id="me-view" class="card login" hidden style="max-width:460px">
     <h2>My account</h2>
     <div id="me-info" class="hint" style="margin:0"></div>
+    <div id="hb-box" hidden style="border:2px solid var(--accent, #6d3fc4);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+      <h3 style="margin:0" id="hb-t">Handbook to read and sign</h3>
+      <iframe id="hb-doc" title="Handbook" sandbox="" style="width:100%;height:420px;border:1px solid #d7dfea;border-radius:8px;background:#fff"></iframe>
+      <label for="hb-name">Type your full name<input id="hb-name" autocomplete="name"></label>
+      <div><b>Sign here</b> <button class="btn" id="hb-clear" type="button">Clear</button>
+        <canvas id="hb-sig" style="width:100%;height:140px;border:2px dashed #d7dfea;border-radius:8px;background:#fff;touch-action:none;display:block;margin-top:6px"></canvas></div>
+      <div class="hint" style="margin:0">By signing you confirm you received this handbook and will read and follow it.</div>
+      <button class="btn primary" id="hb-sign" type="button">Sign</button>
+      <div class="hint" id="hb-msg" style="margin:0"></div>
+    </div>
     <div id="clock-box" hidden style="border:1px solid var(--line, #d7dfea);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
       <h3 style="margin:0">My time</h3>
       <div id="clock-state" class="hint" style="margin:0"></div>
@@ -125,6 +135,33 @@ if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY |
 
 
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+// Office handbook to sign (66), for office staff linked to this login
+let HB = null, hbDrawn = false;
+function hbPad() {
+  const c = document.getElementById('hb-sig'), r = c.getBoundingClientRect(); c.width = r.width * 2 || 600; c.height = r.height * 2 || 280;
+  const g = c.getContext('2d'); g.lineWidth = 4; g.lineCap = 'round'; g.strokeStyle = '#111'; g.clearRect(0, 0, c.width, c.height); hbDrawn = false;
+  let down = false; const at = (e) => { const b = c.getBoundingClientRect(); return [(e.clientX - b.left) * c.width / b.width, (e.clientY - b.top) * c.height / b.height]; };
+  c.onpointerdown = (e) => { down = true; const [x, y] = at(e); g.beginPath(); g.moveTo(x, y); };
+  c.onpointermove = (e) => { if (!down) return; const [x, y] = at(e); g.lineTo(x, y); g.stroke(); hbDrawn = true; };
+  c.onpointerup = c.onpointerleave = () => { down = false; };
+}
+async function myHandbook() {
+  const { data, error } = await sb.rpc('my_handbook_pending');
+  if (error || !data) return;                       // nothing to sign (or before 66)
+  HB = data; const box = document.getElementById('hb-box'); box.hidden = false;
+  document.getElementById('hb-t').textContent = `${data.title} — please read and sign`;
+  document.getElementById('hb-doc').srcdoc = '<!doctype html><meta charset="utf-8">' + data.html;
+  setTimeout(hbPad, 50);
+  document.getElementById('hb-clear').onclick = hbPad;
+  document.getElementById('hb-sign').onclick = async () => {
+    const name = document.getElementById('hb-name').value.trim(), msg = document.getElementById('hb-msg');
+    if (name.length < 3) { msg.textContent = 'Type your full name.'; return; }
+    if (!hbDrawn) { msg.textContent = 'Sign in the box.'; return; }
+    const r = await sb.rpc('my_handbook_sign', { p_version: HB.id, p_name: name, p_signature: document.getElementById('hb-sig').toDataURL('image/png') });
+    if (r.error) { msg.textContent = r.error.message; return; }
+    box.innerHTML = '<b>Signed — thank you.</b>';
+  };
+}
 // Office staff who clock in (65): clock in / out here
 async function myClock() {
   const { data, error } = await sb.rpc('my_office_clock');
@@ -160,6 +197,7 @@ async function start() {
   $('me-info').innerHTML = `${esc(p?.full_name || '')}<br>${esc(session.user.email)} · ${esc(p?.carriers?.name || '')} · ${esc(p?.role || '')}`;
   $('me-view').hidden = false;
   myClock();
+  myHandbook();
 }
 
 $('set-btn').onclick = async () => {

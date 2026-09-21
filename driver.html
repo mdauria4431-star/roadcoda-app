@@ -280,6 +280,11 @@
       <div id="yard-state" class="meta" style="font-size:16px;margin:6px 0 12px"></div>
       <button class="btn primary" id="yard-btn" style="width:100%;min-height:60px;font-size:20px"></button>
     </div>
+    <div id="hb-card" class="card" hidden style="border:2px solid var(--accent)">
+      <b style="font-size:18px" id="hb-card-title">Handbook to read and sign</b>
+      <div class="meta" style="font-size:15px;margin:4px 0 10px">Read it when you're stopped, then sign with your finger.</div>
+      <div class="row" style="margin-top:0"><button class="btn primary" id="hb-go" style="flex:1">Read &amp; sign</button><button class="btn" id="hb-later">Later</button></div>
+    </div>
     <div id="ci-card" class="card" hidden style="border:2px solid var(--accent)">
       <b style="font-size:18px" id="ci-title">Quick check-in</b>
       <div class="meta" style="font-size:15px;margin:4px 0 10px">One minute, a few taps. It goes to management, not dispatch.</div>
@@ -365,6 +370,15 @@
     <div class="card inc-sec" id="inc-recent" hidden></div>
   </section>
 
+  <section id="hb-view" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1 id="hb-h">Handbook</h1>
+    <iframe id="hb-doc" title="Handbook" sandbox="" style="width:100%;height:62vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+    <label>Type your full name<input id="hb-name" autocomplete="name"></label>
+    <div><b>Sign here</b> <button class="btn" id="hb-clear" style="min-height:34px;margin-left:8px">Clear</button><canvas class="sig" id="hb-sig"></canvas></div>
+    <div class="meta" style="font-size:14px">By signing you confirm you received this handbook and will read and follow it.</div>
+    <button class="btn primary" id="hb-sign" style="min-height:56px;font-size:18px">Sign</button>
+    <button class="btn" id="hb-cancel" style="min-height:44px">Not now</button>
+  </section>
   <section id="ci-view" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1 id="ci-h">Check-in</h1>
     <div class="meta" style="font-size:15px">1 = not at all, 5 = completely. Your answers go to management, not dispatch.</div>
@@ -517,6 +531,7 @@ async function start() {
   loadStops();
   startMessages();
   checkCheckin();
+  checkHandbook();
   checkShift();
 }
 $('login-btn').onclick = async () => {
@@ -1021,7 +1036,7 @@ const YN = [
 const SHOTS = [['scene', 'The scene'], ['our_vehicle', 'Our truck damage'], ['other_vehicle', 'Other vehicle'], ['plate', 'Their plate'],
   ['insurance_card', 'Their insurance card'], ['license', 'Their licence'], ['cargo', 'Cargo'], ['police', 'Police / report card'], ['injury', 'Injury'], ['other', 'Anything else']];
 let INC = null, INCF = {}, incTimer = null;
-function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
+function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view', 'hb-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
 async function openIncident(existing) {
   incShow('inc-view');
   $('inc-call').href = officePhone ? 'tel:' + officePhone.replace(/[^\d+]/g, '') : '#';
@@ -1171,6 +1186,43 @@ $('yard-btn').onclick = async () => {
   $('yard-btn').disabled = false;
   if (error) { alert(error.message); return; }
   SHIFT = data; paintShift();
+};
+
+// ---------- Handbook to read and sign (66) ----------
+// Shown in a sandboxed frame (no scripts); never signed while moving.
+let HB = null, hbLaterUntil = 0, hbDrawn = false;
+async function checkHandbook() {
+  if (!me || Date.now() < hbLaterUntil) return;
+  const { data, error } = await sb.rpc('driver_handbook_pending');
+  if (error || !data) { $('hb-card').hidden = true; return; }
+  HB = data; $('hb-card-title').textContent = `${data.title} — please read and sign`; $('hb-card').hidden = false;
+}
+$('hb-later').onclick = () => { hbLaterUntil = Date.now() + 4 * 3600e3; $('hb-card').hidden = true; };
+function hbSigSetup() {
+  const c = $('hb-sig'), r = c.getBoundingClientRect(); c.width = r.width * 2 || 600; c.height = r.height * 2 || 340;
+  const g = c.getContext && c.getContext('2d'); if (!g) return; g.lineWidth = 5; g.lineCap = 'round'; g.strokeStyle = '#111'; g.clearRect(0, 0, c.width, c.height); hbDrawn = false;
+  let down = false; const at = (e) => { const b = c.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [(t.clientX - b.left) * c.width / b.width, (t.clientY - b.top) * c.height / b.height]; };
+  c.onpointerdown = (e) => { down = true; const [x, y] = at(e); g.beginPath(); g.moveTo(x, y); };
+  c.onpointermove = (e) => { if (!down) return; const [x, y] = at(e); g.lineTo(x, y); g.stroke(); hbDrawn = true; };
+  c.onpointerup = c.onpointerleave = () => { down = false; };
+}
+$('hb-go').onclick = () => {
+  if (!HB) return;
+  if (moving()) { alert('Stop the truck first.'); return; }
+  $('hb-h').textContent = HB.title; $('hb-doc').srcdoc = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{padding:10px;font-size:15px}</style>' + HB.html;
+  $('hb-name').value = me?.full_name || ''; incShow('hb-view'); setTimeout(hbSigSetup, 50);
+};
+$('hb-clear').onclick = hbSigSetup;
+$('hb-cancel').onclick = () => incShow('app');
+$('hb-sign').onclick = async () => {
+  if (moving()) { alert('Stop the truck first.'); return; }
+  if ($('hb-name').value.trim().length < 3) { alert('Type your full name.'); return; }
+  if (!hbDrawn) { alert('Sign with your finger in the box.'); return; }
+  $('hb-sign').disabled = true;
+  const { error } = await sb.rpc('driver_handbook_sign', { p_version: HB.id, p_name: $('hb-name').value.trim(), p_signature: $('hb-sig').toDataURL('image/png') });
+  $('hb-sign').disabled = false;
+  if (error) { alert(error.message); return; }
+  HB = null; $('hb-card').hidden = true; incShow('app'); alert('Signed. Thank you.');
 };
 
 // ---------- Retention check-in (58) ----------
