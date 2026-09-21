@@ -14,6 +14,7 @@
 <script src="config.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
+<script src="payroll-export.js"></script>
 <style>
   *{box-sizing:border-box}
   [hidden]{display:none!important}
@@ -67,6 +68,7 @@
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;
     padding:10px 14px;border-radius:10px;background:var(--raise);border:1px solid var(--line);box-shadow:var(--card-sh);font-size:13px;max-width:92vw}
   .toast.err{border-color:color-mix(in srgb,var(--late) 55%,var(--line))}
+  .pc-row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
 </style>
 <link rel="stylesheet" href="app.css">
 </head>
@@ -97,6 +99,7 @@
       <button class="btn small" id="next" aria-label="Next pay week">›</button>
       <button class="btn small" id="thisweek">Last full week</button>
       <button class="btn small" id="set-btn">Pay week settings</button>
+      <button class="btn small" id="pc-btn" hidden>Payroll company</button>
     </div>
 
     <div class="card" id="settings" hidden>
@@ -106,6 +109,23 @@
         <label>A trip counts on<select id="s-basis"><option value="finished">the day its last stop finished (completed loads)</option><option value="service">its service date</option></select></label>
         <button class="btn primary small" id="s-save">Save</button>
         <span class="mini" style="max-width:420px">Changing this later is safe — each trip is paid once, in the first open week it falls in.</span>
+      </div>
+    </div>
+
+    <div class="card" id="pc-card" hidden>
+      <header><h2>Payroll company</h2><span class="sp"></span><span class="mini">The approved week downloads in this company's own import format.</span></header>
+      <div class="settings" style="flex-direction:column;align-items:stretch;gap:12px">
+        <div class="pc-row">
+          <label>Payroll company<select id="pc-prov"></select></label>
+          <span id="pc-fields" class="pc-row"></span>
+        </div>
+        <div id="pc-help" class="mini"></div>
+        <div id="pc-codes-wrap">
+          <b>Pay item codes</b> <span class="mini">— each pay item's earning or deduction code at this company (from its earnings codes report). Dollars = RoadCoda's figure is paid as is; Hours = the payroll company applies its own rate (hourly items only).</span>
+          <div class="wrap" style="margin-top:6px"><table class="t" style="max-width:780px"><thead><tr><th>Pay item</th><th>Unit</th><th>Code</th><th>Send as</th></tr></thead><tbody id="pc-codes"></tbody></table></div>
+        </div>
+        <div id="pc-ids" class="mini"></div>
+        <div class="pc-row"><button class="btn primary small" id="pc-save">Save</button><span id="pc-msg" class="mini"></span></div>
       </div>
     </div>
 
@@ -127,6 +147,7 @@
       <div class="wrap"><table class="t"><thead><tr><th>Driver</th><th class="r">Trips</th><th class="r">Gross</th><th class="r">Deductions</th><th class="r">Net</th><th></th></tr></thead><tbody id="drivers"></tbody></table></div>
       <div class="acts">
         <button class="btn primary" id="approve" hidden>Approve &amp; lock this week</button>
+        <button class="btn" id="pcfile" hidden>Payroll company file</button>
         <button class="btn" id="qb">QuickBooks entry sheet (CSV)</button>
         <button class="btn" id="detail">Every line (CSV)</button>
         <button class="btn" id="print">Print pay statements</button>
@@ -171,6 +192,7 @@ const TODAY = iso(new Date());
 const ACC = () => window.RC_ACCESS;
 const canEdit = () => !ACC() || ACC().can('payroll', 'edit');
 
+let PC = null, PCTYPES = [], CARRIER_ID = null;   // payroll company file (64)
 let HIST = [], CAR = null, FROM = null, PERIOD = null, LINES = [], PROBS = [], DRIVERS = {}, OPEN = new Set(), NAMES = {};
 
 let tt = null;
@@ -200,9 +222,11 @@ async function start() {
   $('s-start').innerHTML = DN.map((d, i) => `<option value="${i + 1}"${car.pay_week_start === i + 1 ? ' selected' : ''}>${d}</option>`).join('');
   $('s-basis').value = car.pay_week_basis;
   $('set-btn').hidden = !canEdit();
-  let { data: dr, error: dre } = await sb.from('drivers').select('id, full_name, payroll_name, employee_no, driver_type, home_customer_id');
+  let { data: dr, error: dre } = await sb.from('drivers').select('id, full_name, payroll_name, employee_no, driver_type, home_customer_id, active');
   if (dre) ({ data: dr } = await sb.from('drivers').select('id, full_name, payroll_name, employee_no'));   // before 60
   (dr || []).forEach(d => DRIVERS[d.id] = d);
+  CARRIER_ID = data.carrier_id;
+  await pcLoad();
   const q = new URLSearchParams(location.search).get('week');
   FROM = weekOf(/^\d{4}-\d{2}-\d{2}$/.test(q || '') ? q : addDays(TODAY, -7));
   await load();
@@ -352,7 +376,7 @@ function draw() {
   $('probs').innerHTML = PROBS.map(p => `<div class="prob"><b>${esc(p.load_no || '')}</b><span class="dim" style="min-width:70px">${label(p.work_date)}</span><span style="min-width:120px">${esc(DRIVERS[p.driver_id]?.full_name || '')}</span><span>${esc(p.problem)}</span><span class="sp"></span>${p.load_id ? `<a href="trip.html?load=${p.load_id}">Open trip</a>` : ''}</div>`).join('');
 
   $('hist-card').hidden = !HIST.length;
-  $('hist').innerHTML = HIST.map(x => `<div class="prob"><span class="n dim" style="min-width:150px">${new Date(x.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span><span style="min-width:140px">${esc(NAMES[x.who] || 'the office')}</span><span><b>${esc({ approved: 'Approved', reopened: 'Reopened', exported: 'Downloaded for QuickBooks' }[x.action] || x.action)}</b>${x.detail ? ' — ' + esc(x.detail) : ''}</span></div>`).join('');
+  $('hist').innerHTML = HIST.map(x => `<div class="prob"><span class="n dim" style="min-width:150px">${new Date(x.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span><span style="min-width:140px">${esc(NAMES[x.who] || 'the office')}</span><span><b>${esc({ approved: 'Approved', reopened: 'Reopened', exported: 'Downloaded' }[x.action] || x.action)}</b>${x.detail ? ' — ' + esc(x.detail) : ''}</span></div>`).join('');
   $('approve').hidden = approved || !ended || !canEdit();
   $('approve').disabled = !rows.length;
   $('reopen').hidden = !approved || !(ACC()?.super_user ?? true);
@@ -383,6 +407,103 @@ function save(name, text) {
 }
 const draft = () => PERIOD?.approved_at ? '' : '-DRAFT';
 const qbName = (id) => DRIVERS[id]?.payroll_name || DRIVERS[id]?.full_name || '';
+
+// ---------- Payroll company file (64) ----------
+const PCX = () => window.RC_PAYROLL_EXPORT;
+const PC_FIELDS = {
+  adp_wfn: [['company_code', 'Co Code', 'e.g. ZX1', 'the 3-character company code in ADP'], ['batch_id', 'Batch ID', 'blank = week end YYMMDD', '']],
+  adp_run: [['company_code', 'Company code (IID)', 'e.g. RFCAV', 'IID, or branch code + ADP code'], ['pay_frequency', 'Pay frequency', null, ''], ['run_identifier', 'Employees matched by', null, ''], ['rate_code', 'Rate code', 'BASE', '']],
+  paylocity: [['rate_code', 'Rate code (optional)', '', '']],
+  paychex_flex: [['client_id', 'Paychex client ID', 'e.g. 70091234', '']],
+  gusto: [], quickbooks: [],
+};
+const PC_HELP = {
+  quickbooks: 'QuickBooks Online Payroll has no pay-run import, so the QuickBooks entry sheet is what you type from (as before).',
+  adp_wfn: 'ADP Workforce Now › Process › Payroll › Pay Data › Import From File. The file is named PR<Co Code>EPI.csv — don\'t rename it. Earnings go as Earnings 3 Code + Amount, hours as Hours 3 Code + Amount (code REG → Reg Hours), deductions as Adjust Ded Code + Amount. Needs Practitioner rights, and the Paydata import turned on by ADP.',
+  adp_run: 'RUN › Home › Time Sheet Import (ask ADP to turn on Time Sheet Import). Earnings only — deductions are listed for you to enter in RUN. Only active employees on one pay frequency per file.',
+  paylocity: 'Paylocity › payroll › import. No header row; one line per employee per code, E = earning, D = deduction. Codes must match Paylocity\'s earnings codes report exactly.',
+  paychex_flex: 'Paychex Flex › Payroll › Payroll Data Import. Earnings only — deductions are listed for you to set up in Flex. Pay Component names must match Flex exactly.',
+  gusto: 'Gusto › Pay › Run payroll › Import payroll data. One row per driver, one column per earning — use Gusto\'s own column names (e.g. Regular hours, Bonus, or your custom earning\'s name). Earnings only — deductions are listed for you to add in Gusto.',
+};
+async function pcLoad() {
+  if (!PCX()) return;
+  const [s, t] = await Promise.all([
+    sb.from('payroll_export_settings').select('*').maybeSingle(),
+    sb.from('activity_types').select('id, name, unit, is_deduction, pays_driver, active, sort, payroll_codes').order('sort').order('name'),
+  ]);
+  if (s.error || t.error) return;            // before 64: nothing new shows
+  PC = s.data || { provider: 'quickbooks', pay_frequency: 'W', run_identifier: 'employee_id' };
+  PCTYPES = (t.data || []).filter(x => x.active && (x.pays_driver || x.is_deduction));
+  $('pc-btn').hidden = !canEdit();
+  pcButton();
+}
+function pcButton() {
+  const on = PC && PC.provider !== 'quickbooks';
+  $('pcfile').hidden = !on;
+  if (on) $('pcfile').textContent = `${PCX().PROVIDERS[PC.provider].name} file (CSV)`;
+}
+$('pc-btn').onclick = () => { const c = $('pc-card'); c.hidden = !c.hidden; if (!c.hidden) pcDraw(PC.provider); };
+function pcDraw(prov) {
+  const P = PCX().PROVIDERS;
+  $('pc-prov').innerHTML = Object.keys(P).map(k => `<option value="${k}" ${k === prov ? 'selected' : ''}>${esc(P[k].name)}</option>`).join('');
+  $('pc-prov').onchange = () => pcDraw($('pc-prov').value);
+  $('pc-fields').innerHTML = (PC_FIELDS[prov] || []).map(([k, lab, ph, tip]) => k === 'pay_frequency'
+      ? `<label>${lab}<select data-pc="${k}">${[['W', 'Weekly'], ['B', 'Biweekly'], ['S', 'Semimonthly'], ['M', 'Monthly']].map(([v, t]) => `<option value="${v}" ${PC[k] === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`
+      : k === 'run_identifier'
+      ? `<label>${lab}<select data-pc="${k}"><option value="employee_id" ${PC[k] !== 'time_clock_id' ? 'selected' : ''}>Employee ID (from RUN)</option><option value="time_clock_id" ${PC[k] === 'time_clock_id' ? 'selected' : ''}>Time Clock ID</option></select></label>`
+      : `<label title="${esc(tip)}">${lab}<input data-pc="${k}" value="${esc(PC[k] || '')}" placeholder="${esc(ph || '')}" style="width:170px"></label>`).join('');
+  $('pc-help').textContent = PC_HELP[prov] || '';
+  $('pc-codes-wrap').hidden = prov === 'quickbooks';
+  $('pc-codes').innerHTML = PCTYPES.map(t => { const c = (t.payroll_codes || {})[prov] || {};
+    return `<tr><td>${esc(t.name)}${t.is_deduction && !/deduction/i.test(t.name) ? ' <span class="mini">deduction</span>' : ''}</td><td class="mini">${esc(t.unit)}</td>
+      <td><input data-code="${t.id}" value="${esc(c.code || '')}" placeholder="code" style="width:150px"></td>
+      <td>${t.unit === 'hour' && !t.is_deduction ? `<select data-send="${t.id}"><option value="amount">Dollars</option><option value="hours" ${c.send === 'hours' ? 'selected' : ''}>Hours</option></select>` : '<span class="mini">Dollars</span>'}</td></tr>`; }).join('');
+  const act = Object.values(DRIVERS).filter(d => d.active !== false), miss = act.filter(d => !String(d.employee_no || '').trim());
+  $('pc-ids').innerHTML = prov === 'quickbooks' ? '' : miss.length
+    ? `<span class="error"><b>${miss.length} driver${miss.length > 1 ? 's have' : ' has'} no Employee #</b></span> — that's their ${esc(P[prov].name)} ID${prov === 'adp_wfn' ? ' (File #)' : ''}. Add it on <a href="drivers.html">Drivers</a>: ${miss.map(d => esc(d.full_name)).join(', ')}.`
+    : `Every driver has an Employee # — used as their ${esc(P[prov].name)} ID${prov === 'adp_wfn' ? ' (File #)' : ''}.`;
+  $('pc-msg').textContent = '';
+}
+$('pc-save').onclick = async () => {
+  const prov = $('pc-prov').value, row = { carrier_id: CARRIER_ID, provider: prov };
+  document.querySelectorAll('[data-pc]').forEach(i => row[i.dataset.pc] = i.value.trim() || null);
+  if (row.pay_frequency === null) delete row.pay_frequency;
+  if (row.run_identifier === null) delete row.run_identifier;
+  const s = await sb.from('payroll_export_settings').upsert(row, { onConflict: 'carrier_id' }).select().single();
+  if (s.error) return fail(s.error);
+  const jobs = [];   // codes: only the pay items whose code or "send as" changed
+  PCTYPES.forEach(t => {
+    const i = document.querySelector(`[data-code="${t.id}"]`); if (!i) return;
+    const sel = document.querySelector(`[data-send="${t.id}"]`), code = i.value.trim(), send = sel ? sel.value : 'amount';
+    const cur = (t.payroll_codes || {})[prov] || {}, next = { ...(t.payroll_codes || {}) };
+    if ((cur.code || '') === code && (cur.send || 'amount') === send) return;
+    if (code) next[prov] = send === 'hours' ? { code, send } : { code }; else delete next[prov];
+    jobs.push(sb.from('activity_types').update({ payroll_codes: next }).eq('id', t.id).then(r => { if (!r.error) t.payroll_codes = next; return r; }));
+  });
+  const bad = (await Promise.all(jobs)).find(r => r.error);
+  if (bad) return fail(bad.error);
+  PC = s.data; pcButton(); $('pc-msg').innerHTML = '<span class="ok">Saved.</span>'; toast('Payroll company settings saved');
+};
+$('pcfile').onclick = async () => {
+  const types = Object.fromEntries(PCTYPES.map(t => [t.id, t]));
+  // pay items switched off since still need their code if this week has them
+  const missingIds = [...new Set(LINES.map(x => x.activity_type_id).filter(id => id && !types[id]))];
+  if (missingIds.length) { const { data } = await sb.from('activity_types').select('id, name, unit, is_deduction, pays_driver, active, sort, payroll_codes').in('id', missingIds); (data || []).forEach(t => types[t.id] = t); }
+  let r;
+  try { r = PCX().build({ provider: PC.provider, settings: PC, lines: LINES, drivers: DRIVERS, types, from: FROM, approved: !!PERIOD?.approved_at }); }
+  catch (e) { return fail(e); }
+  if (r.blockers.length) {
+    toast(`<b>The ${esc(r.provider)} file can't be made yet:</b><br>${r.blockers.map(esc).join('<br>')}` + (canEdit() ? '<br><a href="#" id="pc-fix">Open Payroll company settings</a>' : ''), true);
+    const a = document.getElementById('pc-fix'); if (a) a.onclick = (e) => { e.preventDefault(); $('pc-card').hidden = false; pcDraw(PC.provider); $('pc-card').scrollIntoView({ behavior: 'smooth' }); };
+    return;
+  }
+  const dataRows = r.rows.length - (PC.provider === 'adp_run' ? 2 : PC.provider === 'paylocity' ? 0 : 1);
+  if (dataRows <= 0) return toast('Nothing to pay in this week.', true);
+  if (r.warnings.length && !confirm(r.warnings.join('\n\n') + '\n\nDownload the file anyway?')) return;
+  save(r.fileName, r.text);
+  if (PERIOD?.approved_at) { const { error } = await sb.rpc('pay_week_exported', { p_period: PERIOD.id, p_what: r.provider + ' file' }); if (!error) load(); }
+  toast(`Downloaded <b>${esc(r.fileName)}</b> — ${r.totals.drivers} driver${r.totals.drivers === 1 ? '' : 's'}, ${money(r.totals.earnings)} in earnings${r.totals.hours ? ` + ${num(r.totals.hours)} hours` : ''}${r.totals.deductions && PCX().PROVIDERS[PC.provider].deductions ? `, ${money(r.totals.deductions)} deductions` : ''}.`);
+};
 
 // One row per driver, one column per QuickBooks pay item — the order you
 // type them into Run Payroll. Deductions are shown as positive amounts in
