@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip sheets · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<style>
+  /* A printed form: always light, sized for letter paper, landscape. */
+  @page { size: letter landscape; margin: 0.35in; }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{background:#e9edf4;color:#111;margin:0;font-family:Arial,Helvetica,sans-serif}
+  .bar{position:sticky;top:0;z-index:5;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:#fff;border-bottom:1px solid #ccd}
+  .bar b{font-size:15px} .bar .sp{flex:1}
+  .bar button,.bar a,.bar input,.bar select{height:32px;border:1px solid #bbc;border-radius:7px;background:#fff;padding:0 12px;font-size:13px;font-weight:600;color:#111;text-decoration:none;display:inline-flex;align-items:center}
+  .bar button.primary{background:#4c2a91;border-color:#4c2a91;color:#fff}
+  .msg{padding:30px;text-align:center;font-size:15px}
+  .sheet{width:10.3in;min-height:7.8in;margin:14px auto;background:#fff;padding:0.3in;box-shadow:0 2px 10px rgba(0,0,0,.15);display:flex;flex-direction:column;gap:8px;font-size:10pt}
+  .top{display:flex;align-items:center;gap:14px;border-bottom:2.5px solid var(--brand,#4c2a91);padding-bottom:6px}
+  .top img{max-height:44px;max-width:150px}
+  .top .co{font-weight:700;font-size:13pt} .top .co small{display:block;font-weight:400;font-size:8.5pt;color:#444}
+  .top .t{margin-left:auto;text-align:right} .top .t b{display:block;font-size:15pt;letter-spacing:.04em}
+  .top .t .ld{font-size:20pt;font-weight:800;font-family:'Courier New',monospace}
+  .info{display:grid;grid-template-columns:repeat(6,1fr);gap:0;border:1px solid #333}
+  .info div{padding:3px 6px;border-right:1px solid #999;min-height:34px} .info div:last-child{border-right:0}
+  .info .k{font-size:7pt;text-transform:uppercase;letter-spacing:.06em;color:#555;display:block}
+  .info .v{font-weight:700}
+  .mode{font-size:8.5pt;padding:3px 8px;border:1.5px solid #111;border-radius:4px;font-weight:700;display:inline-block}
+  .mode.paper{background:#111;color:#fff}
+  .boxes{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid #333}
+  .boxes div{padding:3px 6px;border-right:1px solid #999;height:40px} .boxes div:last-child{border-right:0}
+  .boxes .k{font-size:7pt;text-transform:uppercase;letter-spacing:.06em;color:#555}
+  table.st{width:100%;border-collapse:collapse;table-layout:fixed}
+  .st th{font-size:7pt;text-transform:uppercase;letter-spacing:.05em;background:#eee;border:1px solid #333;padding:3px 4px;text-align:left}
+  .st td{border:1px solid #333;padding:3px 5px;vertical-align:top;height:0.62in;font-size:9pt}
+  .st td.w{background:#fff} .st .addr{font-size:7.5pt;color:#333} .st .it{font-size:8.5pt}
+  .st .sq{font-weight:800;font-size:11pt;text-align:center}
+  .foot{display:grid;grid-template-columns:2.2fr 3fr 2.4fr;gap:8px;margin-top:auto}
+  .foot table{width:100%;border-collapse:collapse} .foot th,.foot td{border:1px solid #333;font-size:7.5pt;padding:2px 4px;height:22px;text-align:left}
+  .foot th{background:#eee;text-transform:uppercase;letter-spacing:.05em}
+  .lines{border:1px solid #333;padding:3px 6px} .lines .k{font-size:7pt;text-transform:uppercase;color:#555;letter-spacing:.06em}
+  .lines .l{border-bottom:1px solid #999;height:22px}
+  .sig .l{height:30px}
+  .small{font-size:7pt;color:#555}
+  @media print {
+    html,body{background:#fff} .bar{display:none} .sheet{margin:0;box-shadow:none;width:auto;min-height:7.8in;page-break-after:always;padding:0}
+    .sheet:last-child{page-break-after:auto}
+  }
+</style>
+</head>
+<body>
+<div class="bar" id="bar">
+  <b>Driver trip sheets</b>
+  <span id="pick" hidden>Day <input type="date" id="day"> Driver <select id="drv"><option value="">All drivers</option></select></span>
+  <span class="sp"></span><span id="count" style="font-size:13px;color:#444"></span>
+  <button class="primary" id="print">Print</button>
+</div>
+<div id="out"><div class="msg">Loading…</div></div>
+
+<script>
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hm = (t) => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+const dlab = (s) => new Date(s + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+const q = new URLSearchParams(location.search);
+let CAR = null, DRIVERS = {}, UNITS = {};
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('out').innerHTML = '<div class="msg">Sign in to RoadCoda first, then open this page again.</div>'; return; }
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('dispatch') && !window.RC_ACCESS.can('loads')) { $('out').innerHTML = '<div class="msg">Printing trip sheets needs the Dispatch or Loads screen.</div>'; return; }
+  const [c, d, u] = await Promise.all([
+    sb.from('carriers').select('name, office_address, logo_path, brand_color').maybeSingle(),
+    sb.from('drivers').select('id, full_name, trip_mode'),
+    sb.from('equipment').select('id, unit_no, unit_type'),
+  ]);
+  CAR = c.data || {}; (d.data || []).forEach(x => DRIVERS[x.id] = x); (u.data || []).forEach(x => UNITS[x.id] = x);
+  if (CAR.brand_color) document.documentElement.style.setProperty('--brand', CAR.brand_color);
+  if (q.get('day') || !q.get('load')) {
+    $('pick').hidden = false; $('day').value = q.get('day') || new Date().toISOString().slice(0, 10);
+    $('drv').innerHTML += Object.values(DRIVERS).sort((a, b) => a.full_name.localeCompare(b.full_name)).map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('');
+    $('drv').value = q.get('driver') || '';
+    $('day').onchange = $('drv').onchange = () => { history.replaceState(null, '', `?day=${$('day').value}${$('drv').value ? '&driver=' + $('drv').value : ''}`); load(); };
+  }
+  load();
+}
+async function load() {
+  let qy = sb.from('loads').select('id, load_no, service_date, status, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, paper_trip, customers(name), stops(id, seq, stop_type, consignee, address, window_start, window_end, delivery_locations(route_no, sort_code), stop_items(unit_type, qty_ordered))');
+  qy = q.get('load') && $('pick').hidden ? qy.eq('id', q.get('load')) : qy.eq('service_date', $('day').value).neq('status', 'cancelled');
+  if (!$('pick').hidden && $('drv').value) qy = qy.eq('driver_id', $('drv').value);
+  const { data, error } = await qy.order('load_no');
+  if (error) { $('out').innerHTML = `<div class="msg">${esc(error.message)}</div>`; return; }
+  const loads = data || [];
+  $('count').textContent = `${loads.length} sheet${loads.length === 1 ? '' : 's'}`;
+  let logo = '';
+  if (CAR.logo_path) logo = sb.storage.from('brand-logos').getPublicUrl(CAR.logo_path).data.publicUrl;
+  $('out').innerHTML = loads.length ? loads.map(l => sheet(l, logo)).join('') : '<div class="msg">No loads for this day.</div>';
+  if (loads.length && q.get('load') && $('pick').hidden) document.title = `Trip sheet ${loads[0].load_no} · RoadCoda`;
+}
+function sheet(l, logo) {
+  const drv = DRIVERS[l.driver_id], trk = UNITS[l.truck_id], stops = (l.stops || []).slice().sort((a, b) => a.seq - b.seq);
+  const trl = l.bobtail ? 'Bobtail' : [UNITS[l.trailer_id]?.unit_no, UNITS[l.trailer2_id]?.unit_no].filter(Boolean).join(' + ');
+  const paper = l.paper_trip ?? (drv?.trip_mode === 'paper');
+  const first = stops.find(s => s.window_start || s.window_end);
+  const rows = stops.map(s => `<tr>
+      <td class="sq">${s.seq}</td>
+      <td><b>${s.stop_type === 'pickup' ? 'PICKUP · ' : ''}${esc(s.consignee)}</b><div class="addr">${esc(s.address || '')}${s.delivery_locations?.route_no || s.delivery_locations?.sort_code ? ` · ${[s.delivery_locations.route_no && 'Route ' + esc(s.delivery_locations.route_no), s.delivery_locations.sort_code && 'Sort ' + esc(s.delivery_locations.sort_code)].filter(Boolean).join(' · ')}` : ''}</div></td>
+      <td>${s.window_start ? hm(s.window_start) + '–' + hm(s.window_end) : hm(s.window_end)}</td>
+      <td class="it">${(s.stop_items || []).map(i => `${i.qty_ordered} ${esc(i.unit_type)}`).join('<br>')}</td>
+      <td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td><td class="w"></td></tr>`).join('');
+  // a few blank rows so a stop added on the road can be written in
+  const blanks = Array.from({ length: Math.max(1, 6 - stops.length) }, () => '<tr><td class="sq"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('');
+  return `<section class="sheet">
+    <div class="top">${logo ? `<img src="${esc(logo)}" alt="">` : ''}<div class="co">${esc(CAR.name || '')}<small>${esc(CAR.office_address || '')}</small></div>
+      <div class="t"><b>DRIVER TRIP SHEET</b><span class="ld">#${esc(l.load_no)}</span></div></div>
+    <div class="info">
+      <div><span class="k">Date</span><span class="v">${dlab(l.service_date)}</span></div>
+      <div><span class="k">Driver</span><span class="v">${esc(drv?.full_name || '________________')}</span></div>
+      <div><span class="k">Truck</span><span class="v">${esc(trk?.unit_no || '')}</span></div>
+      <div><span class="k">Trailer</span><span class="v">${esc(trl || (trk?.unit_type === 'tractor' ? '________' : '—'))}</span></div>
+      <div><span class="k">Customer</span><span class="v">${esc(l.customers?.name || '')}</span></div>
+      <div><span class="k">This sheet</span><span class="mode${paper ? ' paper' : ''}">${paper ? 'PAPER TRIP — fill in everything' : 'Audit copy — record in the app too'}</span></div>
+    </div>
+    <div class="boxes">
+      <div><span class="k">Planned start</span><br><b>${first ? hm(first.window_start || first.window_end) : ''}</b></div>
+      <div><span class="k">Start time</span></div><div><span class="k">Start odometer</span></div>
+      <div><span class="k">End time</span></div><div><span class="k">End odometer</span></div>
+      <div><span class="k">Pre-trip ☐ &nbsp; Post-trip ☐</span><br><span class="small">DVIR done</span></div>
+    </div>
+    <table class="st"><colgroup><col style="width:3%"><col style="width:19%"><col style="width:8%"><col style="width:9%"><col style="width:7%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:13%"><col style="width:17%"></colgroup>
+      <thead><tr><th>#</th><th>Stop</th><th>Window</th><th>Ordered</th><th>Arrive</th><th>Depart</th><th>Odometer</th><th>Qty delivered</th><th>Short / over / damage</th><th>Receiver name &amp; signature</th></tr></thead>
+      <tbody>${rows}${blanks}</tbody></table>
+    <div class="foot">
+      <table><thead><tr><th>Fuel: state</th><th>Gallons</th><th>Odometer</th></tr></thead><tbody><tr><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td></tr></tbody></table>
+      <div class="lines"><span class="k">Notes (delays, problems, extra stops)</span><div class="l"></div><div class="l"></div><div class="l"></div></div>
+      <div class="lines sig"><span class="k">Driver signature</span><div class="l"></div><span class="k">Date</span><div class="l" style="height:20px"></div></div>
+    </div>
+  </section>`;
+}
+$('print').onclick = () => window.print();
+start();
+</script>
+</body>
+</html>

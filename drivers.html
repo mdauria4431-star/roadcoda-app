@@ -130,6 +130,7 @@
         <label>Home terminal<select id="f-home_terminal_id"><option value="">–</option></select></label>
         <label>Hire date<input id="f-hire_date" type="date"></label>
         <label>Driver type<select id="f-driver_type"><option value="road">Road driver</option><option value="team">Team driver</option><option value="yard">Yard jockey (clocks in / out, hourly)</option></select></label>
+        <label>Trip sheets<select id="f-trip_mode"><option value="app">Uses the driver app (sheet = audit copy)</option><option value="paper">Paper trip sheets (office enters trips)</option></select></label>
         <label id="end-wrap" hidden>End date<input id="f-end_date" type="date"></label>
         <label class="span2" style="grid-column:1/-1">Notes<textarea id="f-notes"></textarea></label>
       </div>
@@ -383,6 +384,8 @@ function edit(d, quiet) {
   cur = d;
   FIELDS.forEach(f => { $('f-' + f).value = d && d[f] != null ? d[f] : ''; });
   if (!$('f-driver_type').value) $('f-driver_type').value = 'road';
+  $('f-trip_mode').value = (d && d.trip_mode) || 'app';
+  $('f-trip_mode').closest('label').hidden = !!(d && !('trip_mode' in d));   // before 67_trip_sheets.sql
   $('f-driver_type').closest('label').hidden = !!(d && !('driver_type' in d));   // before 60_payroll_rules.sql
   $('ed-status').innerHTML = d ? (d.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-none">Inactive</span>') : '';
   $('end-wrap').hidden = !(d && !d.active);
@@ -450,6 +453,7 @@ function readForm() {
   if (v.email) v.email = v.email.toLowerCase();
   if (cur && cur.active) delete v.end_date;   // only editable once inactive
   if (!v.driver_type || (cur && !('driver_type' in cur))) delete v.driver_type;
+  if (!cur || 'trip_mode' in cur) v.trip_mode = $('f-trip_mode').value || 'app';
   return v;
 }
 function niceError(e) {

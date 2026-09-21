@@ -124,6 +124,7 @@
       <button class="btn small" id="refresh">Refresh</button>
       <a class="btn small" href="messages.html" id="msgs-btn">Messages</a>
       <a class="btn small" href="templates.html">Templates</a>
+      <button class="btn small" id="ts-btn" title="Print a trip sheet for every load on this day">Trip sheets</button>
       <button class="btn small" id="nc-btn">+ New customer</button>
       <a class="btn small primary" href="loads.html?new=1">New load</a>
     </div>
@@ -427,6 +428,8 @@ async function loadBoard(quiet) {
 }
 
 start();
+// Printable trip sheets for the day on the board (67)
+document.getElementById('ts-btn').onclick = () => window.open('trip-sheet.html?day=' + (document.getElementById('day').value || ''), '_blank', 'noopener');
 </script>
 </body>
 </html>

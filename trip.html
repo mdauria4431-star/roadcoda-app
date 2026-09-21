@@ -269,6 +269,20 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    sheet: await (async () => {   // trip sheet (67): paper setting, documents, fuel, odometers, receivers; nothing if not installed
+      const [lx, docs, fuel, st, dm] = await Promise.all([
+        sb.from('loads').select('paper_trip, hub_start, hub_end').eq('id', LOAD).maybeSingle(),
+        sb.from('load_documents').select('id, kind, path, file_name, uploaded_at').eq('load_id', LOAD).order('uploaded_at'),
+        sb.from('load_fuel').select('id, bought_on, state, gallons, odometer, amount').eq('load_id', LOAD).order('created_at'),
+        stopIds.length ? sb.from('stops').select('id, odometer, receiver_name').in('id', stopIds) : { data: [] },
+        L.data.driver_id ? sb.from('drivers').select('trip_mode').eq('id', L.data.driver_id).maybeSingle() : { data: null },
+      ]);
+      if (lx.error || docs.error) return null;
+      const extra = Object.fromEntries((st.data || []).map(x => [x.id, x]));
+      l.stops.forEach(x => Object.assign(x, extra[x.id] || {}));
+      const driverPaper = dm.data?.trip_mode === 'paper';
+      return { load: lx.data || {}, docs: docs.data || [], fuel: fuel.data || [], driverPaper, paper: lx.data?.paper_trip ?? driverPaper };
+    })(),
     boxes: await (async () => {   // returnable containers left at each stop (63); nothing if not installed or no access
       const r = await sb.from('container_moves').select('stop_id, kind, containers(barcode, container_types(name))').eq('load_id', LOAD).is('undone_at', null).in('kind', ['delivered', 'loaded']);
       return r.error ? {} : (r.data || []).reduce((m, x) => { if (x.stop_id) (m[x.stop_id] ||= []).push(x); return m; }, {});
@@ -484,14 +498,44 @@ function stopsHtml(edit) {
       <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}></td>
       <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}></td>
       <td class="n">${onSite != null ? mins(Math.max(0, onSite)) : '—'}${free != null ? `<div class="mini">${free}m free</div>` : ''}${det ? `<div>${det}</div>` : ''}</td>
+      ${T.sheet?.paper ? `<td><input class="ed n" type="number" step="0.1" min="0" data-stop-f="odometer" data-stop="${s.id}" value="${s.odometer ?? ''}" placeholder="odometer" style="max-width:100px"${dis}></td>
+      <td><input class="ed" data-stop-f="receiver_name" data-stop="${s.id}" value="${esc(s.receiver_name || '')}" placeholder="${s.stop_type === 'pickup' ? '' : 'receiver'}" style="max-width:130px"${dis}></td>` : ''}
       <td><div class="items">${items}</div></td>
       <td>${seal}</td>
       <td>${osd}</td>
       <td>${pod}</td></tr>`;
   }).join('');
   return `<div class="card"><header><h2>Stops</h2><span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
-    <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th><th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="10" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>`;
+    <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + sheetHtml(edit);
+}
+
+// ── Trip sheet (67): print, paper trip, signed sheet, fuel, odometers ──
+function sheetHtml(edit) {
+  const S = T.sheet; if (!S) return '';
+  const dis = edit ? '' : ' disabled', L = S.load;
+  const docs = S.docs.map(d => `<a href="#" class="podlink" data-view="${esc(d.path)}">${d.kind === 'trip_sheet' ? 'Signed trip sheet' : 'Document'} · ${when(d.uploaded_at)}</a>`).join(' &nbsp; ');
+  const fuel = S.fuel.map(f => `<tr><td>${esc(f.bought_on || '')}</td><td class="n">${esc(f.state)}</td><td class="n">${Number(f.gallons).toFixed(1)}</td><td class="n">${f.odometer ?? ''}</td><td>${edit ? `<button class="btn small" data-delfuel="${f.id}">Remove</button>` : ''}</td></tr>`).join('');
+  return `<div class="card"><header><h2>Trip sheet</h2><span class="sp"></span>
+      <a class="btn small" href="trip-sheet.html?load=${T.l.id}" target="_blank" rel="noopener">Print trip sheet</a></header>
+    <div style="padding:10px 16px;display:flex;flex-direction:column;gap:12px">
+      <div class="facts" style="padding:0">
+        <div class="f"><b>This trip is</b><select id="paper-sel"${dis}>
+          <option value="" ${L.paper_trip == null ? 'selected' : ''}>Driver's setting (${S.driverPaper ? 'paper' : 'driver app'})</option>
+          <option value="true" ${L.paper_trip === true ? 'selected' : ''}>Paper — office enters it from the sheet</option>
+          <option value="false" ${L.paper_trip === false ? 'selected' : ''}>Driver app — the sheet is an audit copy</option></select></div>
+        ${S.paper ? `<div class="f"><b>Start odometer</b><input class="ed n" type="number" step="0.1" min="0" id="hub-start" value="${L.hub_start ?? ''}"${dis}></div>
+        <div class="f"><b>End odometer</b><input class="ed n" type="number" step="0.1" min="0" id="hub-end" value="${L.hub_end ?? ''}"${dis}></div>` : ''}
+        <div class="f"><b>Signed sheet</b><span>${docs || '<span class="mini">none uploaded</span>'}</span>
+          ${edit ? `<label class="btn small" style="flex-direction:row;height:26px;margin-top:4px;width:max-content">Upload scan / photo<input type="file" accept="image/*,application/pdf" id="sheet-file" hidden></label>` : ''}</div>
+      </div>
+      <div><b>Fuel bought</b> <span class="mini">— from the sheet or a receipt; feeds the IFTA report</span>
+        ${S.fuel.length ? `<table class="stops" style="max-width:560px;margin-top:6px"><thead><tr><th>Date</th><th>State</th><th>Gallons</th><th>Odometer</th><th></th></tr></thead><tbody>${fuel}</tbody></table>` : ''}
+        ${edit ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><input type="date" id="fu-date" style="height:30px"><input id="fu-state" maxlength="2" placeholder="ST" style="width:56px;height:30px;text-transform:uppercase">
+          <input id="fu-gal" type="number" step="0.001" min="0" placeholder="gallons" style="width:100px;height:30px"><input id="fu-odo" type="number" step="0.1" min="0" placeholder="odometer" style="width:110px;height:30px">
+          <button class="btn small" id="fu-add">Add fuel</button></div>` : ''}</div>
+      <div class="mini">${S.paper ? 'Paper trip: enter times, odometers, counts and receivers from the sheet above, then upload the signed sheet — the trip can\'t close until it\'s turned in.' : 'The driver uses the app: the printed sheet is an audit copy. Upload the signed one to keep it with the load.'}</div>
+    </div></div>`;
 }
 
 // ── Messages about this load (54) ────────────────────────────────────
@@ -626,12 +670,12 @@ function wire(edit) {
   document.querySelectorAll('input[data-stop-f]').forEach(el => el.onchange = async () => {
     const s = T.l.stops.find(x => x.id === el.dataset.stop), f = el.dataset.stopF;
     const was = s[f];
-    const now = f === 'seal_no' ? (el.value.trim() || null) : fromLocal(el.value);
+    const now = f === 'seal_no' || f === 'receiver_name' ? (el.value.trim() || null) : f === 'odometer' ? (el.value === '' ? null : Number(el.value)) : fromLocal(el.value);
     if (f === 'departed_at' && now && s.arrived_at && new Date(now) < new Date(s.arrived_at)) { fail('The departure is before the arrival.'); return draw(); }
     if (f === 'arrived_at' && now && s.departed_at && new Date(now) > new Date(s.departed_at)) { fail('The arrival is after the departure.'); return draw(); }
     const { error } = await sb.from('stops').update({ [f]: now }).eq('id', s.id);
     if (error) { fail(error); return draw(); }
-    const txt = f === 'seal_no' ? `Stop ${s.seq} seal set to ${esc(now || '—')}` : `Stop ${s.seq} ${FIELD[f]} ${esc(hm(was) || '—')} → ${esc(hm(now) || '—')}`;
+    const txt = f === 'seal_no' ? `Stop ${s.seq} seal set to ${esc(now || '—')}` : f === 'odometer' ? `Stop ${s.seq} odometer ${was ?? '—'} → ${now ?? '—'}` : f === 'receiver_name' ? `Stop ${s.seq} receiver: ${esc(now || '—')}` : `Stop ${s.seq} ${FIELD[f]} ${esc(hm(was) || '—')} → ${esc(hm(now) || '—')}`;
     toast(txt, async () => { const r = await sb.from('stops').update({ [f]: was }).eq('id', s.id); if (r.error) fail(r.error); else { toast('Undone'); load(); } });
     load();
   });
@@ -679,6 +723,34 @@ function wire(edit) {
     if (error) return fail(error);
     toast('OS&amp;D resolved'); load();
   });
+
+  // Trip sheet card (67)
+  if ($('paper-sel')) $('paper-sel').onchange = async () => {
+    const v = $('paper-sel').value, val = v === '' ? null : v === 'true';
+    const { error } = await sb.from('loads').update({ paper_trip: val }).eq('id', T.l.id); if (error) return fail(error);
+    toast(val === null ? "Follows the driver's setting" : val ? 'Marked a paper trip' : 'Marked a driver-app trip'); load();
+  };
+  ['hub-start', 'hub-end'].forEach(id => { if ($(id)) $(id).onchange = async () => {
+    const k = id === 'hub-start' ? 'hub_start' : 'hub_end', v = $(id).value === '' ? null : Number($(id).value);
+    const { error } = await sb.from('loads').update({ [k]: v }).eq('id', T.l.id); if (error) return fail(error); toast((k === 'hub_start' ? 'Start' : 'End') + ' odometer saved'); load();
+  }; });
+  if ($('sheet-file')) $('sheet-file').onchange = async () => {
+    const f = $('sheet-file').files[0]; if (!f) return;
+    if (f.size > 15 * 1024 * 1024) return fail('That file is over 15 MB. Scan it at a lower resolution.');
+    const ext = (f.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const path = `${profile.carrier_id}/tripsheet/${T.l.id}-${Date.now()}.${ext}`;
+    toast('Uploading the trip sheet…');
+    const up = await sb.storage.from('scan-photos').upload(path, f, { contentType: f.type || undefined }); if (up.error) return fail(up.error);
+    const { error } = await sb.from('load_documents').insert({ load_id: T.l.id, kind: 'trip_sheet', path, file_name: f.name }); if (error) return fail(error);
+    toast('Trip sheet attached and marked turned in'); load();
+  };
+  if ($('fu-add')) $('fu-add').onclick = async () => {
+    const st = $('fu-state').value.trim().toUpperCase(), g = Number($('fu-gal').value);
+    if (!/^[A-Z]{2}$/.test(st)) return fail('Enter the two-letter state.'); if (!(g > 0)) return fail('Enter the gallons.');
+    const { error } = await sb.from('load_fuel').insert({ load_id: T.l.id, state: st, gallons: g, odometer: $('fu-odo').value === '' ? null : Number($('fu-odo').value), bought_on: $('fu-date').value || null, source: 'trip_sheet' });
+    if (error) return fail(error); toast('Fuel added'); load();
+  };
+  document.querySelectorAll('[data-delfuel]').forEach(b => b.onclick = async () => { const { error } = await sb.from('load_fuel').delete().eq('id', b.dataset.delfuel); if (error) return fail(error); load(); });
 
   // POD upload — same private folder and scans table the driver app uses
   document.querySelectorAll('input[data-pod]').forEach(inp => inp.onchange = async () => {
