@@ -134,6 +134,11 @@
         <button class="btn small danger" id="reopen" hidden>Reopen…</button>
       </div>
     </div>
+
+    <div class="card" id="hist-card" hidden>
+      <header><h2>History of this week</h2></header>
+      <div id="hist"></div>
+    </div>
   </section>
 </main>
 <div id="toast" class="toast" hidden role="status"></div>
@@ -156,7 +161,7 @@ const TODAY = iso(new Date());
 const ACC = () => window.RC_ACCESS;
 const canEdit = () => !ACC() || ACC().can('payroll', 'edit');
 
-let CAR = null, FROM = null, PERIOD = null, LINES = [], PROBS = [], DRIVERS = {}, OPEN = new Set(), NAMES = {};
+let HIST = [], CAR = null, FROM = null, PERIOD = null, LINES = [], PROBS = [], DRIVERS = {}, OPEN = new Set(), NAMES = {};
 
 let tt = null;
 function toast(html, isErr) { const t = $('toast'); t.className = 'toast' + (isErr ? ' err' : ''); t.innerHTML = html; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, isErr ? 9000 : 6000); }
@@ -219,7 +224,9 @@ async function load() {
     if (l.error) { $('drivers').innerHTML = `<tr><td colspan="6" class="empty error">${esc(l.error.message)}</td></tr>`; return; }
     LINES = l.data || []; PROBS = pr.data || [];
   }
-  const who = [PERIOD?.approved_by, PERIOD?.reopened_by].filter(Boolean);
+  HIST = [];
+  if (PERIOD) { const h = await sb.from('lock_log').select('action, detail, who, at').eq('ref_id', PERIOD.id).order('at', { ascending: false }); HIST = h.error ? [] : (h.data || []); }
+  const who = [PERIOD?.approved_by, PERIOD?.reopened_by, ...HIST.map(x => x.who)].filter(Boolean);
   if (who.length) { const { data } = await sb.rpc('carrier_user_names', { p_ids: who }); (data || []).forEach(r => NAMES[r.user_id] = r.full_name); }
   draw();
 }
@@ -267,6 +274,8 @@ function draw() {
   $('probs-card').hidden = approved || !PROBS.length;
   $('probs').innerHTML = PROBS.map(p => `<div class="prob"><b>${esc(p.load_no || '')}</b><span class="dim" style="min-width:70px">${label(p.work_date)}</span><span style="min-width:120px">${esc(DRIVERS[p.driver_id]?.full_name || '')}</span><span>${esc(p.problem)}</span><span class="sp"></span>${p.load_id ? `<a href="trip.html?load=${p.load_id}">Open trip</a>` : ''}</div>`).join('');
 
+  $('hist-card').hidden = !HIST.length;
+  $('hist').innerHTML = HIST.map(x => `<div class="prob"><span class="n dim" style="min-width:150px">${new Date(x.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span><span style="min-width:140px">${esc(NAMES[x.who] || 'the office')}</span><span><b>${esc({ approved: 'Approved', reopened: 'Reopened', exported: 'Downloaded for QuickBooks' }[x.action] || x.action)}</b>${x.detail ? ' — ' + esc(x.detail) : ''}</span></div>`).join('');
   $('approve').hidden = approved || !ended || !canEdit();
   $('approve').disabled = !rows.length;
   $('reopen').hidden = !approved || !(ACC()?.super_user ?? true);

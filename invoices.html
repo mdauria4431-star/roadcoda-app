@@ -65,6 +65,7 @@
   .banner.over{background:#fbe0db;color:var(--late)}
   @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
+<style>.lockbox{margin:10px 0 4px;padding:10px 14px;border-radius:10px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));background:var(--accent-deep);color:var(--ink);font-size:13.5px}.lockbox b{color:var(--accent-hi)}</style>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -322,6 +323,22 @@ async function showInvoice(id) {
   let inv;
   try { inv = await getInvoice(id); } catch (e) { box.hidden = false; box.innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
   const draft = inv.status === 'draft';
+  // Who approved / sent / paid it, and every reopen (47)
+  let hist = [], who = {};
+  { const h = await sb.from('lock_log').select('action, detail, who, at').eq('ref_id', inv.id).order('at', { ascending: false });
+    hist = h.error ? [] : (h.data || []);
+    const ids = [...new Set([inv.approved_by, inv.sent_by, inv.paid_by, ...hist.map(x => x.who)].filter(Boolean))];
+    if (ids.length) { const n = await sb.rpc('carrier_user_names', { p_ids: ids }); (n.data || []).forEach(r => who[r.user_id] = r.full_name); } }
+  const nm = (id) => who[id] || 'the office';
+  const when = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const canReopen = !draft && (!window.RC_ACCESS || !!window.RC_ACCESS.super_user);
+  const lockNote = draft ? '' : `<div class="lockbox"><b>Locked.</b> ${[
+      inv.approved_at && `Approved by ${esc(nm(inv.approved_by))} ${when(inv.approved_at)}`,
+      inv.sent_at && `sent by ${esc(nm(inv.sent_by))} ${when(inv.sent_at)}`,
+      inv.paid_at && `marked paid by ${esc(nm(inv.paid_by))} ${when(inv.paid_at)}`].filter(Boolean).join(' · ') || 'Approved before locking was switched on.'}
+    <span class="hint" style="display:block;margin-top:4px">Nothing on it can change — lines, loads, their prices and charges. ${canReopen ? 'You can reopen it with a reason.' : 'A super user can reopen it with a reason.'}</span></div>`;
+  const histHtml = hist.length ? `<h2 style="margin-top:22px">History</h2><div class="tablewrap"><table><tbody>${hist.map(x =>
+      `<tr><td class="mono" style="white-space:nowrap">${when(x.at)}</td><td>${esc(nm(x.who))}</td><td><b>${esc({ approved: 'Approved', sent: 'Sent', paid: 'Marked paid', reopened: 'Reopened', deleted: 'Deleted' }[x.action] || x.action)}</b>${x.detail ? ' — ' + esc(x.detail) : ''}</td></tr>`).join('')}</tbody></table></div>` : '';
   let rows = '';
   for (const sec of SECTION_ORDER) {
     const ls = inv.invoice_lines.filter(l => sectionOf(l) === sec);
@@ -351,6 +368,7 @@ async function showInvoice(id) {
       <h2 style="margin:0">Invoice ${esc(inv.invoice_no)} · ${esc(inv.customers?.name)}</h2>
       <span class="pill st-${inv.status}">${STATUS[inv.status]}</span></div>
     <p class="hint">Dated ${dt(inv.invoice_date)} · due ${dt(inv.due_date)}${inv.period_from ? ` · billing window ${periodText(inv)}` : ''}${inv.po_number ? ` · PO ${esc(inv.po_number)}` : ''}</p>
+    ${lockNote}
     <div class="grid" style="grid-template-columns:2fr 1fr">
       <label for="d-bill">Bill-to address (saved to the customer)<textarea id="d-bill" placeholder="Street, Town, ST 00000">${esc(inv.customers?.bill_address || '')}</textarea></label>
       <label for="d-notes">Note printed on invoice<textarea id="d-notes" ${draft ? '' : 'disabled'}>${esc(inv.notes || '')}</textarea></label>
@@ -376,12 +394,14 @@ async function showInvoice(id) {
       ${['approved', 'sent'].includes(inv.status) ? '<button class="btn" id="d-paid">Mark paid</button>' : ''}
       <span style="flex-grow:1"></span>
       ${draft ? '<button class="btn danger" id="d-delete">Delete draft</button>' : ''}
+      ${canReopen ? '<button class="btn danger" id="d-reopen">Reopen…</button>' : ''}
     </div>
     <div id="d-msg" style="margin-top:8px"></div>
     <h2 style="margin-top:22px">Breakdown report</h2>
     <div class="tablewrap"><table>
       <thead><tr><th>Date</th><th>Load</th><th>Driver</th><th>Truck</th><th class="num">Miles</th><th>Stops</th></tr></thead>
-      <tbody>${bdRows || '<tr><td colspan="6">No delivered loads this week.</td></tr>'}</tbody></table></div>`;
+      <tbody>${bdRows || '<tr><td colspan="6">No delivered loads this week.</td></tr>'}</tbody></table></div>
+    ${histHtml}`;
 
   const msg = (t, cls = 'error') => $('d-msg').innerHTML = `<span class="${cls}">${esc(t)}</span>`;
   const saveEdits = async () => {
@@ -421,6 +441,13 @@ async function showInvoice(id) {
   };
   if ($('d-sent')) $('d-sent').onclick = () => setStatus('sent');
   if ($('d-paid')) $('d-paid').onclick = () => setStatus('paid');
+  if ($('d-reopen')) $('d-reopen').onclick = async () => {
+    const why = prompt(`Reopen invoice ${inv.invoice_no}? It goes back to draft and its sent / paid marks come off. If the customer already has it, send them the corrected one.\n\nWhy? (goes on the record)`);
+    if (!why) return;
+    const { error } = await sb.rpc('reopen_invoice', { p_invoice: inv.id, p_reason: why });
+    if (error) return msg(error.message);
+    reload();
+  };
   if ($('d-delete')) $('d-delete').onclick = async () => {
     if (!confirm(`Delete draft invoice ${inv.invoice_no}? Its loads go back to "waiting to be invoiced".`)) return;
     const { error } = await sb.from('invoices').delete().eq('id', inv.id);
