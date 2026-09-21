@@ -10,7 +10,22 @@
 <link rel="manifest" href="driver.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RoadCoda">
-<meta name="theme-color" content="#070c14">
+<meta name="theme-color" content="#1c1f24">
+<script>
+// Theme before anything paints. Auto follows the phone (dark at night if the phone switches); the ◐ button in the
+// header picks Light or Dark for this phone instead.
+(function () {
+  var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)'), pref = 'auto';
+  try { pref = localStorage.getItem('rc-drv-theme') || 'auto'; } catch (e) {}
+  window.RC_DRV_THEME = {
+    pref: function () { return pref; },
+    apply: function () { var t = pref === 'auto' ? (mq && mq.matches ? 'dark' : 'light') : pref; document.documentElement.setAttribute('data-theme', t); return t; },
+    next: function () { pref = pref === 'auto' ? 'light' : pref === 'light' ? 'dark' : 'auto'; try { localStorage.setItem('rc-drv-theme', pref); } catch (e) {} return this.apply(); },
+  };
+  window.RC_DRV_THEME.apply();
+  if (mq && mq.addEventListener) mq.addEventListener('change', function () { if (pref === 'auto') window.RC_DRV_THEME.apply(); });
+})();
+</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -21,7 +36,7 @@
   [hidden]{display:none!important}
   body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:17px;
        padding-bottom:env(safe-area-inset-bottom,0px)}
-  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:12px;
+  header{background:var(--bar,#1c1f24);color:#fff;display:flex;align-items:center;gap:12px;
          padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;position:sticky;top:0;z-index:5}
   .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:20px}.brand span{color:#5fc2c7}
   .who{margin-left:auto;font-size:14px;color:#d9d5cc;text-align:right}
@@ -122,12 +137,38 @@
   .shots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .shots label.btn{justify-content:center;min-height:52px;cursor:pointer}
   canvas.sig{width:100%;height:170px;border:2px dashed var(--line);border-radius:10px;background:#fff;touch-action:none}
+
+  /* ── Dark (night driving). Same layout; only colours change. ── */
+  html[data-theme="dark"]{--ground:#0f1419;--surface:#182029;--ink:#e8edf2;--muted:#a3adb8;--line:#2b3642;--accent:#3aa7ad;--late:#ff8a7d;--ok:#5fd08c;--bar:#0a0e12;color-scheme:dark}
+  html[data-theme="dark"] input,html[data-theme="dark"] textarea,html[data-theme="dark"] select{background:#10161d;color:var(--ink);border-color:var(--line)}
+  html[data-theme="dark"] .b-pending{background:#16283b;color:#8fc3f5} html[data-theme="dark"] .b-arrived{background:#15301f}
+  html[data-theme="dark"] .b-delivered{background:#232a31;color:#b9c2cc} html[data-theme="dark"] .b-exception{background:#3a1d19}
+  html[data-theme="dark"] .issue{background:#2a1a17;border-color:#5a2e27}
+  html[data-theme="dark"] .instr summary,html[data-theme="dark"] .access{background:#1f2832}
+  html[data-theme="dark"] .codelist,html[data-theme="dark"] .x{background:var(--surface)}
+  html[data-theme="dark"] .codes li{border-color:var(--line)}
+  html[data-theme="dark"] .ios-first{background:#2d2614;border-color:#6b5a26}
+  html[data-theme="dark"] .msgpop,html[data-theme="dark"] .kinds button.on{background:#12302f}
+  html[data-theme="dark"] .bub.me{background:#15393a;border-color:#23595a}
+  html[data-theme="dark"] .alertbox.red{background:#3a1715;color:#ffcfc9;border-color:#e0584d}
+  html[data-theme="dark"] .alertbox.amber{background:#33260f;color:#f7d59a;border-color:#c98a1c}
+  html[data-theme="dark"] .btn.warn{border-color:#5a2e27}
+  /* the witness signs on white, like paper */
+  html[data-theme="dark"] canvas.sig{background:#fff}
+  .themebtn{min-height:40px;min-width:40px;border:1px solid rgba(255,255,255,.25);border-radius:10px;background:none;color:#fff;font-size:17px}
+  .toprow{display:flex;flex-direction:column;gap:10px}
+  .toprow h1{margin:0}
+  .topbtns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .topbtns .btn,.toprow > .btn{min-height:48px;padding:0 8px;font-size:16px}
+  .toprow > .btn.red{width:100%}
+  @media (min-width:600px){ .toprow{flex-direction:row;flex-wrap:wrap;align-items:center} .toprow h1{flex:1 1 auto} .topbtns{display:flex} .toprow > .btn.red{width:auto} }
 </style>
 </head>
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
   <div class="who" id="who"></div>
+  <button class="themebtn" id="themebtn" type="button" aria-label="Light or dark screen"></button>
 </header>
 
 <main>
@@ -209,17 +250,19 @@
   </section>
 
   <section id="app" hidden style="display:flex;flex-direction:column;gap:14px">
-    <div style="display:flex;align-items:center;gap:10px">
-      <h1 style="flex-grow:1">Today's stops</h1>
-      <button class="btn red" id="inc-btn" style="min-height:44px">Report accident / injury</button>
-      <button class="btn" id="msg-btn" style="min-height:44px">Messages<span class="badge-n" id="msg-n" hidden></span></button>
-      <button class="btn" id="pay-btn" style="min-height:44px">My pay</button>
-      <button class="btn" id="refresh" style="min-height:44px">Refresh</button>
+    <div class="toprow">
+      <h1>Today's stops</h1>
+      <div class="topbtns">
+        <button class="btn" id="msg-btn">Messages<span class="badge-n" id="msg-n" hidden></span></button>
+        <button class="btn" id="pay-btn">My pay</button>
+        <button class="btn" id="refresh">Refresh</button>
+      </div>
+      <button class="btn red" id="inc-btn">Report accident / injury</button>
     </div>
-    <div id="a2hs" class="card" hidden style="border-color:#e6c77a;background:#fff8e6">
+    <div id="a2hs" class="card ios-first" hidden>
       <b>Add RoadCoda to your home screen</b>
       <div id="a2hs-how" class="meta" style="margin-top:6px;line-height:1.5"></div>
-      <div id="handoff" hidden style="margin-top:10px;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:10px;text-align:center">
+      <div id="handoff" hidden style="margin-top:10px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;text-align:center">
         <div class="meta">Open RoadCoda from the home screen, tap <b>Enter app code</b> and type:</div>
         <div id="handoff-code" style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:700;letter-spacing:.12em;margin:6px 0"></div>
         <div class="meta" id="handoff-exp"></div>
@@ -925,6 +968,16 @@ setInterval(() => {
   const openForm = [...document.querySelectorAll('details')].some(d => d.open) || [...document.querySelectorAll('.issue')].some(d => !d.hidden);
   if (!busy && !openForm && $('scanner').hidden && !$('app').hidden) loadStops();
 }, 60000);
+// ---------- Light / dark ----------
+function paintThemeBtn() {
+  const p = RC_DRV_THEME.pref(), t = document.documentElement.getAttribute('data-theme');
+  $('themebtn').textContent = p === 'auto' ? '◐' : t === 'dark' ? '☾' : '☀';
+  $('themebtn').title = p === 'auto' ? `Screen follows the phone (now ${t}). Tap for light.` : p === 'light' ? 'Light screen. Tap for dark.' : 'Dark screen. Tap to follow the phone.';
+}
+$('themebtn').onclick = () => { RC_DRV_THEME.next(); paintThemeBtn(); };
+paintThemeBtn();
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', paintThemeBtn);
+
 // ---------- Accident / injury report ----------
 // Picking what happened creates the report at once (time + GPS), so it's on
 // record even if the phone dies. Everything after that saves as it's answered.

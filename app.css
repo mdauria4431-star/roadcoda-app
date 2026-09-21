@@ -4,8 +4,8 @@
    the shared furniture (header, buttons, cards, tables) into the new console.
    Page-specific rules that this file does not name keep working as they are.
 
-   Dark is the default. The user's choice is stamped on <html data-rc-theme>
-   by shell.js; with no choice stamped, the operating system decides.        */
+   shell.js stamps the theme on <html data-rc-theme>: Auto (the default)
+   follows the device, or the user's Light / Dark pick.                     */
 
 :root,
 html[data-rc-theme="dark"]{
@@ -75,8 +75,8 @@ html[data-rc-theme="light"]{
   --press:0 2px 4px rgba(18,26,38,.16) inset;
   --card-sh:0 1px 2px rgba(18,26,38,.07), 0 10px 24px rgba(18,26,38,.07);
 }
-/* The console is designed dark, so dark is the app's default whatever the
-   operating system says. shell.js stamps data-rc-theme when the user picks. */
+/* shell.js stamps data-rc-theme on every page: Auto (the default) follows the
+   device's light / dark setting live; Light or Dark, once picked, sticks. */
 
 body{background:var(--ground);color:var(--ink);font-size:14px}
 
@@ -273,19 +273,42 @@ html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
 
 .login{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--card-sh);padding:20px;margin-top:48px}
 
-/* ── Narrow screens: the sidebar goes back to being a top bar ─────── */
+/* ── Narrow screens: a slim top bar; the menu folds behind ☰ ───────── */
+.rc-menubtn{display:none}
 @media (max-width:900px){
-  body{padding-left:0}
-  header{position:static;width:auto;flex-direction:row;flex-wrap:wrap!important;align-items:center;gap:8px;
-         border-right:0;border-bottom:1px solid var(--line);padding:10px 14px}
-  header nav{flex-direction:row!important;flex-wrap:wrap;gap:6px}
-  header nav a{height:32px}
-  .rc-sec{display:none}
-  .rc-sub{flex-direction:row;flex-wrap:wrap;margin:0;padding-left:0;border-left:0}
-  .rc-foot{margin-top:0;flex-direction:row;padding-top:0}
-  header .who{margin-left:auto}
-  main{padding:16px 14px 32px}
+  body{padding-left:0!important}
+  header{position:sticky!important;top:0;z-index:40;width:auto!important;height:auto!important;flex-direction:row!important;flex-wrap:wrap!important;
+         align-items:center;gap:8px;border-right:0!important;border-bottom:1px solid var(--line);
+         padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px!important;overflow:visible!important}
+  .rc-menubtn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--line);
+              background:var(--raise);color:var(--ink);font-family:var(--ui);font-weight:600;font-size:15px;order:0}
+  header .brand{order:1;margin:0 0 0 auto!important;padding:0!important}
+  header .brand b{display:none}
+  /* the menu, the who-am-I line and the footer controls only when ☰ is open */
+  header nav, header .who, header .rc-foot{display:none!important}
+  html.rc-menu-open header nav{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;order:2;width:100%;
+         max-height:calc(100vh - 70px);overflow:auto;gap:2px;padding:8px 0}
+  html.rc-menu-open header .who{display:block!important;order:3;width:100%;font-size:13px;padding:4px 2px}
+  html.rc-menu-open header .rc-foot{display:flex!important;order:4;width:100%;flex-direction:row!important;flex-wrap:wrap;gap:6px;padding:4px 0 6px}
+  header nav a{height:44px!important;font-size:15px}
+  .rc-sec{display:block}
+  .rc-sub{margin:0 0 4px 10px}
+  html.rc-rail-in header nav a .rc-lbl{display:inline!important}
+  main{padding:12px 10px 32px!important}
+  /* wide tables scroll sideways inside their card instead of pushing the page */
+  main table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+  main table table{display:table}
+  .tablewrap,.wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* 16px stops phones zooming in on every box you tap; bigger targets for thumbs */
+  input,select,textarea{font-size:16px!important}
+  .btn{min-height:40px}
+  .btn.small{min-height:36px}
+  h1{font-size:20px}
+  .card > header{padding:10px 12px!important}
+  .modal .box{width:calc(100vw - 20px)!important;max-width:none!important;max-height:calc(100vh - 20px);overflow:auto}
 }
+@media (max-width:900px) and (prefers-reduced-motion:no-preference){ html.rc-menu-open header nav{animation:rc-drop .14s ease-out} }
+@keyframes rc-drop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 :focus-visible{outline:2px solid var(--accent-hi);outline-offset:2px}

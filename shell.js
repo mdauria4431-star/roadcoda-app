@@ -9,10 +9,29 @@
   'use strict';
 
   // Theme first, before anything paints, so there's no flash of the wrong one.
-  try {
-    var saved = localStorage.getItem('rc-theme');
-    if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-rc-theme', saved);
-  } catch (e) { /* private window, blocked storage — the OS setting decides */ }
+  // Auto (the default) follows the device — light by day, dark at night if the
+  // phone or computer switches — and changes live when the device does.
+  // Light or Dark, once picked, sticks on this device.
+  var html = document.documentElement;
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  var pref = 'auto';
+  try { var saved = localStorage.getItem('rc-theme'); if (saved === 'light' || saved === 'dark' || saved === 'auto') pref = saved; } catch (e) {}
+  function applyTheme() {
+    var t = pref === 'auto' ? (mq && mq.matches ? 'light' : 'dark') : pref;
+    html.setAttribute('data-rc-theme', t);
+    html.setAttribute('data-rc-theme-pref', pref);
+    var tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.setAttribute('content', t === 'light' ? '#e9edf4' : '#070c14');
+    if (window.RC_THEME && window.RC_THEME.onchange) window.RC_THEME.onchange();
+  }
+  window.RC_THEME = {
+    get: function () { return pref; },
+    set: function (p) { pref = p; try { localStorage.setItem('rc-theme', p); } catch (e) {} applyTheme(); },
+    onchange: null,
+  };
+  applyTheme();
+  if (mq) { var live = function () { if (pref === 'auto') applyTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', live); else if (mq.addListener) mq.addListener(live); }
   try {
     if (localStorage.getItem('rc-rail') === 'in') document.documentElement.classList.add('rc-rail-in');
   } catch (e) {}
@@ -83,6 +102,20 @@
     // "RoadCoda — Dispatch" renders as three identical tabs when three are open.
     var here = location.pathname.split('/').pop() || 'index.html';
     if (NAME[here]) document.title = NAME[here] + ' · RoadCoda';
+
+    // Phones: the menu folds away behind a button (app.css shows it under 900px)
+    var menu = document.createElement('button');
+    menu.type = 'button';
+    menu.className = 'rc-menubtn';
+    menu.setAttribute('aria-label', 'Menu');
+    menu.setAttribute('aria-expanded', 'false');
+    menu.innerHTML = '<span aria-hidden="true">☰</span> <span>' + (NAME[location.pathname.split('/').pop() || 'index.html'] || 'Menu') + '</span>';
+    menu.onclick = function () {
+      var open = html.classList.toggle('rc-menu-open');
+      menu.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    header.insertBefore(menu, header.firstChild);
+    nav.addEventListener('click', function (e) { if (e.target.closest('a[href]:not([href="#"])')) html.classList.remove('rc-menu-open'); });
 
     // Brand gets the mark
     var brand = header.querySelector('.brand');
@@ -228,18 +261,18 @@
     var theme = document.createElement('button');
     theme.type = 'button';
     theme.className = 'rc-railbtn';
+    // Auto → Light → Dark → Auto
     function paintTheme() {
-      var dark = document.documentElement.getAttribute('data-rc-theme') !== 'light';
-      theme.innerHTML = '<span class="rc-ic">' + (dark ? '☾' : '☀') + '</span><span class="rc-lbl">' +
-        (dark ? 'Dark' : 'Light') + '</span>';
+      var p = window.RC_THEME.get(), dark = html.getAttribute('data-rc-theme') !== 'light';
+      theme.innerHTML = '<span class="rc-ic">' + (p === 'auto' ? '◐' : dark ? '☾' : '☀') + '</span><span class="rc-lbl">' +
+        (p === 'auto' ? 'Auto (' + (dark ? 'dark' : 'light') + ')' : dark ? 'Dark' : 'Light') + '</span>';
+      theme.title = p === 'auto' ? 'Follows this device. Click for Light.' : p === 'light' ? 'Click for Dark.' : 'Click to follow this device again.';
     }
+    window.RC_THEME.onchange = paintTheme;
     paintTheme();
     theme.onclick = function () {
-      var dark = document.documentElement.getAttribute('data-rc-theme') !== 'light';
-      var next = dark ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-rc-theme', next);
-      try { localStorage.setItem('rc-theme', next); } catch (e) {}
-      paintTheme();
+      var p = window.RC_THEME.get();
+      window.RC_THEME.set(p === 'auto' ? 'light' : p === 'light' ? 'dark' : 'auto');
     };
     foot.appendChild(theme);
 

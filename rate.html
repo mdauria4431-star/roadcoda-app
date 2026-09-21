@@ -29,6 +29,12 @@
   .ok{font-size:40px;margin-top:10px}
   .err{color:#b3261e}
   .foot{margin-top:18px;font-size:12px;color:#9aa1ab}
+
+  @media (prefers-color-scheme: dark){
+    :root{--ink:#e8edf2;--muted:#a3adb8;--line:#2b3642;color-scheme:dark}
+    body{background:#0f1419} .card{background:#182029} textarea{background:#10161d;color:var(--ink)}
+    .stars button{color:#3a4550}
+  }
 </style>
 </head>
 <body>

@@ -53,6 +53,15 @@
   .inv table td,.inv table th{padding:8px 10px}
   .num{text-align:right}
   @media print{ .top,.tabs,.bar,.noprint,#list-card{display:none!important} body{background:#fff} .card{border:0} .wrap{padding:0} }
+
+  @media (prefers-color-scheme: dark){
+    :root{--ink:#e8edf2;--muted:#a3adb8;--line:#2b3642;--bg:#0f1419;--card:#182029;--ok:#5fd08c;--bad:#ff8a7d;--warn:#f0b35a;color-scheme:dark}
+    .btn,.tabs button,input,select,textarea{background:#10161d;color:var(--ink)}
+    .btn.primary,.tabs button.on{background:var(--brand);color:#fff}
+    th{background:#141b23} tr.r:hover{background:#1c2530}
+    .pill{background:#232a31;color:#b9c2cc} .pill.ok{background:#15301f} .pill.bad{background:#3a1d19} .pill.go{background:#16283b;color:#8fc3f5}
+  }
+  @media print{ :root{--ink:#1c1f24;--muted:#5b6470;--line:#e2e5ea;--bg:#fff;--card:#fff} }
 </style>
 </head>
 <body>
