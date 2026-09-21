@@ -170,6 +170,11 @@
       <div id="dc-msg" class="hint"></div>
       </details>
     </section>
+    <section class="card" id="portal-card" hidden>
+      <h2>Customer portal</h2>
+      <div class="hint" style="margin:0 0 8px">Which tabs this customer's logins can use. Their portal admin can switch these off for their own people, never on.</div>
+      <div id="portal-box"></div>
+    </section>
 
     <section class="card">
       <h2>Stop customers: delivery points and pickup points</h2>
@@ -320,7 +325,7 @@ function pickCustomer() {
     const extra = par ? `Account under <a href="#" data-go="${par.id}">${esc(par.name)}</a>; anything not set here uses the settings on ${esc(par.name)}`
       : kids.length ? `Accounts under it: ${kids.map(k => `<a href="#" data-go="${k.id}">${esc(k.name)}</a>`).join(', ')}` : '';
     if (extra) $('cust-info').innerHTML += (($('cust-info').innerHTML ? '<br>' : '') + extra);
-    loadDl(); loadAct(); loadDelays();
+    loadDl(); loadAct(); loadDelays(); loadPortalTabs();
   }
 }
 $('cust-info').onclick = (e) => { const a = e.target.closest('a[data-go]'); if (!a) return; e.preventDefault(); $('cust').value = a.dataset.go; $('cust').onchange(); };
@@ -360,6 +365,31 @@ async function loadDelayCodes() {
   $('cdc-maps').innerHTML = delayCodes.map(d => `<option value="${d.id}">${esc(d.code)} — ${esc(d.name)}</option>`).join('');
 }
 
+// Customer portal tabs (72): this customer's own choice, else its main customer's, else the carrier default
+const PTABS = [['loads', 'Loads / deliveries'], ['invoices', 'Invoices'], ['file', 'Activity file'], ['boxes', 'Containers']];
+async function loadPortalTabs() {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const [me, car, logins] = await Promise.all([sb.from('customers').select('portal_tabs').eq('id', c.id).maybeSingle(), sb.from('carriers').select('portal_default_tabs').maybeSingle(),
+    sb.from('portal_users').select('full_name, is_admin, active').eq('customer_id', c.id)]);
+  if (me.error) { $('portal-card').hidden = true; return; }          // before 72
+  $('portal-card').hidden = false;
+  const par = customers.find(p => p.id === c.parent_customer_id);
+  const parTabs = par ? (await sb.from('customers').select('portal_tabs').eq('id', par.id).maybeSingle()).data?.portal_tabs : null;
+  const own = me.data?.portal_tabs, fallback = parTabs || car.data?.portal_default_tabs || PTABS.map(t => t[0]);
+  const eff = own || fallback, dis = window.RC_ACCESS && !window.RC_ACCESS.can('customers', 'edit') ? ' disabled' : '';
+  const L = (logins.data || []).filter(x => x.active);
+  $('portal-box').innerHTML = `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="pt-own" ${own ? 'checked' : ''} style="height:auto"${dis}> Choose for this customer
+      <span class="hint" style="margin:0">(otherwise ${par && parTabs ? 'same as ' + esc(par.name) : 'your default'}: ${fallback.map(k => PTABS.find(t => t[0] === k)?.[1]).join(', ') || 'nothing'})</span></label>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">${PTABS.map(([k, l]) => `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" data-pt="${k}" ${eff.includes(k) ? 'checked' : ''} ${own ? '' : 'disabled'} style="height:auto"${dis}> ${l}</label>`).join('')}</div>
+    <div class="hint" style="margin:8px 0 0">${L.length ? `${L.length} login${L.length > 1 ? 's' : ''}${L.some(x => x.is_admin) ? ' · portal admin: ' + L.filter(x => x.is_admin).map(x => esc(x.full_name)).join(', ') : ' · no portal admin yet'} · <a href="customer-logins.html">Customer logins</a>` : 'No logins yet — invite them on <a href="customer-logins.html">Customer logins</a>.'}</div>`;
+  const save = async () => {
+    const tabs = $('pt-own').checked ? [...document.querySelectorAll('[data-pt]')].filter(x => x.checked).map(x => x.dataset.pt) : null;
+    const { error } = await sb.from('customers').update({ portal_tabs: tabs }).eq('id', c.id);
+    if (error) { flash(error.message); return; }
+    flash('Portal tabs saved'); loadPortalTabs();
+  };
+  $('pt-own').onchange = save; document.querySelectorAll('[data-pt]').forEach(x => x.onchange = save);
+}
 async function loadDelays() {
   if (delaysOff) return;
   const c = customers.find(x => x.id === $('cust').value);

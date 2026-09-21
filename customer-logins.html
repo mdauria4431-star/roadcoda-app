@@ -57,7 +57,11 @@
     <div class="error" id="login-error"></div>
   </section>
 
-  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+  <section class="card" id="deftabs-card" hidden>
+      <header><h2>Default portal tabs</h2><span class="sp"></span><span class="mini">For every customer you haven't chosen for on Customers › Customer portal.</span></header>
+      <div class="pad" id="deftabs" style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 16px"></div>
+    </section>
+    <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1>Customer logins</h1>
     <p class="mini" style="margin:-4px 0 0">Give a customer their own login to <b>portal.html</b>. A <b>billing</b> login sees its loads (and its DCs'), stop times and counts, PODs, its invoices and its activity file. A <b>delivery</b> login — a store or site — sees only the deliveries to its locations: times, counts, issues, PODs. No prices, no other customers. Customer logins can't open any office screen.</p>
 
@@ -75,7 +79,7 @@
     </div>
 
     <div class="card">
-      <header><h2>Logins</h2></header>
+      <header><h2>Logins</h2><span class="sp"></span><span class="mini">Portal admin = can switch tabs off for their own company's people (in their portal's Team tab).</span></header>
       <div id="list"><div class="empty">Loading…</div></div>
     </div>
   </section>
@@ -150,16 +154,23 @@ $('i-send').onclick = async () => {
 
 async function loadList() {
   let users;
-  try { users = (await call({ action: 'list' })).users; }
+  try { users = (await call({ action: 'list' })).users || []; }
   catch (e) { $('list').innerHTML = `<div class="empty error">${esc(e.message)}${/Failed to send|not found|404/i.test(e.message) ? ' — deploy the portal-users server function (see INSTALL).' : ''}</div>`; return; }
   const cName = (id) => CUSTS.find(c => c.id === id)?.name || '';
+  // Portal admin and tabs their admin switched off (72) — read straight from the table
+  const ex = await sb.from('portal_users').select('user_id, is_admin, hidden_tabs');
+  const X = Object.fromEntries((ex.error ? [] : ex.data || []).map(r => [r.user_id, r])), has72 = !ex.error;
+  const TN = { loads: 'loads', invoices: 'invoices', file: 'activity file', boxes: 'containers' };
   const lName = (id) => LOCS.find(l => l.id === id)?.name || '';
-  $('list').innerHTML = users.length ? `<table class="t"><thead><tr><th>Name</th><th>Email</th><th>Customer</th><th>Kind</th><th>Sees</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>${users.map(u => `
+  $('list').innerHTML = users.length ? `<table class="t"><thead><tr><th>Name</th><th>Email</th><th>Customer</th><th>Kind</th><th>Sees</th><th>Last seen</th>${has72 ? '<th>Portal admin</th>' : ''}<th>Status</th><th></th></tr></thead><tbody>${users.map(u => `
     <tr><td>${esc(u.full_name)}</td><td>${esc(u.email)}</td><td>${esc(cName(u.customer_id))}</td><td><span class="pill">${u.kind}</span></td>
-      <td class="mini">${u.kind === 'billing' ? 'All its loads and DCs, invoices, activity file' : (u.location_ids || []).map(lName).join(', ')}</td>
-      <td class="mini">${u.last_seen_at ? when(u.last_seen_at) : 'never signed in'}</td><td>${u.active ? '<span class="ok">Active</span>' : '<span class="error">Off</span>'}</td>
+      <td class="mini">${u.kind === 'billing' ? 'Its loads and DCs — tabs set on Customers' : (u.location_ids || []).map(lName).join(', ')}${X[u.user_id]?.hidden_tabs?.length ? `<br><span class="warn">their admin switched off: ${X[u.user_id].hidden_tabs.map(k => TN[k]).join(', ')}</span>` : ''}</td>
+      <td class="mini">${u.last_seen_at ? when(u.last_seen_at) : 'never signed in'}</td>${has72 ? `<td><input type="checkbox" data-admin="${u.user_id}" ${X[u.user_id]?.is_admin ? 'checked' : ''} ${canEdit() ? '' : 'disabled'} style="height:auto" aria-label="Portal admin"></td>` : ''}<td>${u.active ? '<span class="ok">Active</span>' : '<span class="error">Off</span>'}</td>
       <td>${canEdit() ? `<button class="btn small" data-a="resend" data-u="${u.user_id}">Resend</button> <button class="btn small${u.active ? ' danger' : ''}" data-a="${u.active ? 'deactivate' : 'reactivate'}" data-u="${u.user_id}">${u.active ? 'Turn off' : 'Turn on'}</button>` : ''}</td></tr>`).join('')}</tbody></table>`
     : '<div class="empty">No customer logins yet.</div>';
+  document.querySelectorAll('[data-admin]').forEach(c => c.onchange = async () => {
+    const { error } = await sb.rpc('portal_set_admin', { p_user: c.dataset.admin, p_admin: c.checked }); if (error) { alert(error.message); c.checked = !c.checked; }
+  });
   document.querySelectorAll('[data-a]').forEach(b => b.onclick = async () => {
     if (b.dataset.a === 'deactivate' && !confirm('Turn this login off? They won\'t be able to sign in.')) return;
     try { const r = await call({ action: b.dataset.a, user_id: b.dataset.u }); if (b.dataset.a === 'resend') alert('Sent to ' + r.sent_to); loadList(); }
@@ -167,6 +178,18 @@ async function loadList() {
   });
 }
 
+// Default portal tabs (72)
+(async () => {
+  await window.RC_ACCESS_READY;
+  const { data, error } = await sb.from('carriers').select('portal_default_tabs').maybeSingle(); if (error || !data) return;
+  const N = [['loads', 'Loads / deliveries'], ['invoices', 'Invoices'], ['file', 'Activity file'], ['boxes', 'Containers']], dis = canEdit() ? '' : ' disabled';
+  $('deftabs-card').hidden = false;
+  $('deftabs').innerHTML = N.map(([k, l]) => `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" data-dt="${k}" ${data.portal_default_tabs.includes(k) ? 'checked' : ''} style="height:auto"${dis}> ${l}</label>`).join('');
+  document.querySelectorAll('[data-dt]').forEach(c => c.onchange = async () => {
+    const { error: e } = await sb.rpc('set_portal_default_tabs', { p_tabs: [...document.querySelectorAll('[data-dt]')].filter(x => x.checked).map(x => x.dataset.dt) });
+    if (e) { alert(e.message); c.checked = !c.checked; }
+  });
+})();
 start();
 </script>
 </body>

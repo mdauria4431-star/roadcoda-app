@@ -120,14 +120,20 @@ async function start() {
   if (ME.logo_path) { const u = sb.storage.from('brand-logos').getPublicUrl(ME.logo_path).data.publicUrl; $('logo').src = u; $('logo').hidden = false; $('logo').onerror = () => $('logo').hidden = true; }
   $('who').innerHTML = `${esc(ME.name)} · <b>${esc(ME.kind === 'billing' ? ME.customer : (ME.locations || []).map(l => l.name).join(', '))}</b>${ME.carrier_phone ? ` · questions? ${esc(ME.carrier_phone)}` : ''}`;
   $('top').hidden = false; $('app').hidden = false;
-  const tabs = ME.kind === 'billing' ? [['loads', 'Loads'], ['invoices', 'Invoices'], ['file', 'Activity file']] : [['loads', 'Deliveries']];
+  // Which tabs: the carrier's choice for this customer, less any the customer's portal admin switched off (72).
+  // Before 72 there's no ME.tabs, so everything shows as it used to.
+  const allowed = Array.isArray(ME.tabs) ? ME.tabs : ['loads', 'invoices', 'file', 'boxes'];
+  const NAMES = { loads: ME.kind === 'billing' ? 'Loads' : 'Deliveries', invoices: 'Invoices', file: 'Activity file', boxes: 'Containers' };
+  const tabs = ['loads', 'invoices', 'file'].filter(k => allowed.includes(k) && (ME.kind === 'billing' || k === 'loads')).map(k => [k, NAMES[k]]);
   // Returnable containers (cages, totes…): the tab shows only when their stores are holding some
-  const bx = await sb.rpc('portal_containers');
-  BOXES = bx.error ? [] : (bx.data || []);
+  if (allowed.includes('boxes')) { const bx = await sb.rpc('portal_containers'); BOXES = bx.error ? [] : (bx.data || []); }
   if (BOXES.length) tabs.push(['boxes', 'Containers']);
+  if (ME.is_admin) tabs.push(['team', 'Team']);
+  if (!tabs.length) { $('list').innerHTML = `<div class="empty">Nothing is switched on for your login yet. Ask ${esc(ME.carrier)}${ME.carrier_phone ? ' (' + esc(ME.carrier_phone) + ')' : ''} or your company's portal admin.</div>`; return; }
   $('tabs').innerHTML = tabs.map(([k, t]) => `<button data-t="${k}">${t}</button>`).join('');
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => go(b.dataset.t));
-  go(new URLSearchParams(location.search).get('tab') || 'loads');
+  const want = new URLSearchParams(location.search).get('tab');
+  go(tabs.some(t => t[0] === want) ? want : tabs[0][0]);
 }
 $('in').onclick = async () => {
   $('login-msg').textContent = '';
@@ -151,7 +157,28 @@ function go(t) {
   if (t === 'invoices') return invoices();
   if (t === 'file') return fileTab();
   if (t === 'boxes') return boxesTab();
+  if (t === 'team') return teamTab();
   loadsTab();
+}
+
+// ── Team (the customer's portal admin): switch tabs off for their own people (72) ──
+async function teamTab() {
+  $('bar').innerHTML = `<span class="hint">Choose what each of your people sees. You can switch off anything ${esc(ME.carrier)} has turned on for your company; to add something, ask ${esc(ME.carrier)}.</span>`;
+  const { data, error } = await sb.rpc('portal_team');
+  if (error) { $('list').innerHTML = `<div class="empty">${esc(error.message)}</div>`; return; }
+  const allowed = ME.allowed || [], N = { loads: 'Loads / deliveries', invoices: 'Invoices', file: 'Activity file', boxes: 'Containers' };
+  const cols = ['loads', 'invoices', 'file', 'boxes'].filter(k => allowed.includes(k));
+  $('list').innerHTML = (data || []).length ? `<table><thead><tr><th>Name</th><th>Email</th>${cols.map(k => `<th>${N[k]}</th>`).join('')}<th>Last seen</th></tr></thead><tbody>${data.map(p => `<tr${p.active ? '' : ' style="opacity:.5"'}>
+      <td><b>${esc(p.full_name)}</b>${p.is_admin ? ' <span class="pill">admin</span>' : ''}${p.kind === 'delivery' ? ' <span class="hint">store login</span>' : ''}</td><td>${esc(p.email)}</td>
+      ${cols.map(k => { const na = p.kind === 'delivery' && !['loads', 'boxes'].includes(k);
+        return `<td>${na ? '<span class="hint">—</span>' : `<input type="checkbox" data-u="${p.user_id}" data-k="${k}" ${(p.hidden_tabs || []).includes(k) ? '' : 'checked'} aria-label="${N[k]} for ${esc(p.full_name)}">`}</td>`; }).join('')}
+      <td class="hint">${p.last_seen_at ? new Date(p.last_seen_at).toLocaleDateString() : 'never'}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No one yet.</div>';
+  document.querySelectorAll('#list input[data-u]').forEach(c => c.onchange = async () => {
+    const hidden = [...document.querySelectorAll(`#list input[data-u="${c.dataset.u}"]`)].filter(x => !x.checked).map(x => x.dataset.k);
+    const { error: e } = await sb.rpc('portal_set_hidden', { p_user: c.dataset.u, p_hidden: hidden });
+    if (e) { alert(e.message); c.checked = !c.checked; return; }
+    if (c.dataset.u === ME.user_id) location.reload();
+  });
 }
 
 // ── Loads / deliveries ────────────────────────────────────────────────
