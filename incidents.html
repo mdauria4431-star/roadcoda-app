@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incidents · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select,textarea{border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  input,select{height:32px} textarea{padding:7px 9px;min-height:64px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .dim{color:var(--muted)}
+  .error{color:var(--late)}
+  .ok{color:var(--ok)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+  .t td{padding:8px 10px;border-bottom:1px solid var(--line-soft)}
+  .t tr.r{cursor:pointer} .t tr.r:hover{background:var(--row-hover)} .t tr.on{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;border:1px solid var(--line);margin-right:4px}
+  .tag.red{color:#fff;background:var(--late);border-color:var(--late)}
+  .tag.amber{color:var(--warn);border-color:var(--warn)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 16px;padding:14px 16px}
+  .kv b{display:block;font-family:var(--ui);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin-bottom:2px}
+  .kv span{font-size:13.5px}
+  .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:14px 16px}
+  .photos a{display:block;border:1px solid var(--line);border-radius:10px;overflow:hidden;text-decoration:none;color:inherit}
+  .photos img{width:100%;height:120px;object-fit:cover;display:block;background:var(--panel-2)}
+  .photos span{display:block;padding:5px 8px;font-size:12px}
+  .wit{padding:12px 16px;border-top:1px solid var(--line-soft)}
+  .wit img{max-width:260px;background:#fff;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+  .clock{padding:10px 16px;border-top:1px solid var(--line-soft);font-size:13.5px}
+  @media print{ header, .no-print, #list-card{display:none!important} main{padding:0!important} .card{border:0} }
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a class="on" href="incidents.html">Incidents</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar no-print">
+      <h1>Incidents</h1><span class="sp"></span>
+      <label>Show<select id="f-status"><option value="active">Open &amp; in review</option><option value="closed">Closed</option><option value="all">All</option></select></label>
+      <label>Year<select id="f-year"></select></label>
+      <button class="btn small" id="register">Accident register (CSV)</button>
+      <button class="btn small primary" id="new">New report</button>
+    </div>
+    <div class="card" id="list-card"><div id="list"><div class="empty">Loading…</div></div></div>
+    <div id="detail"></div>
+  </section>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dt = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+const yn = (v) => v === true ? 'Yes' : v === false ? 'No' : '—';
+const KIND = { collision: 'Collision', injury: 'Injury', cargo: 'Cargo damage', property: 'Property damage', other: 'Other' };
+const SHOT = { scene: 'Scene', our_vehicle: 'Our truck', other_vehicle: 'Other vehicle', plate: 'Their plate', insurance_card: 'Insurance card', license: 'Licence', cargo: 'Cargo', injury: 'Injury', police: 'Police', other: 'Other' };
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('safety', 'edit');
+let ROWS = [], CUR = null, DRIVERS = [], UNITS = [];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('safety')) return;
+  $('app').hidden = false;
+  const y = new Date().getFullYear();
+  $('f-year').innerHTML = [0, 1, 2, 3].map(k => `<option>${y - k}</option>`).join('');
+  $('new').hidden = !canEdit();
+  const [d, u] = await Promise.all([sb.from('drivers').select('id, full_name').order('full_name'), sb.from('equipment').select('id, unit_no, unit_type').order('unit_no')]);
+  DRIVERS = d.data || []; UNITS = u.data || [];
+  await loadList();
+  const q = new URLSearchParams(location.search).get('id'); if (q) show(q);
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('f-status').onchange = $('f-year').onchange = () => loadList();
+
+async function loadList() {
+  const y = $('f-year').value;
+  let q = sb.from('incident_list').select('*').gte('occurred_at', `${y}-01-01`).lt('occurred_at', `${+y + 1}-01-01`).order('occurred_at', { ascending: false });
+  if ($('f-status').value === 'active') q = q.neq('status', 'closed'); else if ($('f-status').value === 'closed') q = q.eq('status', 'closed');
+  const { data, error } = await q;
+  if (error) { $('list').innerHTML = `<div class="empty error">${esc(error.message)}${/incident_list|schema cache/.test(error.message) ? ' — run 55_incidents.sql in the SQL Editor.' : ''}</div>`; return; }
+  ROWS = data || [];
+  $('list').innerHTML = ROWS.length ? `<table class="t"><thead><tr><th>#</th><th>When</th><th>What</th><th>Driver</th><th>Truck</th><th>Load</th><th>DOT</th><th>Status</th><th>Photos / witnesses</th></tr></thead><tbody>${ROWS.map(r => `
+    <tr class="r ${CUR === r.id ? 'on' : ''}" data-id="${r.id}"><td class="mono"><b>${r.incident_no}</b></td><td>${dt(r.occurred_at)}</td><td>${KIND[r.kind]}</td><td>${esc(r.driver_name || '')}</td><td>${esc(r.truck_no || '')}${r.trailer_no ? ' / ' + esc(r.trailer_no) : ''}</td><td>${esc(r.load_no || '')}</td>
+      <td>${r.test_required ? '<span class="tag red">TEST</span>' : ''}${r.recordable ? '<span class="tag amber">RECORDABLE</span>' : ''}</td>
+      <td>${esc(r.status)}${r.claim_no ? ` <span class="mini">claim ${esc(r.claim_no)}</span>` : ''}</td><td>${r.photos} / ${r.witnesses}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">No incidents here.</div>';
+  document.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => show(tr.dataset.id));
+}
+
+async function show(id) {
+  CUR = id; history.replaceState(null, '', '?id=' + id);
+  document.querySelectorAll('tr[data-id]').forEach(tr => tr.classList.toggle('on', tr.dataset.id === id));
+  const [r, ph, wi] = await Promise.all([
+    sb.from('incident_list').select('*').eq('id', id).single(),
+    sb.from('incident_photos').select('*').eq('incident_id', id).order('created_at'),
+    sb.from('incident_witnesses').select('*').eq('incident_id', id).order('created_at'),
+  ]);
+  if (r.error) { $('detail').innerHTML = `<div class="card empty error">${esc(r.error.message)}</div>`; return; }
+  const i = r.data, photos = ph.data || [], wits = wi.data || [];
+  const paths = [...photos.map(p => p.path), ...wits.map(w => w.signature_path).filter(Boolean)];
+  const urls = {};
+  if (paths.length) { const s = await sb.storage.from('incident-photos').createSignedUrls(paths, 3600); (s.data || []).forEach(x => urls[x.path] = x.signedUrl); }
+  // the post-accident test clock
+  const hrs = (Date.now() - new Date(i.occurred_at)) / 3600000;
+  const clock = i.test_required ? `<div class="clock"><b class="error">Post-accident drug &amp; alcohol test likely required</b> (49 CFR 382.303) — ${hrs < 48 ? `${Math.floor(hrs)} h ${Math.round((hrs % 1) * 60)} min since the accident. ` : ''}
+      Alcohol: ${i.alcohol_test_at ? `<span class="ok">done ${dt(i.alcohol_test_at)}</span>` : hrs <= 2 ? 'due within 2 hours' : hrs <= 8 ? '<b class="error">past 2 hours — test now and record why it was late</b>' : '<b class="error">past 8 hours — record why no test was done</b>'}.
+      Drugs: ${i.drug_test_at ? `<span class="ok">done ${dt(i.drug_test_at)}</span>` : hrs <= 32 ? 'due within 32 hours' : '<b class="error">past 32 hours — record why no test was done</b>'}.</div>` : '';
+  const parties = (i.other_parties || []).map((p, k) => `<div class="kv"><b>Other vehicle ${k + 1}</b><span>${esc([p.name, p.phone].filter(Boolean).join(' · '))}<br>${esc([p.vehicle, p.plate].filter(Boolean).join(' · '))}<br>${esc([p.insurer, p.policy && 'policy ' + p.policy].filter(Boolean).join(' · '))}</span></div>`).join('');
+  const ed = canEdit() ? '' : ' disabled';
+  $('detail').innerHTML = `
+    <div class="card">
+      <header><h2>Incident #${i.incident_no} · ${KIND[i.kind]}</h2>${i.test_required ? '<span class="tag red">POST-ACCIDENT TEST</span>' : ''}${i.recordable ? '<span class="tag amber">DOT RECORDABLE</span>' : ''}<span class="sp"></span>
+        ${canEdit() ? '<button class="btn small no-print" id="d-edit">Correct report</button>' : ''}<button class="btn small no-print" onclick="window.print()">Print</button></header>
+      <div class="grid">
+        <div class="kv"><b>When</b><span>${dt(i.occurred_at)}</span></div>
+        <div class="kv"><b>Reported</b><span>${dt(i.reported_at)}</span></div>
+        <div class="kv"><b>Driver</b><span>${esc(i.driver_name || '—')}</span></div>
+        <div class="kv"><b>Truck / trailer</b><span>${esc(i.truck_no || '—')}${i.trailer_no ? ' / ' + esc(i.trailer_no) : ''}</span></div>
+        <div class="kv"><b>Load</b><span>${i.load_id ? `<a href="trip.html?load=${i.load_id}">${esc(i.load_no)}</a>` : '—'}</span></div>
+        <div class="kv"><b>Where</b><span>${esc(i.location_text || '')}${i.lat ? ` <a href="https://www.google.com/maps?q=${i.lat},${i.lng}" target="_blank" rel="noopener">map</a>` : ''}</span></div>
+        <div class="kv"><b>Anyone hurt</b><span>${yn(i.anyone_hurt)}</span></div>
+        <div class="kv"><b>Treated away from scene</b><span>${yn(i.treated_away)}</span></div>
+        <div class="kv"><b>Fatality</b><span>${yn(i.fatality)}</span></div>
+        <div class="kv"><b>Towed (disabling damage)</b><span>${yn(i.towed)}</span></div>
+        <div class="kv"><b>Police</b><span>${yn(i.police_called)}${i.police_dept ? ' · ' + esc(i.police_dept) : ''}${i.police_report_no ? ' · report ' + esc(i.police_report_no) : ''}</span></div>
+        <div class="kv"><b>Driver ticketed</b><span>${yn(i.driver_cited)}</span></div>
+        <div class="kv"><b>Hazmat released</b><span>${yn(i.hazmat_released)}</span></div>
+        <div class="kv"><b>Driver hurt</b><span>${yn(i.driver_injured)}</span></div>
+        ${i.injury_details ? `<div class="kv" style="grid-column:1/-1"><b>Injuries</b><span>${esc(i.injury_details)}</span></div>` : ''}
+        <div class="kv" style="grid-column:1/-1"><b>Driver's account</b><span>${esc(i.description || '—')}</span></div>
+        ${parties}
+      </div>
+      ${clock}
+    </div>
+
+    <div class="card">
+      <header><h2>Photos (${photos.length})</h2></header>
+      ${photos.length ? `<div class="photos">${photos.map(p => `<a href="${urls[p.path] || '#'}" target="_blank" rel="noopener"><img src="${urls[p.path] || ''}" alt="${esc(SHOT[p.kind] || p.kind)}"><span>${esc(SHOT[p.kind] || p.kind)} · ${dt(p.created_at)}</span></a>`).join('')}</div>` : '<div class="empty">No photos.</div>'}
+    </div>
+
+    <div class="card">
+      <header><h2>Witness cards (${wits.length})</h2></header>
+      ${wits.map(w => `<div class="wit"><b>${esc(w.name)}</b> <span class="mini">${esc([w.phone, w.email].filter(Boolean).join(' · '))} · ${dt(w.created_at)}</span>
+        <div style="margin-top:4px">${esc(w.statement || '')}</div>
+        <div class="mini" style="margin-top:4px">Truck driver at fault: <b>${esc({ no: 'No', yes: 'Yes', unsure: 'Not sure' }[w.driver_at_fault] || '—')}</b></div>
+        ${w.signature_path && urls[w.signature_path] ? `<img src="${urls[w.signature_path]}" alt="Signature of ${esc(w.name)}">` : '<div class="mini">No signature</div>'}</div>`).join('') || '<div class="empty">No witness cards.</div>'}
+    </div>
+
+    <div class="card">
+      <header><h2>Office</h2></header>
+      <div class="grid">
+        <label>Status<select id="o-status"${ed}>${['open', 'review', 'closed'].map(s => `<option value="${s}"${i.status === s ? ' selected' : ''}>${{ open: 'Open', review: 'In review', closed: 'Closed' }[s]}</option>`).join('')}</select></label>
+        <label>Preventable?<select id="o-prev"${ed}><option value="">—</option>${[['pending', 'Pending'], ['preventable', 'Preventable'], ['non_preventable', 'Non-preventable']].map(([v, t]) => `<option value="${v}"${i.preventable === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label>Claim #<input id="o-claim" value="${esc(i.claim_no || '')}"${ed}></label>
+        <label>Insurer notified<input id="o-ins" type="datetime-local" value="${i.insurer_notified_at ? new Date(new Date(i.insurer_notified_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"${ed}></label>
+        <label>Estimated cost $<input id="o-cost" type="number" step="0.01" value="${i.est_cost ?? ''}"${ed}></label>
+        ${i.test_required || i.alcohol_test_at || i.drug_test_at ? `
+        <label>Alcohol test done<input id="o-alc" type="datetime-local" value="${i.alcohol_test_at ? new Date(new Date(i.alcohol_test_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"${ed}></label>
+        <label>Drug test done<input id="o-drug" type="datetime-local" value="${i.drug_test_at ? new Date(new Date(i.drug_test_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"${ed}></label>
+        <label style="grid-column:1/-1">Test notes (why late or not done)<input id="o-tnote" value="${esc(i.test_note || '')}"${ed}></label>` : ''}
+        <label style="grid-column:1/-1">Notes<textarea id="o-notes"${ed}>${esc(i.office_notes || '')}</textarea></label>
+      </div>
+      ${canEdit() ? '<div style="padding:0 16px 14px" class="no-print"><button class="btn primary" id="o-save">Save</button> <span class="mini" id="o-msg"></span></div>' : ''}
+    </div>`;
+  if ($('d-edit')) $('d-edit').onclick = () => reportForm(i);
+  if ($('o-save')) $('o-save').onclick = async () => {
+    const ts = (id) => $(id) && $(id).value ? new Date($(id).value).toISOString() : null;
+    const upd = { status: $('o-status').value, preventable: $('o-prev').value || null, claim_no: $('o-claim').value.trim() || null,
+      insurer_notified_at: ts('o-ins'), est_cost: $('o-cost').value === '' ? null : +$('o-cost').value, office_notes: $('o-notes').value.trim() || null };
+    if ($('o-alc')) { upd.alcohol_test_at = ts('o-alc'); upd.drug_test_at = ts('o-drug'); upd.test_note = $('o-tnote').value.trim() || null; }
+    const { error } = await sb.from('incidents').update(upd).eq('id', id);
+    if (error) { $('o-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    await loadList(); await show(id); $('o-msg').innerHTML = '<span class="ok">Saved.</span>';
+  };
+  $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// The office takes a report by phone, or corrects one
+const QS = [['anyone_hurt', 'Anyone hurt'], ['treated_away', 'Treated away from the scene'], ['fatality', 'Fatality'], ['towed', 'Towed (disabling damage)'],
+  ['police_called', 'Police called'], ['driver_cited', 'Driver ticketed'], ['hazmat_released', 'Hazmat released'], ['driver_injured', 'Driver hurt']];
+const local = (t) => t ? new Date(new Date(t) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+function reportForm(i) {
+  i = i || { kind: 'collision', occurred_at: new Date().toISOString(), other_parties: [] };
+  const opt = (list, v, blank) => `<option value="">${blank}</option>` + list.map(x => `<option value="${x.id}"${x.id === v ? ' selected' : ''}>${esc(x.unit_no || x.full_name)}</option>`).join('');
+  $('detail').innerHTML = `<div class="card"><header><h2>${i.id ? `Correct report #${i.incident_no}` : 'New report (taken by phone)'}</h2></header>
+    <div class="grid">
+      <label>What happened<select id="r-kind">${Object.entries(KIND).map(([k, t]) => `<option value="${k}"${i.kind === k ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label>When<input id="r-when" type="datetime-local" value="${local(i.occurred_at)}"></label>
+      <label>Driver<select id="r-driver">${opt(DRIVERS, i.driver_id, '—')}</select></label>
+      <label>Truck<select id="r-truck">${opt(UNITS.filter(u => u.unit_type !== 'trailer'), i.truck_id, '—')}</select></label>
+      <label>Trailer<select id="r-trailer">${opt(UNITS.filter(u => u.unit_type === 'trailer'), i.trailer_id, '—')}</select></label>
+      <label style="grid-column:span 2">Where<input id="r-where" value="${esc(i.location_text || '')}"></label>
+      ${QS.map(([k, t]) => `<label>${t}<select data-q="${k}"><option value="">—</option><option value="true"${i[k] === true ? ' selected' : ''}>Yes</option><option value="false"${i[k] === false ? ' selected' : ''}>No</option></select></label>`).join('')}
+      <label>Police department<input id="r-dept" value="${esc(i.police_dept || '')}"></label>
+      <label>Police report #<input id="r-rep" value="${esc(i.police_report_no || '')}"></label>
+      <label style="grid-column:1/-1">Injuries<input id="r-inj" value="${esc(i.injury_details || '')}"></label>
+      <label style="grid-column:1/-1">What happened, in the driver's words<textarea id="r-desc">${esc(i.description || '')}</textarea></label>
+    </div>
+    <div style="padding:0 16px 14px"><button class="btn primary" id="r-save">${i.id ? 'Save changes' : 'Create report'}</button> <button class="btn" id="r-cancel">Cancel</button> <span class="mini" id="r-msg"></span></div></div>`;
+  $('r-cancel').onclick = () => i.id ? show(i.id) : ($('detail').innerHTML = '');
+  $('r-save').onclick = async () => {
+    const row = { kind: $('r-kind').value, occurred_at: $('r-when').value ? new Date($('r-when').value).toISOString() : new Date().toISOString(),
+      driver_id: $('r-driver').value || null, truck_id: $('r-truck').value || null, trailer_id: $('r-trailer').value || null,
+      location_text: $('r-where').value.trim() || null, police_dept: $('r-dept').value.trim() || null, police_report_no: $('r-rep').value.trim() || null,
+      injury_details: $('r-inj').value.trim() || null, description: $('r-desc').value.trim() || null };
+    document.querySelectorAll('[data-q]').forEach(sel => row[sel.dataset.q] = sel.value === '' ? null : sel.value === 'true');
+    const r = i.id ? await sb.from('incidents').update(row).eq('id', i.id).select('id').single() : await sb.from('incidents').insert(row).select('id').single();
+    if (r.error) { $('r-msg').innerHTML = `<span class="error">${esc(r.error.message)}</span>`; return; }
+    await loadList(); show(r.data.id);
+  };
+}
+$('new').onclick = () => reportForm(null);
+
+// The accident register (49 CFR 390.15): recordable accidents, kept 3 years
+$('register').onclick = async () => {
+  const since = new Date(); since.setFullYear(since.getFullYear() - 3);
+  const { data, error } = await sb.from('incident_list').select('*').gte('occurred_at', since.toISOString()).order('occurred_at');
+  if (error) return alert(error.message);
+  const rows = (data || []).filter(r => r.recordable);
+  const cols = [['Date', r => new Date(r.occurred_at).toLocaleDateString()], ['Location', r => r.location_text || (r.lat ? `${r.lat}, ${r.lng}` : '')],
+    ['Driver', r => r.driver_name || ''], ['Injuries', r => r.treated_away ? (r.injury_details || 'Yes') : 'No'], ['Fatalities', r => r.fatality ? 'Yes' : 'No'],
+    ['Hazardous materials released', r => r.hazmat_released ? 'Yes' : 'No'], ['Towed', r => r.towed ? 'Yes' : 'No'], ['Incident #', r => r.incident_no],
+    ['Truck', r => r.truck_no || ''], ['Police report #', r => r.police_report_no || ''], ['Post-accident test required', r => r.test_required ? 'Yes' : 'No']];
+  const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const text = [cols.map(c => c[0]).join(','), ...rows.map(r => cols.map(c => q(c[1](r))).join(','))].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  a.download = `accident-register-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
+};
+
+start();
+</script>
+</body>
+</html>

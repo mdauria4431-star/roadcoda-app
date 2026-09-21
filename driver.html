@@ -104,6 +104,24 @@
   .bub .meta{font-size:13px;color:var(--muted);margin-top:3px}
   .quick{display:flex;gap:8px;flex-wrap:wrap}
   .quick .btn{flex:1 1 140px}
+  /* Accident / injury report */
+  .btn.red{background:#b3261e;color:#fff;border-color:#b3261e}
+  .inc-sec{display:flex;flex-direction:column;gap:10px}
+  .yn{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)}
+  .yn span{flex:1 1 200px;font-size:17px}
+  .yn .seg{display:flex;gap:6px}
+  .yn .seg button{min-width:70px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:16px}
+  .yn .seg button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .kinds{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .kinds button{min-height:64px;font-size:17px;font-weight:700;border-radius:12px;border:2px solid var(--line);background:var(--surface)}
+  .kinds button.on{border-color:var(--accent);background:#eef6f6}
+  .alertbox{padding:12px 14px;border-radius:12px;font-size:16px;line-height:1.4}
+  .alertbox.red{background:#fdecea;border:2px solid #b3261e;color:#7a1712}
+  .alertbox.amber{background:#fff4e0;border:2px solid #b26a00;color:#6b4000}
+  .party{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px}
+  .shots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .shots label.btn{justify-content:center;min-height:52px;cursor:pointer}
+  canvas.sig{width:100%;height:170px;border:2px dashed var(--line);border-radius:10px;background:#fff;touch-action:none}
 </style>
 </head>
 <body>
@@ -193,6 +211,7 @@
   <section id="app" hidden style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;align-items:center;gap:10px">
       <h1 style="flex-grow:1">Today's stops</h1>
+      <button class="btn red" id="inc-btn" style="min-height:44px">Report accident / injury</button>
       <button class="btn" id="msg-btn" style="min-height:44px">Messages<span class="badge-n" id="msg-n" hidden></span></button>
       <button class="btn" id="pay-btn" style="min-height:44px">My pay</button>
       <button class="btn" id="refresh" style="min-height:44px">Refresh</button>
@@ -229,6 +248,75 @@
     <div class="quick" id="quick"></div>
     <div class="row" style="margin-top:0"><input id="msg-text" maxlength="1000" placeholder="Type a message" autocomplete="off" style="flex:1 1 200px"><button class="btn primary" id="msg-send" style="flex:0 0 auto">Send</button></div>
     <div class="meta">Messages go to your dispatcher. While the truck is moving the app is locked — messages wait and chime; read and reply when stopped.</div>
+  </section>
+
+  <section id="inc-view" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h1 style="flex-grow:1" id="inc-title">Accident / injury</h1>
+      <button class="btn" id="inc-back" style="min-height:44px">Back to stops</button>
+    </div>
+    <div class="card inc-sec" id="inc-safety">
+      <b style="font-size:19px">Safety first</b>
+      <div class="row" style="margin-top:0"><a class="btn red" href="tel:911" style="min-height:52px;flex:1;justify-content:center">Call 911</a><a class="btn" id="inc-call" href="#" style="min-height:52px;flex:1;justify-content:center">Call dispatch</a></div>
+      <div class="meta" style="font-size:15px;line-height:1.5">If anyone is hurt, call 911 first. Hazards on, triangles out. Stay at the scene. Be polite — don't argue, don't say it was your fault, and don't discuss it with anyone but police and your company. Take photos before anything is moved.</div>
+    </div>
+    <div class="card inc-sec">
+      <b style="font-size:18px">What happened?</b>
+      <div class="kinds" id="inc-kinds">
+        <button data-k="collision">Collision</button><button data-k="injury">Someone hurt (not a crash)</button>
+        <button data-k="cargo">Cargo damage</button><button data-k="property">Hit property (dock, pole, gate)</button>
+        <button data-k="other">Something else</button>
+      </div>
+      <div class="meta" id="inc-status">Picking one starts your report — it's saved with the time and your location straight away.</div>
+    </div>
+    <div id="inc-form" hidden style="display:flex;flex-direction:column;gap:14px">
+      <div id="inc-alerts"></div>
+      <div class="card inc-sec">
+        <b style="font-size:18px">Answer what you can</b>
+        <div id="inc-yn"></div>
+        <label>Injuries — who, how, where they were taken<textarea id="inc-injury" rows="2"></textarea></label>
+        <div class="row" style="margin-top:0"><label style="flex:1">Police department<input id="inc-dept"></label><label style="flex:1">Police report #<input id="inc-rep"></label></div>
+      </div>
+      <div class="card inc-sec">
+        <b style="font-size:18px">Where</b>
+        <input id="inc-where" placeholder="Road, cross street, town">
+        <div class="meta" id="inc-gps"></div>
+      </div>
+      <div class="card inc-sec">
+        <b style="font-size:18px">Other vehicles and drivers</b>
+        <div id="inc-parties"></div>
+        <button class="btn" id="inc-addparty" style="min-height:44px">Add another vehicle</button>
+      </div>
+      <div class="card inc-sec">
+        <b style="font-size:18px">What happened, in your words</b>
+        <textarea id="inc-desc" rows="4" placeholder="Where you were going, what the other vehicle did, what you did"></textarea>
+      </div>
+      <div class="card inc-sec">
+        <b style="font-size:18px">Photos <span class="meta" id="inc-nphotos"></span></b>
+        <div class="shots" id="inc-shots"></div>
+      </div>
+      <div class="card inc-sec">
+        <b style="font-size:18px">Witnesses <span class="meta" id="inc-nwit"></span></b>
+        <div class="meta" style="font-size:15px">Hand your phone to anyone who saw it. They write what happened and sign with a finger.</div>
+        <button class="btn primary" id="inc-witness" style="min-height:52px">Witness card</button>
+      </div>
+      <button class="btn primary" id="inc-save" style="min-height:56px;font-size:18px">Save report</button>
+      <div class="meta" id="inc-saved"></div>
+    </div>
+    <div class="card inc-sec" id="inc-recent" hidden></div>
+  </section>
+
+  <section id="wit-view" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Witness card</h1>
+    <div class="meta" style="font-size:16px">Thank you for helping. Please tell us what you saw. Your details go only to the trucking company and its insurer.</div>
+    <label>Your name<input id="w-name" autocomplete="off"></label>
+    <label>Phone<input id="w-phone" type="tel" autocomplete="off"></label>
+    <label>Email (optional)<input id="w-email" type="email" autocomplete="off"></label>
+    <label>What did you see?<textarea id="w-statement" rows="5"></textarea></label>
+    <div class="yn" style="border:0"><span>Was the truck driver at fault?</span><div class="seg" id="w-fault"><button data-v="no">No</button><button data-v="yes">Yes</button><button data-v="unsure">Not sure</button></div></div>
+    <div><b>Sign here</b> <button class="btn" id="w-clear" style="min-height:34px;margin-left:8px">Clear</button><canvas class="sig" id="w-sig"></canvas></div>
+    <button class="btn primary" id="w-save" style="min-height:56px;font-size:18px">Done — give the phone back</button>
+    <button class="btn" id="w-cancel" style="min-height:44px">Cancel</button>
   </section>
 
   <section id="pay-view" hidden style="display:flex;flex-direction:column;gap:14px">
@@ -460,7 +548,7 @@ $('pair-btn').onclick = async () => {
   $('pair-btn').disabled = false;
 };
 $('paircode').onkeydown = (e) => { if (e.key === 'Enter') $('pair-btn').click(); };
-function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'device-view', 'app', 'pay-view', 'msg-view'].forEach(id => $(id).hidden = true); }
+function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'device-view', 'app', 'pay-view', 'msg-view', 'inc-view', 'wit-view'].forEach(id => $(id).hidden = true); }
 async function fnCall(body) {
   const { data, error } = await sb.functions.invoke('driver-login', { body });
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
@@ -837,6 +925,144 @@ setInterval(() => {
   const openForm = [...document.querySelectorAll('details')].some(d => d.open) || [...document.querySelectorAll('.issue')].some(d => !d.hidden);
   if (!busy && !openForm && $('scanner').hidden && !$('app').hidden) loadStops();
 }, 60000);
+// ---------- Accident / injury report ----------
+// Picking what happened creates the report at once (time + GPS), so it's on
+// record even if the phone dies. Everything after that saves as it's answered.
+const YN = [
+  ['anyone_hurt', 'Is anyone hurt?'],
+  ['treated_away', 'Was anyone taken for medical treatment (ambulance, hospital, urgent care)?'],
+  ['fatality', 'Was anyone killed?'],
+  ['towed', 'Does any vehicle have to be towed away (can\'t be driven)?'],
+  ['police_called', 'Did police come or were they called?'],
+  ['driver_cited', 'Did police give YOU a ticket?'],
+  ['hazmat_released', 'Did any hazardous material spill?'],
+  ['driver_injured', 'Are YOU hurt?'],
+];
+const SHOTS = [['scene', 'The scene'], ['our_vehicle', 'Our truck damage'], ['other_vehicle', 'Other vehicle'], ['plate', 'Their plate'],
+  ['insurance_card', 'Their insurance card'], ['license', 'Their licence'], ['cargo', 'Cargo'], ['police', 'Police / report card'], ['injury', 'Injury'], ['other', 'Anything else']];
+let INC = null, INCF = {}, incTimer = null;
+function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
+async function openIncident(existing) {
+  incShow('inc-view');
+  $('inc-call').href = officePhone ? 'tel:' + officePhone.replace(/[^\d+]/g, '') : '#';
+  $('inc-call').hidden = !officePhone;
+  INC = existing || null; INCF = existing ? { ...existing.form } : { other_parties: [] };
+  drawIncident();
+  if (!existing) {
+    const r = await sb.rpc('driver_incidents');
+    const rec = (r.data || []).filter(x => x.editable);
+    $('inc-recent').hidden = !rec.length;
+    $('inc-recent').innerHTML = rec.length ? '<b>Your recent reports</b>' + rec.map(x => `<button class="btn" data-open="${x.id}" style="min-height:48px;justify-content:flex-start">#${x.incident_no} · ${esc(x.kind)} · ${new Date(x.occurred_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} · ${x.photos} photos, ${x.witnesses} witnesses</button>`).join('') : '';
+    document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openIncident((r.data || []).find(x => x.id === b.dataset.open)));
+  } else $('inc-recent').hidden = true;
+}
+function drawIncident() {
+  document.querySelectorAll('#inc-kinds button').forEach(b => b.classList.toggle('on', INCF.kind === b.dataset.k));
+  $('inc-form').hidden = !INC;
+  $('inc-title').textContent = INC ? `Report #${INC.incident_no}` : 'Accident / injury';
+  if (!INC) return;
+  $('inc-status').textContent = `Saved as report #${INC.incident_no} — the office has been told.`;
+  $('inc-yn').innerHTML = YN.map(([k, q]) => `<div class="yn"><span>${q}</span><div class="seg"><button data-yn="${k}" data-v="true" class="${INCF[k] === true ? 'on' : ''}">Yes</button><button data-yn="${k}" data-v="false" class="${INCF[k] === false ? 'on' : ''}">No</button></div></div>`).join('');
+  document.querySelectorAll('[data-yn]').forEach(b => b.onclick = () => { INCF[b.dataset.yn] = b.dataset.v === 'true'; drawIncident(); saveIncident(); });
+  $('inc-injury').value = INCF.injury_details || ''; $('inc-dept').value = INCF.police_dept || ''; $('inc-rep').value = INCF.police_report_no || '';
+  $('inc-where').value = INCF.location_text || ''; $('inc-desc').value = INCF.description || '';
+  $('inc-gps').textContent = INCF.lat ? `GPS ${Number(INCF.lat).toFixed(5)}, ${Number(INCF.lng).toFixed(5)}` : 'No GPS fix — type the location above.';
+  drawParties();
+  $('inc-shots').innerHTML = SHOTS.map(([k, t]) => `<label class="btn">${t}<input type="file" accept="image/*" capture="environment" data-shot="${k}" hidden></label>`).join('');
+  document.querySelectorAll('[data-shot]').forEach(inp => inp.onchange = () => { if (inp.files[0]) incPhoto(inp.dataset.shot, inp.files[0], inp.parentElement); });
+  $('inc-nphotos').textContent = INC.photos ? `(${INC.photos} saved)` : '';
+  $('inc-nwit').textContent = INC.witnesses ? `(${INC.witnesses} saved)` : '';
+  // the rules, from the answers
+  const test = INCF.fatality || (INCF.driver_cited && (INCF.treated_away || INCF.towed));
+  const rec = INCF.fatality || INCF.treated_away || INCF.towed;
+  $('inc-alerts').innerHTML = (test ? `<div class="alertbox red"><b>Call dispatch now.</b> A DOT post-accident drug and alcohol test is likely required. The alcohol test should be within 2 hours, the drug test within 32 hours. Don't drink anything alcoholic.</div>` : '')
+    + (rec && !test ? `<div class="alertbox amber"><b>This is a DOT-recordable accident.</b> Make sure dispatch knows, get the police report number, and take photos of everything.</div>` : '');
+}
+function drawParties() {
+  const ps = INCF.other_parties || [];
+  const F = [['name', 'Driver name'], ['phone', 'Phone'], ['vehicle', 'Vehicle (year, make, model)'], ['plate', 'Plate & state'], ['insurer', 'Insurance company'], ['policy', 'Policy #']];
+  $('inc-parties').innerHTML = ps.map((p, i) => `<div class="party"><b>Vehicle ${i + 1}</b>${F.map(([k, t]) => `<input data-p="${i}" data-f="${k}" placeholder="${t}" value="${esc(p[k] || '')}">`).join('')}</div>`).join('') || '<div class="meta">None added. Tip: a photo of their insurance card and licence does most of this.</div>';
+  document.querySelectorAll('[data-p]').forEach(inp => inp.oninput = () => { INCF.other_parties[+inp.dataset.p][inp.dataset.f] = inp.value; saveSoon(); });
+}
+$('inc-addparty').onclick = () => { (INCF.other_parties = INCF.other_parties || []).push({}); drawParties(); };
+[['inc-injury', 'injury_details'], ['inc-dept', 'police_dept'], ['inc-rep', 'police_report_no'], ['inc-where', 'location_text'], ['inc-desc', 'description']]
+  .forEach(([id, k]) => $(id).oninput = () => { INCF[k] = $(id).value; saveSoon(); });
+document.querySelectorAll('#inc-kinds button').forEach(b => b.onclick = async () => {
+  INCF.kind = b.dataset.k; drawIncident();
+  if (!INC) {
+    const pos = lastPos || await new Promise(res => navigator.geolocation ? navigator.geolocation.getCurrentPosition(p => res(p.coords), () => res(null), { timeout: 8000, enableHighAccuracy: true }) : res(null));
+    if (pos) { INCF.lat = pos.latitude; INCF.lng = pos.longitude; }
+    INCF.occurred_at = new Date().toISOString();
+  }
+  saveIncident();
+});
+const saveSoon = () => { clearTimeout(incTimer); incTimer = setTimeout(saveIncident, 1200); };
+async function saveIncident() {
+  clearTimeout(incTimer);
+  const { data, error } = await sb.rpc('driver_report_incident', { p: INCF, p_incident: INC ? INC.id : null });
+  if (error) { $('inc-saved').innerHTML = `<span style="color:var(--late)">Not saved: ${esc(error.message)} — keep the app open and try again.</span>`; return; }
+  const r = (data || [])[0];
+  if (!INC) INC = { id: r.id, incident_no: r.incident_no, photos: 0, witnesses: 0 };
+  $('inc-saved').textContent = 'Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  drawIncident();
+}
+$('inc-save').onclick = async () => { await saveIncident(); alert(`Report #${INC.incident_no} saved. The office has it. Add photos or witnesses any time in the next 72 hours from this screen.`); };
+async function incPhoto(kind, file, label) {
+  const was = label.firstChild.textContent; label.firstChild.textContent = 'Uploading…';
+  try {
+    const blob = await shrink(file);
+    const path = `${me.carrier_id}/${INC.id}/${kind}-${Date.now()}.jpg`;
+    const up = await sb.storage.from('incident-photos').upload(path, blob, { contentType: 'image/jpeg' });
+    if (up.error) throw up.error;
+    const { error } = await sb.rpc('driver_incident_photo', { p_incident: INC.id, p_path: path, p_kind: kind });
+    if (error) throw error;
+    INC.photos = (INC.photos || 0) + 1; label.firstChild.textContent = was + ' ✓';
+    $('inc-nphotos').textContent = `(${INC.photos} saved)`;
+  } catch (e) { label.firstChild.textContent = was; alert('Photo not saved: ' + (e.message || e)); }
+}
+$('inc-btn').onclick = () => openIncident();
+$('inc-back').onclick = () => { if (INC) saveIncident(); incShow('app'); loadStops(); };
+
+// Witness card: the witness writes and signs on the driver's phone
+let sigDrawn = false, witFault = null;
+function sigSetup() {
+  const c = $('w-sig'), r = c.getBoundingClientRect(); c.width = r.width * 2 || 600; c.height = r.height * 2 || 340;
+  const g = c.getContext && c.getContext('2d'); if (!g) return; g.lineWidth = 5; g.lineCap = 'round'; g.strokeStyle = '#111'; g.clearRect(0, 0, c.width, c.height); sigDrawn = false;
+  let down = false; const at = (e) => { const b = c.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [(t.clientX - b.left) * c.width / b.width, (t.clientY - b.top) * c.height / b.height]; };
+  c.onpointerdown = (e) => { down = true; const [x, y] = at(e); g.beginPath(); g.moveTo(x, y); };
+  c.onpointermove = (e) => { if (!down) return; const [x, y] = at(e); g.lineTo(x, y); g.stroke(); sigDrawn = true; };
+  c.onpointerup = c.onpointerleave = () => { down = false; };
+}
+$('inc-witness').onclick = () => {
+  if (!INC) return;
+  ['w-name', 'w-phone', 'w-email', 'w-statement'].forEach(id => $(id).value = ''); witFault = null;
+  document.querySelectorAll('#w-fault button').forEach(b => b.classList.remove('on'));
+  incShow('wit-view'); setTimeout(sigSetup, 50);
+};
+document.querySelectorAll('#w-fault button').forEach(b => b.onclick = () => { witFault = b.dataset.v; document.querySelectorAll('#w-fault button').forEach(x => x.classList.toggle('on', x === b)); });
+$('w-clear').onclick = sigSetup;
+$('w-cancel').onclick = () => incShow('inc-view');
+$('w-save').onclick = async () => {
+  if (!$('w-name').value.trim()) { alert('Please write your name.'); return; }
+  $('w-save').disabled = true;
+  try {
+    let sig = null;
+    if (sigDrawn) {
+      const blob = await new Promise(r => $('w-sig').toBlob(r, 'image/png'));
+      sig = `${me.carrier_id}/${INC.id}/signature-${Date.now()}.png`;
+      const up = await sb.storage.from('incident-photos').upload(sig, blob, { contentType: 'image/png' });
+      if (up.error) throw up.error;
+    }
+    const { error } = await sb.rpc('driver_incident_witness', { p_incident: INC.id, p: { name: $('w-name').value, phone: $('w-phone').value, email: $('w-email').value,
+      statement: $('w-statement').value, driver_at_fault: witFault || '', signature_path: sig } });
+    if (error) throw error;
+    INC.witnesses = (INC.witnesses || 0) + 1;
+    incShow('inc-view'); drawIncident();
+    alert('Witness card saved. Thank them — and take their phone number if they didn\'t write one.');
+  } catch (e) { alert('Not saved: ' + (e.message || e)); }
+  $('w-save').disabled = false;
+};
+
 // ---------- Messages ----------
 // The phone asks for messages every 15 seconds. A new one from dispatch
 // chimes; while the truck is moving it WAITS (the app is locked anyway) and
