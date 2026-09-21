@@ -3,174 +3,181 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RoadCoda · Dispatch</title>
+<title>Dispatch · RoadCoda</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
 <meta name="theme-color" content="#070c14">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
-<!-- Supabase JavaScript library -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <script src="new-customer.js"></script>
 <style>
-  :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;
-        --late-bg:#fdf1ef;--late-line:#f0c9c2;--late:#8f2318;--ok-bg:#e3f1e6;--ok:#1e6b34;--risk-bg:#fbeed8;--risk:#8a4b08;--info-bg:#e3edf6;--info:#1d4e89}
   *{box-sizing:border-box}
   [hidden]{display:none!important}
-  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-  body{margin:0;background:var(--ground);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
-  header{background:var(--ink);color:#fff;display:flex;align-items:center;gap:16px;padding:14px 24px;flex-wrap:wrap}
-  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px}.brand span{color:#5fc2c7}
-  .who{margin-left:auto;font-size:14px;color:#d9d5cc}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
   button{font-family:inherit;cursor:pointer}
-  .btn{height:40px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600}
-  .btn.primary{background:var(--accent);color:#fff;border:none}
-  .btn.small{height:32px;padding:0 12px;font-size:13px}
-  main{max-width:1280px;margin:0 auto;padding:24px}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;text-decoration:none}
+  main{padding:14px 16px 28px!important}
   .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px}
-  label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600}
-  input{height:44px;border:1px solid var(--line);border-radius:8px;padding:0 12px;font-size:15px;font-family:inherit}
-  .error{color:var(--late);font-size:14px}
-  .toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:16px}
-  .toolbar h1{font-family:Archivo,sans-serif;font-size:28px;margin:0;flex-grow:1}
-  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
-  .kpi small{color:var(--muted);font-size:13px}.kpi b{display:block;font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:26px;margin-top:4px}
-  .kpi.late{background:var(--late-bg);border-color:var(--late-line)}.kpi.late small,.kpi.late b{color:var(--late)}
-  tr.click{cursor:pointer}tr.click:hover{background:#faf8f4}
-  .banner{display:flex;align-items:center;gap:12px;background:var(--late-bg);border:1px solid var(--late-line);border-radius:10px;padding:10px 14px;margin-bottom:10px;color:#6e1a12;flex-wrap:wrap}
-  .banner div{flex-grow:1}
-  .tablewrap{overflow-x:auto}
-  table{width:100%;border-collapse:collapse;min-width:760px}
-  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 6px;border-bottom:1px solid var(--line)}
-  td{padding:10px 6px;border-bottom:1px solid #efebe4;vertical-align:top}
-  .mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
-  .num{text-align:right}
-  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
-  .p-late{background:#fbe0db;color:var(--late)}.p-ok{background:var(--ok-bg);color:var(--ok)}.p-risk{background:var(--risk-bg);color:var(--risk)}
-  .p-info{background:var(--info-bg);color:var(--info)}.p-done{background:#ecebe8;color:#45423d}
-  h2{font-family:Archivo,sans-serif;font-size:18px;margin:0 0 10px}
-  .grid2{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:16px}
-  .note{font-size:13px;color:var(--muted);margin-top:8px}
-  .stoprow{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #efebe4;flex-wrap:wrap}
-  @media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2{grid-template-columns:1fr}}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600}
+  input{height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-family:inherit;color:var(--ink)}
+
+  /* One compact toolbar instead of a title block and four KPI cards —
+     every pixel of height goes to rows. */
+  .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;background:none!important}
+  .bar h1{margin:0;font-size:19px}
+  .bar .cnt{display:flex;gap:12px;font-size:12.5px;color:var(--muted)}
+  .bar .cnt b{font-family:var(--mono);font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+  .bar .cnt .red b{color:var(--late)}
+  .bar .sp{flex:1}
+  .bar input[type=date]{height:32px;font-family:var(--mono);font-size:12.5px}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .boardwrap{overflow-x:auto}
+  table.board{width:100%;border-collapse:collapse;font-size:13px;min-width:1020px}
+  .board thead th{position:sticky;top:0;z-index:2;font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 9px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .board tbody tr{height:28px;border-bottom:1px solid var(--line-soft);cursor:pointer}
+  .board tbody tr:hover{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+  .board tbody tr:focus-visible{outline:2px solid var(--accent-hi);outline-offset:-2px}
+  .board td{padding:0 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:235px;border-bottom:0}
+  .board tr.grp{cursor:default;height:23px}
+  .board tr.grp:hover{background:none}
+  .board tr.grp td{background:var(--panel-2);border-bottom:1px solid var(--line);font-family:var(--ui);font-size:9.5px;font-weight:600;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+  .board tr.grp.red td{color:var(--late)}
+  .board tr.grp.amber td{color:var(--warn)}
+  .board tr.grp .gnote{font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink-3);font-family:'IBM Plex Sans',sans-serif;font-size:11px;margin-left:6px}
+  .n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px}
+  .dim{color:var(--muted)}
+  .none{color:var(--ink-3);opacity:.5}
+  .old{font-family:var(--mono);font-size:10.5px;color:var(--warn);margin-left:5px}
+  /* Multi-stop: the row shows the stop being worked, never every consignee */
+  .ofn{display:inline-block;min-width:31px;margin-right:7px;padding:0 5px;border-radius:5px;font-family:var(--mono);font-size:11px;font-weight:600;
+    text-align:center;color:var(--accent-hi);background:var(--accent-deep);border:1px solid color-mix(in srgb,var(--accent) 38%,transparent)}
+  tr[data-s="done"] .ofn{color:var(--ink-3);background:var(--panel-2);border-color:var(--line)}
+  .ofn.solo{visibility:hidden}
+  /* Status is a 3px stripe, not a badge — that's what buys the width */
+  td.st{position:relative;padding-left:16px!important;font-size:12px;color:var(--muted)}
+  td.st::before{content:"";position:absolute;left:5px;top:50%;transform:translateY(-50%);width:3px;height:14px;border-radius:2px;background:var(--ink-3)}
+  tr[data-s="rolling"] td.st::before{background:var(--ok)}
+  /* The one glow left in the app: signal, not decoration */
+  tr[data-s="late"] td.st::before{background:var(--late);box-shadow:0 0 7px color-mix(in srgb,var(--late) 65%,transparent)}
+  tr[data-s="late"] td.st{color:var(--late)}
+  tr[data-s="risk"] td.st::before{background:var(--warn)}
+  tr[data-s="risk"] td.st{color:var(--warn)}
+  tr[data-s="done"] td.st::before{background:var(--accent)}
+  .flag{display:inline-block;min-width:23px;padding:0 3px;height:16px;line-height:15px;text-align:center;border-radius:5px;font-family:var(--ui);
+    font-size:9.5px;font-weight:700;letter-spacing:.03em;margin-right:3px;border:1px solid var(--line);color:var(--ink-3);background:var(--panel-2)}
+  .flag.on{border-color:color-mix(in srgb,var(--late) 55%,var(--line));color:var(--late);background:color-mix(in srgb,var(--late) 14%,transparent)}
+  .flag.warn{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+  .empty{padding:26px 16px;color:var(--muted);text-align:center}
+
+  .legend{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:9px 2px 0}
+  .legend .lgl{font-family:var(--ui);font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+  .legend .li{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+  .foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 2px 0;font-size:12px;color:var(--ink-3)}
+  .closed tr{opacity:.72}
+  .error{color:var(--late);padding:10px 14px}
+  #nc-done{margin-bottom:8px;padding:8px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 </style>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header>
   <div class="brand">Road<span>Coda</span></div>
-  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html" style="color:#d9d5cc">Home</a><a href="dispatch.html" style="color:#fff">Dispatch</a><a href="loads.html" style="color:#d9d5cc">Loads</a><a href="customers.html" style="color:#d9d5cc">Customers</a><a href="drivers.html" style="color:#d9d5cc">Drivers</a><a href="equipment.html" style="color:#d9d5cc">Equipment</a><a href="rates.html" style="color:#d9d5cc">Rates</a><a href="invoices.html" style="color:#d9d5cc">Invoices</a><a href="tolls.html" style="color:#d9d5cc">Tolls</a><a href="integrations.html" style="color:#d9d5cc">Integrations</a><a href="driver.html" style="color:#d9d5cc">Driver app</a></nav>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a class="on" href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
   <div class="who" id="who"></div>
   <button class="btn small" id="signout" hidden>Sign out</button>
 </header>
 
 <main>
-  <!-- Login -->
   <section id="login-view" class="card login" hidden>
     <h2>Sign in</h2>
     <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
     <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
     <button class="btn primary" id="login-btn">Sign in</button>
-    <div class="error" id="login-error"></div>
+    <div class="error" id="login-error" style="padding:0"></div>
   </section>
 
-  <!-- Office: dispatch board -->
   <section id="office-view" hidden>
-    <div class="toolbar">
+    <div class="bar">
       <h1>Dispatch board</h1>
-      <label for="day">Service date<input id="day" type="date"></label>
-      <button class="btn" id="refresh">Refresh</button>
-      <span style="flex-grow:1"></span>
-      <button class="btn" id="nc-btn">+ New customer</button>
-      <a class="btn primary" href="loads.html?new=1" style="display:inline-flex;align-items:center;text-decoration:none">New load</a>
+      <div class="cnt" aria-live="polite">
+        <span><b id="c-open">–</b> open</span>
+        <span class="red"><b id="c-now">–</b> act now</span>
+        <span><b id="c-late">–</b> running late</span>
+      </div>
+      <span class="sp"></span>
+      <label class="sr" for="day" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Service date</label>
+      <input id="day" type="date" aria-label="Service date">
+      <button class="btn small" id="refresh">Refresh</button>
+      <button class="btn small" id="nc-btn">+ New customer</button>
+      <a class="btn small primary" href="loads.html?new=1">New load</a>
     </div>
-    <div class="card" id="nc-done" hidden role="status" style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"></div>
-    <div class="kpis">
-      <div class="card kpi"><small>Loads</small><b id="k-loads">–</b></div>
-      <div class="card kpi"><small>Stops</small><b id="k-stops">–</b></div>
-      <div class="card kpi late"><small>Running late</small><b id="k-late">–</b></div>
-      <div class="card kpi"><small>Delivered loads</small><b id="k-done">–</b></div>
-    </div>
-    <div id="banners"></div>
-      <div id="later-wrap"></div>
+    <div class="card" id="nc-done" hidden role="status"></div>
+
     <div class="card">
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Load</th><th>Customer</th><th>Driver · Truck</th><th>Next stop</th><th>Window</th><th>ETA</th><th>Status</th><th><span class="sr">Actions</span></th></tr></thead>
-          <tbody id="loads-body"></tbody>
+      <div class="boardwrap">
+        <table class="board">
+          <thead><tr><th>Load</th><th>Truck</th><th>Trailer</th><th>Driver</th><th>Customer</th><th>Stop</th><th>PU</th><th>DEL</th><th>Status</th><th>Flags</th><th style="text-align:right">Miles</th></tr></thead>
+          <tbody id="board"></tbody>
         </table>
       </div>
     </div>
-    <div class="grid2">
-      <div class="card money">
-        <h2>Profit by load</h2>
-        <div class="tablewrap">
-          <table>
-            <thead><tr><th>Load</th><th>Customer</th><th class="num">Miles</th><th class="num">Billed</th><th class="num">Cost</th><th class="num">Margin</th></tr></thead>
-            <tbody id="profit-body"></tbody>
-          </table>
-        </div>
-        <div class="note">Management estimate. Cost = posted driver pay and fuel + per-mile equipment and overhead rates.</div>
-      </div>
-      <div class="card">
-        <h2>Isolation check</h2>
-        <p id="iso"></p>
-        <div class="note">Sign in as the other sample carrier's owner. You should see only that carrier's loads, never these.</div>
-      </div>
+    <div class="legend" id="legend"></div>
+    <div class="foot" id="foot"></div>
+    <div class="card closed" id="closed" hidden style="margin-top:8px">
+      <div class="boardwrap"><table class="board"><tbody id="closed-body"></tbody></table></div>
     </div>
-  </section>
-
-  <!-- Driver: my stops -->
-  <section id="driver-view" hidden>
-    <div class="toolbar"><h1>My stops today</h1></div>
-    <div class="card" id="driver-stops"></div>
-    <div class="note">Driver view: only your own loads and stops. No rates or costs are visible to drivers.</div>
   </section>
 </main>
 
 <script>
-// Settings come from config.js (Project URL and publishable key).
 if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
   document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border:1px solid #e2ddd3;border-radius:12px;font-family:system-ui;line-height:1.5">' +
     '<h2 style="margin-top:0">RoadCoda can\'t find its settings</h2>' +
     (window.RC_CONFIG ? '<p><b>config.js</b> still has the placeholder key. Open it and paste your Publishable key (Supabase &gt; Project Settings &gt; API Keys).</p>'
-                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder (right-click the zip &gt; <b>Extract All</b>), then open the page from that folder.</p>') +
-    '</div>';
+                      : '<p><b>config.js</b> was not found next to this page. Unzip the whole kit into a normal folder, then open the page from that folder.</p>') + '</div>';
   throw new Error('RoadCoda settings missing');
 }
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
-const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0});
-const time = (t) => t ? new Date(t).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '–';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const isoDay = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const todayISO = () => isoDay(new Date());
+const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
+const hm = (t) => t ? new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+const md = (iso) => { const [, m, d] = iso.split('-'); return `${+m}/${+d}`; };
+const mins = (n) => n >= 90 ? `${Math.floor(n / 60)}h ${String(n % 60).padStart(2, '0')}m` : `${n}m`;
 
-let profile = null;
+// Trips that finished but were never verified stay on the board this many days back.
+const LOOKBACK_DAYS = 14;
+
+let profile = null, showClosed = false, timer = null;
+try { showClosed = localStorage.getItem('rc-board-closed') === 'open'; } catch (e) {}
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return showLogin();
-  const { data, error } = await sb.from('profiles')
-    .select('role, full_name, carriers(name)')
-    .eq('user_id', session.user.id).single();
-  if (error || !data) { $('login-error').textContent = 'This login is not linked to a carrier yet (run 03_link_test_users.sql).'; return showLogin(); }
+  const { data, error } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (error || !data) { $('login-error').textContent = 'This login is not linked to a carrier yet.'; return showLogin(); }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
   profile = data;
   $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
-  $('signout').hidden = false;
-  $('login-view').hidden = true;
-  if (data.role === 'driver') { location.href = 'driver.html'; return; }
-  else { $('office-view').hidden = false; $('day').value = todayISO(); loadBoard(); }
+  $('signout').hidden = false; $('login-view').hidden = true; $('office-view').hidden = false;
+  const q = new URLSearchParams(location.search).get('day');
+  $('day').value = /^\d{4}-\d{2}-\d{2}$/.test(q || '') ? q : todayISO();
+  await loadBoard();
+  // Keep it current without a click. A minute is often enough to catch a
+  // truck going late and rare enough not to hammer the database.
+  timer = setInterval(() => { if (!document.hidden) loadBoard(true); }, 60000);
 }
-
-function showLogin() {
-  $('login-view').hidden = false; $('office-view').hidden = true; $('driver-view').hidden = true;
-  $('signout').hidden = true; $('who').textContent = '';
-}
+function showLogin() { $('login-view').hidden = false; $('office-view').hidden = true; $('signout').hidden = true; $('who').textContent = ''; }
 
 $('login-btn').onclick = async () => {
   $('login-error').textContent = '';
@@ -180,139 +187,211 @@ $('login-btn').onclick = async () => {
 };
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 $('refresh').onclick = () => loadBoard();
+$('day').onchange = () => { history.replaceState(null, '', '?day=' + $('day').value); loadBoard(); };
 $('nc-btn').onclick = () => RCNewCustomer.open(sb, (c) => {
   const box = $('nc-done'), id = encodeURIComponent(c.id);
   box.innerHTML = `<span style="flex-grow:1"><b>${esc(c.name)}</b> added as a customer.</span>
-    <a class="btn small" href="rates.html?customer=${id}" style="display:inline-flex;align-items:center;text-decoration:none">Set rates &amp; contract</a>
-    <a class="btn small primary" href="loads.html?new=1&customer=${id}" style="display:inline-flex;align-items:center;text-decoration:none">New load for them</a>`;
+    <a class="btn small" href="rates.html?customer=${id}">Set rates &amp; contract</a>
+    <a class="btn small primary" href="loads.html?new=1&customer=${id}">New load for them</a>`;
   box.hidden = false;
 });
-$('day').onchange = () => loadBoard();
 
-const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Delivery issue' };
-function stopState(s) {
-  if (s.status === 'delivered') return 'done';
-  if (s.status === 'exception') return 'problem';
-  if (s.eta && s.window_end && new Date(s.eta) > new Date(s.window_end)) return 'late';
-  return 'ok';
+// ── Flags ────────────────────────────────────────────────────────────
+// One table defines every flag: trip_check_codes in the database. The cells,
+// the tooltips and the legend all read from it, so they can't drift apart.
+// Red blocks invoicing and payroll; amber does not.
+let FLAGDEF = {};
+async function loadFlagDefs() {
+  if (Object.keys(FLAGDEF).length) return;
+  const { data } = await sb.from('trip_check_codes').select('code, label, what, blocks, severity, sort').order('sort');
+  (data || []).forEach(f => { FLAGDEF[f.code] = f; });
 }
-
-let notices = {};
-const noticeTag = (stopId, ev) => {
-  const n = notices[stopId + ':' + ev];
-  if (!n) return '<span class="pill" style="background:#ecebe8;color:#45423d;white-space:nowrap">Customer not notified</span>';
-  return n.status === 'sent' ? `<span class="pill p-ok" style="white-space:nowrap">Customer emailed ${time(n.sent_at)}</span>`
-    : n.status === 'pending' ? '<span class="pill p-info" style="white-space:nowrap">Email sending…</span>'
-    : `<span class="pill" style="background:#ecebe8;color:#45423d;white-space:nowrap">Email ${esc(n.status)}</span>`;
+const flagHtml = (code) => {
+  const f = FLAGDEF[code] || { label: code, what: '', blocks: false };
+  return `<span class="flag ${f.blocks ? 'on' : 'warn'}" title="${esc(f.label + (f.what ? ' — ' + f.what : ''))}">${esc(code)}</span>`;
 };
-async function loadBoard() {
-  // send any customer notices that are due (late notices are found here too), then read today's log
-  try { await sb.functions.invoke('send-notifications'); } catch (_) {}
-  const { data: nq } = await sb.from('notification_queue').select('stop_id, event, status, sent_at, created_at').gte('created_at', new Date(Date.now() - 36 * 3600e3).toISOString());
-  notices = {}; (nq || []).forEach(n => { notices[n.stop_id + ':' + n.event] = n; });
-  const day = $('day').value;
-  const { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, miles, invoice_id, notify_muted, customers(name), drivers(full_name), equipment(unit_no), stops(id, seq, consignee, window_start, window_end, eta, status, late_reason, issue_type)')
-    .eq('service_date', day).order('load_no');
-  if (error) { $('loads-body').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}</td></tr>`; return; }
 
-  // Two different kinds of trouble, and only one of them is urgent.
-  // A truck past its window is work right now — that gets a banner.
-  // An OS&D or a damaged box happened already and is paperwork; it is
-  // collapsed to one line and is on the load's row as a pill anyway.
-  let stopCount = 0, lateCount = 0, doneCount = 0, banners = '', rows = '';
-  let later = '', laterCount = 0;
-  for (const l of loads) {
-    const stops = (l.stops || []).sort((a, b) => a.seq - b.seq);
-    stopCount += stops.length;
-    if (l.status === 'delivered') doneCount++;
-    const next = stops.find(s => !['delivered', 'exception'].includes(s.status));
-    const problems = stops.filter(s => s.status === 'exception');
-    for (const p of problems) {
-      laterCount++;
-      later += `<div class="banner soft click" data-load="${l.id}"><div><strong>Load ${esc(l.load_no)}, Stop ${p.seq} · ${esc(p.consignee)}</strong> — ${esc(ISSUE[p.issue_type] || 'Delivery issue')}${p.late_reason ? ': ' + esc(p.late_reason) : ''}</div></div>`;
+const DONE = ['delivered', 'exception'];
+
+// Work out one load's row: where it is, how it's doing, which band it sits in.
+function describe(l, ctx) {
+  const stops = (l.stops || []).slice().sort((a, b) => a.seq - b.seq);
+  const n = stops.length;
+  const cur = stops.find(s => !DONE.includes(s.status));
+  const finished = n > 0 && !cur;
+  const at = cur ? stops.indexOf(cur) + 1 : n;
+  const shown = cur || stops[n - 1];
+  const now = Date.now();
+  const flags = ctx.flags[l.id];                       // finished trips only (41)
+  const openDelay = ctx.openDelays[l.id] || 0;         // departed stops with no code
+  const dwell = ctx.dwell[l.id];                       // truck at a dock right now
+  const codes = new Set(flags ? flags.codes : []);
+  if (openDelay) codes.add('DT');
+  if (dwell && dwell.over_min > 0) codes.add('DT');
+
+  let s = 'idle', label = '', band = 0, why = '';
+  if (finished) {
+    s = 'done';
+    label = flags ? (flags.blocking ? 'Needs close-out' : 'Flagged') : 'Ready to verify';
+    if (flags && flags.rank === 1) { band = 2; why = 'Finished — something here can be fixed from this desk now'; }
+    else if (codes.size) { band = 1; why = 'Finished — paperwork and data still to collect'; }
+    else why = 'Finished and clean — verify it to take it off the board';
+  } else if (l.status === 'planned' || !l.driver_id) {
+    // Not rolling yet. It only turns red once the first appointment has
+    // slipped past with nobody on it.
+    const start = cur.window_end || cur.window_start;
+    s = 'idle'; label = !l.driver_id ? 'No driver' : 'Planned';
+    if (start && now > new Date(start).getTime() && !cur.arrived_at) {
+      s = 'late'; band = 2; label = `Not started +${mins(Math.round((now - new Date(start).getTime()) / 60000))}`;
+      why = 'The first appointment has passed and this load has not started';
     }
-    const probTag = problems.length ? ` <span class="pill p-late">${problems.length === 1 ? esc(ISSUE[problems[0].issue_type] || 'Delivery issue') : problems.length + ' delivery issues'}</span>` : '';
-    const state = next ? stopState(next) : 'done';
-    if (state === 'late') {
-      lateCount++;
-      const mins = Math.round((new Date(next.eta) - new Date(next.window_end)) / 60000);
-      banners += `<div class="banner"><div><strong>Load ${esc(l.load_no)}, Stop ${next.seq} · ${esc(next.consignee)}</strong> — about ${mins} min past the window. Window ${time(next.window_start)}–${time(next.window_end)}, ETA ${time(next.eta)}.</div>${noticeTag(next.id, 'late')}</div>`;
+  } else if (cur && cur.arrived_at && !cur.departed_at) {
+    if (dwell && dwell.over_min > 0) {
+      s = 'late'; band = 2; label = `Detention +${mins(dwell.over_min)}`;
+      why = `On site ${mins(dwell.on_site_min)} against ${dwell.free_min}m free time — a delay code will be needed`;
+    } else {
+      s = 'rolling'; label = 'At stop';
+      if (dwell) { const left = dwell.free_min - dwell.on_site_min; if (left <= 15) { s = 'risk'; label = `At stop · ${Math.max(0, left)}m free left`; } }
     }
-    const pill = l.status === 'delivered' ? '<span class="pill p-done">Delivered</span>'
-      : state === 'late' ? '<span class="pill p-late">Running late</span>'
-      : l.status === 'planned' ? '<span class="pill p-info">Planned</span>'
-      : '<span class="pill p-ok">On time</span>';
-    rows += `<tr class="click" data-load="${l.id}" title="Open load ${esc(l.load_no)}">
-      <td class="mono">${esc(l.load_no)}</td>
-      <td>${esc(l.customers?.name)}</td>
-      <td>${esc(l.drivers?.full_name)} · ${esc(l.equipment?.unit_no)}</td>
-      <td>${next ? `Stop ${next.seq} of ${stops.length} · ${esc(next.consignee)}` : `Complete · ${stops.length} stops`}</td>
-      <td class="mono">${next ? `${time(next.window_start)}–${time(next.window_end)}` : '–'}</td>
-      <td class="mono">${next ? time(next.eta) : '–'}</td>
-      <td>${pill}${probTag}</td>
-      <td>${l.status !== 'cancelled' && !l.invoice_id ? `<a class="btn small" data-addstop="${l.id}" href="loads.html?load=${l.id}&day=${day}&addstop=1" style="display:inline-flex;align-items:center;text-decoration:none;white-space:nowrap">+ Stop</a>` : ''}</td></tr>`;
+  } else if (cur) {
+    const end = cur.window_end ? new Date(cur.window_end).getTime() : null;
+    const eta = cur.eta ? new Date(cur.eta).getTime() : null;
+    if (end && ((eta && eta > end) || now > end)) {
+      const over = Math.round(((eta && eta > end ? eta : now) - end) / 60000);
+      s = 'late'; band = 2; label = `Late +${mins(over)}`; why = 'Running late — the truck is still out';
+    } else if (end && end - now <= 3600e3) {
+      s = 'risk'; label = `Due ${hm(cur.window_end)}`;
+    } else {
+      s = 'rolling'; label = l.status === 'dispatched' ? 'Dispatched' : 'En route';
+    }
   }
-  $('loads-body').innerHTML = rows || '<tr><td colspan="8">No loads on this date.</td></tr>';
-  $('banners').innerHTML = banners;
+  if (!finished && openDelay && band < 2) { band = 2; why = why || 'A stop went past free time and still has no delay code'; }
 
-  // One line, closed by default. It remembers if you opened it.
-  const wrap = $('later-wrap');
-  if (!laterCount) { wrap.innerHTML = ''; }
-  else {
-    let open = false;
-    try { open = localStorage.getItem('rc-dispatch-issues') === 'open'; } catch (e) {}
-    wrap.innerHTML =
-      `<div class="rc-later"><b>${laterCount}</b> delivery issue${laterCount === 1 ? '' : 's'} to clear` +
-      ` <span class="muted">— nothing to chase in the moment</span>` +
-      `<button class="btn small rc-more" id="later-toggle">${open ? 'Hide' : 'Show'}</button></div>` +
-      `<div id="later-list"${open ? '' : ' hidden'}>${later}</div>`;
-    $('later-toggle').onclick = () => {
-      const list = $('later-list');
-      list.hidden = !list.hidden;
-      $('later-toggle').textContent = list.hidden ? 'Show' : 'Hide';
-      try { localStorage.setItem('rc-dispatch-issues', list.hidden ? 'shut' : 'open'); } catch (e) {}
-    };
-    wrap.querySelectorAll('#later-list .click').forEach(el => {
-      el.onclick = () => { location.href = 'loads.html?load=' + el.dataset.load; };
-    });
-  }
-  $('k-loads').textContent = loads.length; $('k-stops').textContent = stopCount;
-  $('k-late').textContent = lateCount; $('k-done').textContent = doneCount;
-  $('iso').textContent = `Signed in to ${profile.carriers?.name}. The database returned ${loads.length} load(s) for this date, all from this carrier.`;
-
-  const { data: profit, error: pErr } = await sb.from('load_profit')
-    .select('load_id, load_no, customer, miles, billed, cost').eq('service_date', day).order('load_no');
-  $('profit-body').innerHTML = pErr ? `<tr><td colspan="6" class="error">${esc(pErr.message)}</td></tr>`
-    : (profit.map(p => {
-        const m = p.billed - p.cost, pct = p.billed ? Math.round(m / p.billed * 100) : 0;
-        return `<tr class="click" data-load="${p.load_id}" title="Open load ${esc(p.load_no)}"><td class="mono">${esc(p.load_no)}</td><td>${esc(p.customer)}</td><td class="num mono">${Math.round(p.miles)}</td><td class="num mono">${money(p.billed)}</td><td class="num mono">${money(p.cost)}</td><td class="num mono">${money(m)} (${pct}%)</td></tr>`;
-      }).join('') || '<tr><td colspan="6">No loads on this date.</td></tr>');
-  // Click a load to open it on the Loads page
-  document.querySelectorAll('tr[data-load]').forEach(tr => tr.onclick = () => { location.href = `loads.html?load=${tr.dataset.load}&day=${day}`; });
-  document.querySelectorAll('a[data-addstop]').forEach(a => a.onclick = (e) => e.stopPropagation());
+  // PU = the first stop's appointment; DEL = the stop being worked (or the last one)
+  const first = stops[0];
+  const appt = shown ? (shown.window_end || shown.window_start || shown.eta) : null;
+  return { l, stops, n, at, shown, first, finished, s, label, band, why, codes: [...codes].sort((a, b) => (FLAGDEF[a]?.sort ?? 99) - (FLAGDEF[b]?.sort ?? 99)),
+           sortKey: appt ? new Date(appt).getTime() : Infinity };
 }
 
-async function loadDriver() {
-  const { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, stops(id, seq, consignee, window_start, window_end, eta, status, arrived_at)')
-    .eq('service_date', todayISO()).order('load_no');
-  if (error) { $('driver-stops').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
-  let html = '';
-  for (const l of loads) {
-    for (const s of (l.stops || []).sort((a, b) => a.seq - b.seq)) {
-      const action = s.status === 'pending'
-        ? `<button class="btn small primary" data-stop="${s.id}">Arrived</button>`
-        : `<span class="pill ${s.status === 'delivered' ? 'p-done' : 'p-ok'}">${esc(s.status)}</span>`;
-      html += `<div class="stoprow"><div><strong>Load ${esc(l.load_no)} · Stop ${s.seq}</strong><br>${esc(s.consignee)}<br><span class="mono">${time(s.window_start)}–${time(s.window_end)}</span></div><div>${action}</div></div>`;
+function rowHtml(r, day) {
+  const l = r.l, tractor = l.equipment?.unit_type === 'tractor';
+  const trailer = tractor ? (r.trailer || '<span class="none">—</span>') : '';
+  const old = l.service_date !== day ? `<span class="old" title="Service date ${esc(l.service_date)}">${md(l.service_date)}</span>` : '';
+  const pu = r.first ? hm(r.first.window_start || r.first.window_end || r.first.eta) : '';
+  const del = r.shown ? hm(r.shown.window_end || r.shown.window_start || r.shown.eta) : '';
+  const name = r.shown ? r.shown.consignee : '<span class="none">no stops</span>';
+  return `<tr data-s="${r.s}" data-load="${l.id}" tabindex="0" title="${esc(r.why || 'Open load ' + l.load_no)}">
+    <td class="n">${esc(l.load_no)}${old}</td>
+    <td class="n">${esc(l.equipment?.unit_no || '')}</td>
+    <td class="n dim">${trailer}</td>
+    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) : '<span class="none">—</span>'}</td>
+    <td class="dim">${esc(l.customers?.name || '')}</td>
+    <td><span class="ofn${r.n > 1 ? '' : ' solo'}">${r.at}/${r.n}</span>${r.shown ? esc(name) : name}</td>
+    <td class="n">${pu}</td>
+    <td class="n">${del}</td>
+    <td class="st">${esc(r.label)}</td>
+    <td>${r.codes.map(flagHtml).join('')}</td>
+    <td class="n dim" style="text-align:right">${l.miles ? Math.round(l.miles) + ' mi' : ''}</td></tr>`;
+}
+
+let loading = false;
+async function loadBoard(quiet) {
+  if (loading) return; loading = true;
+  try {
+    // Late notices to customers are found and sent from here, as before.
+    try { await sb.functions.invoke('send-notifications'); } catch (_) {}
+    await loadFlagDefs();
+    const day = $('day').value, from = addDays(day, -LOOKBACK_DAYS);
+
+    const [loadsR, flagsR, delaysR, dwellR, closeR, trailersR] = await Promise.all([
+      sb.from('loads')
+        .select('id, load_no, status, service_date, miles, driver_id, truck_id, trailer_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, stop_type, window_start, window_end, eta, arrived_at, departed_at, status)')
+        .gte('service_date', from).lte('service_date', day).neq('status', 'cancelled').order('load_no'),
+      sb.from('load_check_flags').select('load_id, rank, blocking, codes'),
+      sb.from('load_open_delays').select('load_id, open_delays'),
+      sb.from('live_stop_dwell').select('load_id, stop_id, on_site_min, free_min, over_min'),
+      sb.from('load_closeout').select('load_id, dispatch_at, billing_at, locked_at'),
+      sb.from('equipment').select('id, unit_no').eq('unit_type', 'trailer'),
+    ]);
+    if (loadsR.error) { $('board').innerHTML = `<tr><td colspan="11" class="error">${esc(loadsR.error.message)}</td></tr>`; return; }
+    const missing = [flagsR, delaysR, dwellR, closeR].find(r => r.error);
+    if (missing) { $('board').innerHTML = `<tr><td colspan="11" class="error">${esc(missing.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql in the SQL Editor.</td></tr>`; return; }
+
+    const ctx = { flags: {}, openDelays: {}, dwell: {}, closed: {} };
+    flagsR.data.forEach(f => ctx.flags[f.load_id] = f);
+    delaysR.data.forEach(d => ctx.openDelays[d.load_id] = d.open_delays);
+    dwellR.data.forEach(d => { const c = ctx.dwell[d.load_id]; if (!c || d.over_min > c.over_min) ctx.dwell[d.load_id] = d; });
+    closeR.data.forEach(c => ctx.closed[c.load_id] = c);
+    const trailers = {}; (trailersR.data || []).forEach(t => trailers[t.id] = t.unit_no);
+
+    // A load leaves the board when dispatch VERIFIES it — not when the driver
+    // taps Delivered. A delivered load with no POD is still work.
+    const live = [], closed = [];
+    for (const l of loadsR.data) {
+      const verified = !!ctx.closed[l.id]?.dispatch_at;
+      if (verified) { if (l.service_date === day) closed.push(l); continue; }
+      const r = describe(l, ctx);
+      r.trailer = l.trailer_id ? esc(trailers[l.trailer_id] || '') : '';
+      // Older days only come back if they're finished and still unchecked,
+      // or still running (a trip that never got its last stop tapped).
+      if (l.service_date !== day && !(r.finished || l.status === 'in_progress')) continue;
+      live.push(r);
     }
-  }
-  $('driver-stops').innerHTML = html || '<p>No stops assigned today.</p>';
-  document.querySelectorAll('[data-stop]').forEach(b => b.onclick = async () => {
-    b.disabled = true;
-    const { error } = await sb.from('stops').update({ status: 'arrived', arrived_at: new Date().toISOString() }).eq('id', b.dataset.stop);
-    if (error) alert(error.message); else loadDriver();
-  });
+
+    const BANDS = [
+      [2, 'red', 'Act now', 'late trucks, detention with no code, and anything you can fix from this desk'],
+      [1, 'amber', 'Collect after', 'nothing to chase in the moment — paperwork and data'],
+      [0, 'clean', 'Running clean', ''],
+    ];
+    let html = '';
+    for (const [band, cls, label, note] of BANDS) {
+      // Within a band: trucks still out come first (someone can still change
+      // how those end), then finished trips — newest first, so this morning's
+      // work isn't buried under last week's paperwork.
+      const set = live.filter(r => r.band === band).sort((a, b) =>
+        (a.finished - b.finished) ||
+        (a.finished ? String(b.l.service_date).localeCompare(String(a.l.service_date)) : 0) ||
+        a.sortKey - b.sortKey || String(a.l.load_no).localeCompare(String(b.l.load_no), undefined, { numeric: true }));
+      if (!set.length) continue;
+      html += `<tr class="grp ${cls}"><td colspan="11">${label} · ${set.length}${note ? `<span class="gnote">${note}</span>` : ''}</td></tr>`;
+      html += set.map(r => rowHtml(r, day)).join('');
+    }
+    $('board').innerHTML = html || `<tr><td colspan="11" class="empty">Nothing open for ${esc(day)}. Every trip on this date has been verified.</td></tr>`;
+
+    $('c-open').textContent = live.length;
+    $('c-now').textContent = live.filter(r => r.band === 2).length;
+    $('c-late').textContent = live.filter(r => !r.finished && r.s === 'late').length;
+
+    // Legend, from the same table the flags are
+    $('legend').innerHTML = '<span class="lgl">Flags</span>' +
+      Object.values(FLAGDEF).map(f => `<span class="li">${flagHtml(f.code)}${esc(f.label)}</span>`).join('') +
+      '<span class="li"><span class="flag" style="border-color:transparent;background:none;color:var(--late)">red</span>blocks billing</span>' +
+      '<span class="li"><span class="flag" style="border-color:transparent;background:none;color:var(--warn)">amber</span>flagged, not blocking</span>';
+
+    // Closed today
+    const foot = $('foot');
+    foot.innerHTML = `<span>${live.length} open · finished trips stay until dispatch verifies them (up to ${LOOKBACK_DAYS} days back)</span>`;
+    if (closed.length) {
+      const b = document.createElement('button'); b.className = 'btn small';
+      b.textContent = `${showClosed ? 'Hide' : 'Show'} ${closed.length} closed today`;
+      b.onclick = () => { showClosed = !showClosed; try { localStorage.setItem('rc-board-closed', showClosed ? 'open' : 'shut'); } catch (e) {} loadBoard(true); };
+      foot.appendChild(b);
+    }
+    $('closed').hidden = !(showClosed && closed.length);
+    $('closed-body').innerHTML = closed.map(l => {
+      const c = ctx.closed[l.id];
+      const r = describe(l, ctx); r.trailer = l.trailer_id ? esc(trailers[l.trailer_id] || '') : '';
+      r.codes = []; r.s = 'done'; r.label = c.locked_at ? 'Locked · approved' : 'Verified · with billing';
+      return rowHtml(r, day);
+    }).join('');
+
+    document.querySelectorAll('tr[data-load]').forEach(tr => {
+      const go = () => { location.href = `trip.html?load=${tr.dataset.load}&day=${day}`; };
+      tr.onclick = go;
+      tr.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+    });
+  } finally { loading = false; }
 }
 
 start();

@@ -47,7 +47,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account' };
+    'account.html': 'My account', 'trip.html': 'Trip' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 

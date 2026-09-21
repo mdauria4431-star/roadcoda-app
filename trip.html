@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto}
+  .card > header h2{margin:0;font-size:11px}
+  .card > header .sp{flex:1}
+  .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted)!important;text-decoration:none;font-size:13px;width:max-content}
+  .back:hover{color:var(--ink)!important}
+  .n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .dim{color:var(--muted)}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+  .chip.bad{color:var(--late);border-color:color-mix(in srgb,var(--late) 45%,var(--line))}
+  .chip.vio{color:var(--accent-hi);background:var(--accent-deep);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+  .error{color:var(--late)}
+
+  .triphead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 16px}
+  .triphead .id{font-family:var(--mono);font-size:19px;font-weight:600}
+  .triphead .lane{color:var(--muted);font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .triphead .sp{flex:1}
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px 18px;padding:12px 16px;border-top:1px solid var(--line-soft);background:var(--panel-2)}
+  .f{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .f > b{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+  .f > span{font-size:13px}
+
+  /* The values ARE the inputs — no edit mode to enter or forget to leave.
+     They read as plain text until the pointer finds them. */
+  .ed{font:inherit;font-size:13px;color:var(--ink);background:transparent!important;border:1px solid transparent;border-radius:6px;
+    padding:3px 7px;margin:-3px -7px;height:auto;width:100%;max-width:215px;transition:background .1s ease,border-color .1s ease}
+  .ed:hover:not([disabled]){border-color:var(--line);background:var(--surface)!important}
+  .ed:focus{border-color:var(--accent);background:var(--surface)!important;outline:none}
+  .ed[disabled]{cursor:default;opacity:1;-webkit-text-fill-color:var(--ink)}
+  select.ed{cursor:pointer;-webkit-appearance:none;appearance:none}
+  select.ed[disabled]{cursor:default}
+  .ed.n{font-family:var(--mono)}
+  .ed.need{border-color:color-mix(in srgb,var(--late) 55%,var(--line));background:color-mix(in srgb,var(--late) 8%,transparent)!important}
+  input[type=datetime-local].ed{max-width:178px;font-family:var(--mono);font-size:12.5px}
+  input[type=datetime-local].ed[disabled]::-webkit-calendar-picker-indicator{display:none}
+
+  /* Close-out: review by exception. Only the problems get room. */
+  .chk{display:flex;align-items:center;gap:11px;padding:9px 16px;border-bottom:1px solid var(--line-soft);font-size:13px;flex-wrap:wrap}
+  .chk .dot2{width:8px;height:8px;border-radius:50%;flex:none;background:var(--ok)}
+  .chk[data-s="warn"] .dot2{background:var(--warn)}
+  .chk[data-s="block"] .dot2{background:var(--late)}
+  .chk .t{flex:1;min-width:220px}
+  .chk .t b{font-family:var(--ui);font-weight:600;font-size:13px}
+  .chk .t .code{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-right:6px}
+  .chk .t span.d{color:var(--muted);font-size:12.5px;display:block}
+  .chk[data-s="ok"] .t b{font-weight:500;color:var(--muted)}
+  .chk .act{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .chk .act input,.chk .act select{height:28px;font-size:12.5px}
+  .gate{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px}
+  .gate .msg{flex:1;min-width:220px;font-size:13px}
+  .gate .msg b{font-family:var(--ui)}
+  .gate.blocked .msg b{color:var(--late)}
+  .gate.clear .msg b{color:var(--ok)}
+  .signoff{display:flex;gap:10px;flex-wrap:wrap;padding:0 16px 12px}
+  .sign{flex:1 1 230px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel-2)}
+  .sign > b{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:5px}
+  .sign .who{font-size:13px}
+  .sign.done{border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+  .sign.done .who{color:var(--ok)}
+  .acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 16px 14px}
+  .acts input{flex:1;min-width:200px;max-width:420px}
+
+  .boardwrap{overflow-x:auto}
+  table.stops{width:100%;border-collapse:collapse;font-size:13px;min-width:1100px}
+  .stops th{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;
+    padding:7px 9px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .stops td{padding:7px 9px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .stops tr:last-child td{border-bottom:0}
+  .stops tr.hl td{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+  .stops .type{font-family:var(--ui);font-size:9.5px;font-weight:700;letter-spacing:.08em;padding:1px 5px;border-radius:4px;border:1px solid var(--line);color:var(--ink-3);margin-right:6px}
+  .stops .type.pu{color:var(--info);border-color:color-mix(in srgb,var(--info) 45%,var(--line))}
+  .items{display:flex;flex-direction:column;gap:4px}
+  .items .it{display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .items .it .ed{width:62px;max-width:62px;text-align:right}
+  .bad{color:var(--late)}
+  .mid{color:var(--warn)}
+  .good{color:var(--ok)}
+  .podlink{color:var(--accent-hi)!important;font-size:12px}
+  .flag{display:inline-block;min-width:23px;padding:0 3px;height:16px;line-height:15px;text-align:center;border-radius:5px;font-family:var(--ui);
+    font-size:9.5px;font-weight:700;margin-right:3px;border:1px solid var(--line);color:var(--ink-3);background:var(--panel-2)}
+  .flag.on{border-color:color-mix(in srgb,var(--late) 55%,var(--line));color:var(--late);background:color-mix(in srgb,var(--late) 14%,transparent)}
+  .flag.warn{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+
+  .logs{max-height:320px;overflow:auto}
+  .log{display:grid;grid-template-columns:118px 150px 1fr;gap:10px;padding:6px 16px;border-bottom:1px solid var(--line-soft);font-size:12.5px}
+  .log time{font-family:var(--mono);color:var(--ink-3);font-size:11.5px}
+  .log .w{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .empty{padding:14px 16px;color:var(--muted);font-size:13px}
+
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;
+    padding:10px 12px 10px 15px;border-radius:10px;background:var(--raise);border:1px solid var(--line);box-shadow:var(--card-sh);font-size:13px;max-width:92vw}
+  .toast.err{border-color:color-mix(in srgb,var(--late) 55%,var(--line))}
+  @media (max-width:700px){.log{grid-template-columns:1fr}}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a class="on" href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden style="padding:20px">
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+  <a class="back" id="back" href="dispatch.html" hidden>← Dispatch board</a>
+  <div id="trip"></div>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hm = (t) => t ? new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+const when = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+const mins = (n) => n >= 90 ? `${Math.floor(n / 60)}h ${String(n % 60).padStart(2, '0')}m` : `${n}m`;
+// datetime-local works in the browser's own time zone, which is the office's.
+const toLocal = (iso) => { if (!iso) return ''; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+const fromLocal = (v) => v ? new Date(v).toISOString() : null;
+
+const params = new URLSearchParams(location.search);
+const LOAD = params.get('load');
+const DAY = params.get('day');
+$('back').href = 'dispatch.html' + (DAY ? '?day=' + encodeURIComponent(DAY) : '');
+
+let me = null, profile = null, T = null, FLAGDEF = {}, names = {};
+const ACC = () => window.RC_ACCESS;
+const canEdit = () => !ACC() || ACC().can('dispatch', 'edit');
+const canMoney = () => !ACC() || (ACC().can('money', 'edit'));
+const isSuper = () => !ACC() || !!ACC().super_user;
+
+// ── Toast with Undo ──────────────────────────────────────────────────
+let toastTimer = null;
+function toast(msg, undo, isErr) {
+  const t = $('toast');
+  t.className = 'toast' + (isErr ? ' err' : '');
+  t.innerHTML = `<span>${msg}</span>`;
+  if (undo) {
+    const b = document.createElement('button'); b.className = 'btn small'; b.textContent = 'Undo';
+    b.onclick = async () => { t.hidden = true; await undo(); };
+    t.appendChild(b);
+  }
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, isErr ? 9000 : 7000);
+}
+const fail = (e) => toast(esc(e.message || e), null, true);
+
+// ── Start ────────────────────────────────────────────────────────────
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  me = session.user;
+  const { data } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', me.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  profile = data;
+  $('who').textContent = `${data.full_name || me.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false; $('back').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (!LOAD) { $('trip').innerHTML = '<div class="card empty">No load picked. <a href="dispatch.html">Back to the board</a>.</div>'; return; }
+  const { data: codes } = await sb.from('trip_check_codes').select('code, label, what, blocks, severity, sort').order('sort');
+  (codes || []).forEach(c => FLAGDEF[c.code] = c);
+  await load();
+}
+$('login-btn').onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  if (error) { $('login-error').textContent = error.message; return; }
+  location.reload();
+};
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+// ── Read everything the trip needs ───────────────────────────────────
+async function load() {
+  const L = await sb.from('loads')
+    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
+    .eq('id', LOAD).maybeSingle();
+  if (L.error || !L.data) { $('trip').innerHTML = `<div class="card empty error">${esc(L.error?.message || 'That load was not found, or it belongs to another carrier.')}</div>`; return; }
+  const l = L.data;
+  l.stops.sort((a, b) => a.seq - b.seq);
+  l.stops.forEach(s => (s.stop_items || []).sort((a, b) => a.unit_type.localeCompare(b.unit_type)));
+  const stopIds = l.stops.map(s => s.id);
+
+  const [checks, delays, dwell, close, pods, drivers, units, eld, changes, closeLog, delayLog, codes, ourCodes, carrier] = await Promise.all([
+    sb.from('load_checks').select('code, label, blocks, severity, detail, rank, sort, stop_id').eq('load_id', LOAD),
+    sb.from('stop_delays').select('stop_id, kind, free_min, over_min, delay_code_id, customer_code_id, billed_min, billable, waived, settled_at, note').eq('load_id', LOAD),
+    sb.from('live_stop_dwell').select('stop_id, on_site_min, free_min, over_min').eq('load_id', LOAD),
+    sb.from('load_closeout').select('*').eq('load_id', LOAD).maybeSingle(),
+    stopIds.length ? sb.from('scans').select('id, stop_id, photo_path, scanned_at').in('stop_id', stopIds).eq('scan_type', 'delivery').not('photo_path', 'is', null) : { data: [] },
+    sb.from('drivers').select('id, full_name, active').order('full_name'),
+    sb.from('equipment').select('id, unit_no, unit_type, active').order('unit_no'),
+    sb.from('load_eld_miles').select('*').eq('load_id', LOAD).maybeSingle(),
+    sb.from('trip_changes').select('at, who, field, old_value, new_value, stop_id, item_id').eq('load_id', LOAD).order('at', { ascending: false }).limit(200),
+    sb.from('load_closeout_log').select('at, who, action, detail').eq('load_id', LOAD).order('at', { ascending: false }),
+    stopIds.length ? sb.from('stop_delay_log').select('at, who, what, stop_id').in('stop_id', stopIds).order('at', { ascending: false }) : { data: [] },
+    l.customer_id ? sb.rpc('delay_codes_for_customer', { p_customer: l.customer_id }) : { data: [] },
+    sb.from('delay_codes').select('id, code, name, billable').eq('active', true).order('sort'),
+    sb.from('carriers').select('require_trip_sheet, require_seal, close_pod_days').maybeSingle(),
+  ]);
+  const firstErr = [checks, delays, dwell, close, changes, closeLog].find(r => r.error);
+  if (firstErr) { $('trip').innerHTML = `<div class="card empty error">${esc(firstErr.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql first.</div>`; return; }
+
+  T = {
+    l, checks: (checks.data || []).sort((a, b) => a.rank - b.rank || a.sort - b.sort),
+    delays: Object.fromEntries((delays.data || []).map(d => [d.stop_id, d])),
+    dwell: Object.fromEntries((dwell.data || []).map(d => [d.stop_id, d])),
+    close: close.data || null,
+    pods: (pods.data || []).reduce((m, p) => { (m[p.stop_id] ||= []).push(p); return m; }, {}),
+    drivers: drivers.data || [], units: units.data || [], eld: eld?.data || null,
+    changes: changes.data || [], closeLog: closeLog.data || [], delayLog: delayLog.data || [],
+    theirCodes: codes?.data || [], ourCodes: ourCodes?.data || [], carrier: carrier?.data || {},
+  };
+  T.finished = l.stops.length > 0 && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
+  T.locked = !!T.close?.locked_at;
+
+  // Names for everyone who touched it
+  const ids = new Set();
+  [T.changes, T.closeLog, T.delayLog].forEach(a => a.forEach(r => r.who && ids.add(r.who)));
+  ['dispatch_by', 'billing_by', 'reopened_by'].forEach(k => T.close?.[k] && ids.add(T.close[k]));
+  const unknown = [...ids].filter(i => !names[i]);
+  if (unknown.length) {
+    const { data: n } = await sb.rpc('carrier_user_names', { p_ids: unknown });
+    (n || []).forEach(r => names[r.user_id] = r.full_name);
+  }
+  document.title = `Load ${l.load_no} · RoadCoda`;
+  draw();
+}
+const nameOf = (id) => id ? (id === me.id ? 'You' : (names[id] || 'Someone at the office')) : 'System';
+
+// ── Draw ─────────────────────────────────────────────────────────────
+function draw() {
+  const { l } = T;
+  const edit = canEdit() && !T.locked;
+  const dis = edit ? '' : ' disabled';
+  const tractor = l.equipment?.unit_type === 'tractor';
+  const lane = [l.customers?.name, ...l.stops.map(s => s.consignee)].filter(Boolean);
+  const laneTxt = lane.length > 5 ? [lane[0], lane[1], `… ${lane.length - 3} more …`, lane[lane.length - 1]].join(' → ') : lane.join(' → ');
+  const status = T.locked ? '<span class="chip vio">Closed · locked</span>'
+    : T.close?.dispatch_at ? '<span class="chip ok">Verified · with billing</span>'
+    : T.finished ? '<span class="chip">Finished · close-out open</span>'
+    : `<span class="chip">${esc({ planned: 'Planned', dispatched: 'Dispatched', in_progress: 'In progress', delivered: 'Delivered' }[l.status] || l.status)}</span>`;
+
+  const opt = (list, cur, blank) => `<option value="">${blank}</option>` + list.map(x => `<option value="${x.id}"${x.id === cur ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
+  const drvList = T.drivers.filter(d => d.active || d.id === l.driver_id).map(d => ({ id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') }));
+  const trkList = T.units.filter(u => u.unit_type !== 'trailer' && (u.active || u.id === l.truck_id)).map(u => ({ id: u.id, label: `${u.unit_no} · ${u.unit_type.replace('_', ' ')}` }));
+  const trlList = T.units.filter(u => u.unit_type === 'trailer' && (u.active || u.id === l.trailer_id)).map(u => ({ id: u.id, label: u.unit_no }));
+  const eld = T.eld;
+  const planned = eld?.planned_miles || l.route_miles || l.miles;
+  const needSheet = T.carrier.require_trip_sheet || T.checks.some(c => c.code === 'TS');
+
+  let html = `
+  <div class="card">
+    <div class="triphead">
+      <span class="id">${esc(l.load_no)}</span>
+      <span class="lane" title="${esc(lane.join(' → '))}">${esc(laneTxt)}</span>
+      ${status}
+      ${l.invoice_id ? '<span class="chip">On an invoice</span>' : ''}
+      <span class="sp"></span>
+      ${edit && !l.invoice_id ? `<a class="btn small" href="loads.html?load=${l.id}&addstop=1">+ Stop</a>` : ''}
+      <a class="btn small" href="loads.html?load=${l.id}${DAY ? '&day=' + DAY : ''}">Open in Loads</a>
+    </div>
+    <div class="facts">
+      <div class="f"><b>Driver</b><select class="ed" data-load="driver_id"${dis}>${opt(drvList, l.driver_id, '— none —')}</select></div>
+      <div class="f"><b>Truck</b><select class="ed" data-load="truck_id"${dis}>${opt(trkList, l.truck_id, '— none —')}</select></div>
+      <div class="f"><b>Trailer</b>${tractor
+        ? `<select class="ed" data-load="trailer_id"${dis}>${opt(trlList, l.trailer_id, trlList.length ? '— none —' : 'No trailers on Equipment')}</select>`
+        : '<span class="dim">Straight truck — no trailer</span>'}</div>
+      <div class="f"><b>Service date</b><span class="n">${esc(l.service_date)}</span></div>
+      <div class="f"><b>Miles</b><span class="n">${planned ? Math.round(planned) + ' planned' : '—'}${eld && eld.eld_miles > 0 ? ` · ${Math.round(eld.eld_miles)} ELD` : ''}${eld && eld.driver_miles > 0 ? ` · ${Math.round(eld.driver_miles)} driver` : ''}</span></div>
+      ${needSheet ? `<div class="f"><b>Trip sheet</b><label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="sheet" style="height:auto"${l.trip_sheet_at ? ' checked' : ''}${dis}> ${l.trip_sheet_at ? 'Turned in ' + when(l.trip_sheet_at) : 'Not turned in'}</label></div>` : ''}
+    </div>
+  </div>`;
+
+  html += closeoutHtml(edit);
+  html += stopsHtml(edit);
+  html += logHtml();
+  $('trip').innerHTML = html;
+  wire(edit);
+}
+
+// ── Close-out ────────────────────────────────────────────────────────
+function closeoutHtml(edit) {
+  const { l, checks, close } = T;
+  const blocks = checks.filter(c => c.blocks), warns = checks.filter(c => !c.blocks);
+  let rows = '';
+
+  if (!T.finished) {
+    // A load in transit has no missing POD. Only live trouble shows.
+    const live = [];
+    for (const s of l.stops) {
+      const d = T.dwell[s.id];
+      if (d && d.over_min > 0) live.push(`<div class="chk" data-s="block"><span class="dot2"></span><div class="t"><b><span class="code">DT</span>In detention now at stop ${s.seq}</b><span class="d">${esc(s.consignee)}: on site ${mins(d.on_site_min)} against ${d.free_min}m free time. The code is entered here once the truck leaves.</span></div></div>`);
+      const del = T.delays[s.id];
+      if (del && !del.settled_at && !del.waived) live.push(delayRow(s, del, edit));
+      if (!['delivered', 'exception'].includes(s.status) && !s.arrived_at && s.window_end && ((s.eta && new Date(s.eta) > new Date(s.window_end)) || Date.now() > new Date(s.window_end))) {
+        live.push(`<div class="chk" data-s="block"><span class="dot2"></span><div class="t"><b>Running late to stop ${s.seq}</b><span class="d">${esc(s.consignee)}: window closes ${hm(s.window_end)}${s.eta ? ', ETA ' + hm(s.eta) : ''}${s.late_reason ? ' — ' + esc(s.late_reason) : ''}</span></div></div>`);
+        break;
+      }
+    }
+    rows = live.join('') + `<div class="chk" data-s="ok"><span class="dot2" style="background:var(--ink-3)"></span><div class="t"><b>Close-out checks run once every stop is finished.</b><span class="d">Times, counts, OS&amp;D, POD, miles, seal and trip sheet are checked then — nothing to do until the trip is over.</span></div></div>`;
+  } else {
+    rows = checks.map(c => findingRow(c, edit)).join('');
+    const found = new Set(checks.map(c => c.code));
+    const clear = Object.values(FLAGDEF).filter(f => !found.has(f.code));
+    if (clear.length) rows += `<div class="chk" data-s="ok"><span class="dot2"></span><div class="t"><b>${checks.length ? 'Everything else agrees' : 'Every check agrees'}</b><span class="d">${clear.map(f => esc(f.label.toLowerCase())).join(' · ')}</span></div></div>`;
+  }
+
+  const gate = !T.finished ? ''
+    : blocks.length ? `<div class="gate blocked"><div class="msg"><b>${blocks.length} thing${blocks.length > 1 ? 's' : ''} must be cleared</b> before this trip can be verified, invoiced or paid.${warns.length ? ` ${warns.length} more flagged but not blocking.` : ''}</div></div>`
+    : `<div class="gate clear"><div class="msg"><b>Nothing is blocking this trip.</b> ${warns.length ? `${warns.length} item${warns.length > 1 ? 's' : ''} flagged but not blocking — look, then sign.` : ''}</div></div>`;
+
+  const dOk = !!close?.dispatch_at, bOk = !!close?.billing_at;
+  const sign = T.finished ? `<div class="signoff">
+      <div class="sign ${dOk ? 'done' : ''}"><b>1 · Dispatch verifies the facts</b>
+        <div class="who">${dOk ? `Verified by ${esc(nameOf(close.dispatch_by))} · ${when(close.dispatch_at)}${close.dispatch_note ? ' — ' + esc(close.dispatch_note) : ''}` : 'Times, counts, codes, PODs — not yet verified'}</div></div>
+      <div class="sign ${bOk ? 'done' : ''}"><b>2 · Billing approves the money</b>
+        <div class="who">${bOk ? `Approved by ${esc(nameOf(close.billing_by))} · ${when(close.billing_at)}${close.billing_note ? ' — ' + esc(close.billing_note) : ''}` : dOk ? 'Ready for billing' : 'Waits for dispatch'}</div></div>
+    </div>` : '';
+
+  let acts = '';
+  if (T.finished && !T.locked) {
+    if (!dOk && canEdit()) acts = `<div class="acts"><input id="note" placeholder="Note for the record (optional)" maxlength="300"><button class="btn small ${blocks.length ? '' : 'primary'}" id="verify"${blocks.length ? ' disabled title="Clear the red items first"' : ''}>Verify as dispatch</button></div>`;
+    else if (dOk && canMoney()) acts = `<div class="acts"><input id="note" placeholder="Note for the record (optional)" maxlength="300"><button class="btn small primary" id="approve"${blocks.length ? ' disabled' : ''}>Approve for billing &amp; lock</button>${close.dispatch_by === me.id ? '<span class="mini">Someone other than the person who verified has to approve.</span>' : ''}</div>`;
+    else if (dOk) acts = `<div class="acts"><span class="mini">Verified. Billing approves it next — that needs the “See prices, revenue &amp; costs” switch.</span></div>`;
+  }
+  if (T.locked) acts = `<div class="acts"><span class="chip vio">Locked · reopening needs a super user and a reason</span>${isSuper() ? '<button class="btn small" id="reopen">Reopen…</button>' : ''}</div>`;
+  if (close?.reopen_reason && !T.locked) acts += `<div class="acts"><span class="mini">Reopened ${when(close.reopened_at)} by ${esc(nameOf(close.reopened_by))}: ${esc(close.reopen_reason)}</span></div>`;
+
+  return `<div class="card"><header><h2>Close-out</h2><span class="sp"></span>${T.finished && checks.length ? checks.map(c => `<span class="flag ${c.blocks ? 'on' : 'warn'}" title="${esc(c.label)}">${esc(c.code)}</span>`).join('') : ''}</header>
+    ${rows}${gate}${sign}${acts}</div>`;
+}
+
+// One finding, with the thing that fixes it right on the line where possible.
+function findingRow(c, edit) {
+  const s = T.l.stops.find(x => x.id === c.stop_id);
+  const st = c.blocks ? 'block' : 'warn';
+  let act = '';
+  if (edit) {
+    if (c.code === 'DT' && s && T.delays[s.id]) return delayRow(s, T.delays[s.id], edit, c);
+    if ((c.code === 'TM' || c.code === 'AT' || c.code === 'PC') && s) act = `<button class="btn small" data-jump="${s.id}">Fix on stop ${s.seq}</button>`;
+    if (c.code === 'XC' && s) act = `<input data-resolve="${s.id}" placeholder="What was decided (claim, credit, recount…)" style="width:280px"><button class="btn small" data-resolve-go="${s.id}">Resolve</button>`;
+    if (c.code === 'PD' && s) act = `<label class="btn small" style="flex-direction:row;font-weight:600">Upload POD<input type="file" accept="image/*,application/pdf" data-pod="${s.id}" hidden></label>`;
+    if (c.code === 'SL' && s) act = `<button class="btn small" data-jump="${s.id}">Enter seal on stop ${s.seq}</button>`;
+    if (c.code === 'TS') act = `<button class="btn small" id="sheet-in">Mark trip sheet turned in</button>`;
+    if (c.code === 'MI') act = `<span class="mini">Check for an off-route move before this pays or bills by the mile.</span>`;
+  }
+  const sev = c.severity === 'fix' ? 'Fix now' : 'Collect after';
+  return `<div class="chk" data-s="${st}"><span class="dot2"></span>
+    <div class="t"><b><span class="code">${esc(c.code)}</span>${esc(c.label)}</b><span class="d">${esc(c.detail)} · <i>${sev}</i>${c.blocks ? '' : ' · not blocking'}</span></div>
+    <div class="act">${act}</div></div>`;
+}
+
+function delayRow(s, d, edit, c) {
+  const their = T.theirCodes.map(x => `<option value="c:${x.customer_code_id}">${esc(x.their_code)} — ${esc(x.their_name || x.name)}</option>`).join('');
+  const ours = T.ourCodes.map(x => `<option value="d:${x.id}">${esc(x.code)} — ${esc(x.name)}${x.billable ? '' : ' (not billable)'}</option>`).join('');
+  const sel = edit ? `<select data-delay="${s.id}"><option value="">Delay code…</option>${their ? `<optgroup label="${esc(T.l.customers?.name || 'Customer')}'s codes">${their}</optgroup>` : ''}<optgroup label="Our codes">${ours}</optgroup></select>
+      <button class="btn small" data-waive="${s.id}" title="No detention billed or paid">Zero it out</button>` : '';
+  return `<div class="chk" data-s="block"><span class="dot2"></span>
+    <div class="t"><b><span class="code">DT</span>${c ? esc(c.label) : 'Detention not coded'} — stop ${s.seq}</b><span class="d">${esc(s.consignee)}: ${d.over_min} min past ${d.free_min} min free time (${esc(d.kind)}). Pick a code, or zero it out if nobody bills or pays it.</span></div>
+    <div class="act">${sel}</div></div>`;
+}
+
+// ── Stops ────────────────────────────────────────────────────────────
+function stopsHtml(edit) {
+  const dis = edit ? '' : ' disabled';
+  const need = (s, code) => T.checks.some(c => c.stop_id === s.id && c.code === code);
+  const rows = T.l.stops.map(s => {
+    const d = T.delays[s.id], live = T.dwell[s.id];
+    const onSite = s.arrived_at && s.departed_at ? Math.round((new Date(s.departed_at) - new Date(s.arrived_at)) / 60000) : live ? live.on_site_min : null;
+    const free = d ? d.free_min : live ? live.free_min : null;
+    const det = d ? (d.waived ? `<span class="dim">+${d.over_min}m · zeroed</span>` : d.settled_at ? `<span class="mid">+${d.over_min}m · coded${d.billable ? '' : ', not billed'}</span>` : `<span class="bad">+${d.over_min}m · no code</span>`)
+      : live && live.over_min > 0 ? `<span class="bad">+${live.over_min}m · still there</span>` : '';
+    const items = (s.stop_items || []).map(it => {
+      const off = it.qty_delivered != null && it.qty_delivered !== it.qty_ordered;
+      return `<div class="it"><span class="n dim" style="min-width:34px;text-align:right">${it.qty_ordered}</span>→<input class="ed n${it.qty_delivered == null && T.finished && s.stop_type === 'delivery' ? ' need' : ''}${off ? ' bad' : ''}" type="number" min="0" step="1" data-item="${it.id}" data-stop="${s.id}" value="${it.qty_delivered ?? ''}" placeholder="—"${dis}><span class="mini">${esc(it.unit_type)}</span></div>`;
+    }).join('') || '<span class="mini">no units</span>';
+    const pods = T.pods[s.id] || [];
+    const pod = s.stop_type !== 'delivery' ? '<span class="mini">—</span>'
+      : pods.length ? pods.map((p, i) => `<a href="#" class="podlink" data-view="${esc(p.photo_path)}">POD${pods.length > 1 ? ' ' + (i + 1) : ''} ✓</a>`).join(' ')
+      : ['delivered', 'exception'].includes(s.status) ? `${T.finished ? '<span class="flag on">PD</span>' : '<span class="mini">none yet</span> '}${edit ? `<label class="btn small" style="flex-direction:row;height:24px;font-size:11.5px;margin-top:4px">Upload<input type="file" accept="image/*,application/pdf" data-pod="${s.id}" hidden></label>` : ''}` : '<span class="mini">after delivery</span>';
+    const osd = s.issue_type ? `<span class="${s.issue_resolved_at ? 'dim' : 'bad'}">${esc(s.issue_type)}</span>${s.issue_resolution ? `<div class="mini" title="${esc(s.issue_resolution)}">${esc(s.issue_resolution.length > 40 ? s.issue_resolution.slice(0, 40) + '…' : s.issue_resolution)}</div>` : ''}` : '<span class="mini">—</span>';
+    const seal = s.stop_type === 'pickup' ? `<input class="ed n${need(s, 'SL') ? ' need' : ''}" data-stop-f="seal_no" data-stop="${s.id}" value="${esc(s.seal_no || '')}" placeholder="seal #" style="max-width:110px"${dis}>` : '<span class="mini">—</span>';
+    const tmNeed = need(s, 'TM') || need(s, 'AT');
+    const done = ['delivered', 'exception'].includes(s.status);
+    return `<tr id="s-${s.id}">
+      <td class="n">${s.seq}</td>
+      <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}</td>
+      <td class="n dim">${s.window_start ? hm(s.window_start) + '–' + hm(s.window_end) : hm(s.window_end) || '—'}</td>
+      <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}></td>
+      <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}></td>
+      <td class="n">${onSite != null ? mins(Math.max(0, onSite)) : '—'}${free != null ? `<div class="mini">${free}m free</div>` : ''}${det ? `<div>${det}</div>` : ''}</td>
+      <td><div class="items">${items}</div></td>
+      <td>${seal}</td>
+      <td>${osd}</td>
+      <td>${pod}</td></tr>`;
+  }).join('');
+  return `<div class="card"><header><h2>Stops</h2><span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
+    <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th><th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="10" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>`;
+}
+
+// ── Audit ────────────────────────────────────────────────────────────
+const FIELD = { arrived_at: 'arrival', departed_at: 'departure', seal_no: 'seal', issue_type: 'OS&D type', issue_resolution: 'OS&D resolution',
+  status: 'status', window_start: 'window start', window_end: 'window end', qty_ordered: 'ordered', qty_delivered: 'delivered count',
+  driver_id: 'driver', truck_id: 'truck', trailer_id: 'trailer', service_date: 'service date', miles: 'miles', trip_sheet_at: 'trip sheet' };
+function showVal(field, v) {
+  if (v == null || v === '') return '—';
+  if (/_at$/.test(field)) return when(v);
+  if (field === 'driver_id') return T.drivers.find(d => d.id === v)?.full_name || 'another driver';
+  if (field === 'truck_id' || field === 'trailer_id') return T.units.find(u => u.id === v)?.unit_no || 'another unit';
+  return String(v);
+}
+function logHtml() {
+  const stopN = (id) => { const s = T.l.stops.find(x => x.id === id); return s ? `Stop ${s.seq} ` : ''; };
+  const ACT = { verified: 'Dispatch verified the trip', approved: 'Billing approved the trip — locked', reopened: 'Reopened', unsigned: 'Signatures removed', locked: 'Locked' };
+  const all = [
+    ...T.changes.map(c => ({ at: c.at, who: c.who, x: `${stopN(c.stop_id)}${FIELD[c.field] || c.field}: ${esc(showVal(c.field, c.old_value))} → ${esc(showVal(c.field, c.new_value))}` })),
+    ...T.closeLog.map(c => ({ at: c.at, who: c.who, x: `${ACT[c.action] || esc(c.action)}${c.detail ? ' — ' + esc(c.detail) : ''}` })),
+    ...T.delayLog.map(c => ({ at: c.at, who: c.who, x: `${stopN(c.stop_id)}${esc(c.what)}` })),
+  ].sort((a, b) => new Date(b.at) - new Date(a.at));
+  return `<div class="card"><header><h2>Every change, and who made it</h2></header>
+    <div class="logs">${all.map(e => `<div class="log"><time>${when(e.at)}</time><span class="w">${esc(nameOf(e.who))}</span><span>${e.x}</span></div>`).join('') || '<div class="empty">No office changes yet. Driver taps are on the stops themselves.</div>'}</div></div>`;
+}
+
+// ── Wiring ───────────────────────────────────────────────────────────
+function wire(edit) {
+  // Load header fields
+  document.querySelectorAll('select[data-load]').forEach(el => el.onchange = async () => {
+    const f = el.dataset.load, was = T.l[f], now = el.value || null;
+    const upd = { [f]: now };
+    // A straight truck pulls nothing; don't leave a stale trailer on the load.
+    if (f === 'truck_id') { const u = T.units.find(x => x.id === now); if (u && u.unit_type !== 'tractor' && T.l.trailer_id) upd.trailer_id = null; }
+    const { error } = await sb.from('loads').update(upd).eq('id', T.l.id);
+    if (error) { fail(error); return draw(); }
+    toast(`${FIELD[f]} changed to ${esc(showVal(f, now))}`, async () => {
+      const back = { [f]: was }; if ('trailer_id' in upd && f !== 'trailer_id') back.trailer_id = T.l.trailer_id;
+      const r = await sb.from('loads').update(back).eq('id', T.l.id); if (r.error) fail(r.error); else { toast('Undone'); load(); }
+    });
+    load();
+  });
+  const sheet = $('sheet'), sheetIn = $('sheet-in');
+  const setSheet = async (on) => {
+    const was = T.l.trip_sheet_at;
+    const { error } = await sb.from('loads').update({ trip_sheet_at: on ? new Date().toISOString() : null }).eq('id', T.l.id);
+    if (error) { fail(error); return draw(); }
+    toast(on ? 'Trip sheet marked turned in' : 'Trip sheet unmarked', async () => { await sb.from('loads').update({ trip_sheet_at: was }).eq('id', T.l.id); load(); });
+    load();
+  };
+  if (sheet) sheet.onchange = () => setSheet(sheet.checked);
+  if (sheetIn) sheetIn.onclick = () => setSheet(true);
+
+  // Stop times and seal
+  document.querySelectorAll('input[data-stop-f]').forEach(el => el.onchange = async () => {
+    const s = T.l.stops.find(x => x.id === el.dataset.stop), f = el.dataset.stopF;
+    const was = s[f];
+    const now = f === 'seal_no' ? (el.value.trim() || null) : fromLocal(el.value);
+    if (f === 'departed_at' && now && s.arrived_at && new Date(now) < new Date(s.arrived_at)) { fail('The departure is before the arrival.'); return draw(); }
+    if (f === 'arrived_at' && now && s.departed_at && new Date(now) > new Date(s.departed_at)) { fail('The arrival is after the departure.'); return draw(); }
+    const { error } = await sb.from('stops').update({ [f]: now }).eq('id', s.id);
+    if (error) { fail(error); return draw(); }
+    const txt = f === 'seal_no' ? `Stop ${s.seq} seal set to ${esc(now || '—')}` : `Stop ${s.seq} ${FIELD[f]} ${esc(hm(was) || '—')} → ${esc(hm(now) || '—')}`;
+    toast(txt, async () => { const r = await sb.from('stops').update({ [f]: was }).eq('id', s.id); if (r.error) fail(r.error); else { toast('Undone'); load(); } });
+    load();
+  });
+
+  // Delivered counts
+  document.querySelectorAll('input[data-item]').forEach(el => el.onchange = async () => {
+    const s = T.l.stops.find(x => x.id === el.dataset.stop), it = s.stop_items.find(x => x.id === el.dataset.item);
+    const was = it.qty_delivered, now = el.value === '' ? null : Math.max(0, parseInt(el.value, 10));
+    const { error } = await sb.from('stop_items').update({ qty_delivered: now }).eq('id', it.id);
+    if (error) { fail(error); return draw(); }
+    let msg = `Stop ${s.seq} ${esc(it.unit_type)} delivered: ${was ?? '—'} → ${now ?? '—'}`;
+    if (now != null && now !== it.qty_ordered && !s.issue_type) msg += ' · short/over with no OS&amp;D — write it up on Loads';
+    toast(msg, async () => { await sb.from('stop_items').update({ qty_delivered: was }).eq('id', it.id); load(); });
+    load();
+  });
+
+  // Jump to a stop row
+  document.querySelectorAll('[data-jump]').forEach(b => b.onclick = () => {
+    const tr = $('s-' + b.dataset.jump); if (!tr) return;
+    document.querySelectorAll('tr.hl').forEach(x => x.classList.remove('hl'));
+    tr.classList.add('hl'); tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const first = tr.querySelector('.ed.need') || tr.querySelector('.ed:not([disabled])'); if (first) setTimeout(() => first.focus(), 350);
+  });
+
+  // Delay codes
+  document.querySelectorAll('select[data-delay]').forEach(el => el.onchange = async () => {
+    if (!el.value) return;
+    const [kind, id] = el.value.split(':');
+    const { error } = await sb.rpc('set_stop_delay', { p_stop: el.dataset.delay, p_delay_code: kind === 'd' ? id : null, p_customer_code: kind === 'c' ? id : null });
+    if (error) { fail(error); return draw(); }
+    toast('Delay code set'); load();
+  });
+  document.querySelectorAll('[data-waive]').forEach(b => b.onclick = async () => {
+    const note = prompt('Zero out this delay — no detention billed or paid. Why? (goes on the record)');
+    if (note === null) return;
+    const { error } = await sb.rpc('waive_stop_delay', { p_stop: b.dataset.waive, p_note: note.trim() || null });
+    if (error) return fail(error);
+    toast('Delay zeroed out'); load();
+  });
+
+  // OS&D resolution
+  document.querySelectorAll('[data-resolve-go]').forEach(b => b.onclick = async () => {
+    const inp = document.querySelector(`input[data-resolve="${b.dataset.resolveGo}"]`);
+    const { error } = await sb.rpc('resolve_stop_issue', { p_stop: b.dataset.resolveGo, p_resolution: inp.value });
+    if (error) return fail(error);
+    toast('OS&amp;D resolved'); load();
+  });
+
+  // POD upload — same private folder and scans table the driver app uses
+  document.querySelectorAll('input[data-pod]').forEach(inp => inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    if (f.size > 10 * 1024 * 1024) return fail('That file is over 10 MB. Scan it at a lower resolution.');
+    const ext = (f.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const path = `${profile.carrier_id}/pod/${inp.dataset.pod}-${Date.now()}.${ext}`;
+    toast('Uploading POD…');
+    const up = await sb.storage.from('scan-photos').upload(path, f, { contentType: f.type || undefined });
+    if (up.error) return fail(up.error);
+    const { error } = await sb.from('scans').insert({ stop_id: inp.dataset.pod, scan_type: 'delivery', photo_path: path, barcode: null });
+    if (error) return fail(error);
+    toast('POD attached'); load();
+  });
+  document.querySelectorAll('[data-view]').forEach(a => a.onclick = async (e) => {
+    e.preventDefault();
+    const { data, error } = await sb.storage.from('scan-photos').createSignedUrl(a.dataset.view, 300);
+    if (error) return fail(error);
+    window.open(data.signedUrl, '_blank', 'noopener');
+  });
+
+  // Sign-offs
+  const note = () => ($('note')?.value || '').trim() || null;
+  if ($('verify')) $('verify').onclick = async () => {
+    const { error } = await sb.rpc('verify_trip', { p_load: T.l.id, p_note: note() });
+    if (error) return fail(error);
+    toast('Verified — it leaves the board and goes to billing'); load();
+  };
+  if ($('approve')) $('approve').onclick = async () => {
+    if (!confirm('Approve this trip for billing? It locks, and only a super user can reopen it.')) return;
+    const { error } = await sb.rpc('approve_trip', { p_load: T.l.id, p_note: note() });
+    if (error) return fail(error);
+    toast('Approved and locked'); load();
+  };
+  if ($('reopen')) $('reopen').onclick = async () => {
+    const why = prompt('Reopen this trip. Both signatures come off. Why? (goes on the record)');
+    if (!why) return;
+    const { error } = await sb.rpc('reopen_trip', { p_load: T.l.id, p_reason: why });
+    if (error) return fail(error);
+    toast('Reopened'); load();
+  };
+}
+
+start();
+</script>
+</body>
+</html>
