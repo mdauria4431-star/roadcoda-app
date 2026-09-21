@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claims · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select,textarea{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  textarea{height:auto;padding:8px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .sp{flex:1}
+  .bar,.row{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
+  .tile .s{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .t td{padding:6px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  .t td.n,.t th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .t tr.tot td{font-weight:700;background:var(--panel-2)}
+  .t tr.click{cursor:pointer} .t tr.click:hover td{background:var(--panel-2)}
+  .barx{display:flex;height:10px;width:160px;border-radius:5px;overflow:hidden;background:var(--panel-2)}
+  .barx i{display:block;height:100%}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--line)}
+  .chip.late{color:var(--late);border-color:var(--late)} .chip.warn{color:var(--warn);border-color:var(--warn)} .chip.ok{color:var(--ok);border-color:var(--ok)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .note{font-size:12.5px;color:var(--ink-2);background:var(--panel-2);border-radius:8px;padding:8px 12px}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+  .toast.err{border-color:var(--late)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="incidents.html">Incidents</a><a class="on" href="claims.html">Claims</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>Claims</h1><span class="sp"></span>
+      <label>As of<input type="date" id="asof"></label>
+      <label>Coverage<select id="cov"><option value="">All coverage</option></select></label>
+      <label>Status<select id="stat"><option value="">All claims</option><option value="open">Open</option><option value="closed">Closed</option></select></label>
+      <div class="tabs" id="tabs"><button data-t="dev">Development</button><button data-t="list">Claims</button><button data-t="subro">Subrogation</button><button data-t="runs">Loss runs</button></div>
+    </div>
+    <div class="tiles" id="tiles"></div>
+
+    <!-- Development -->
+    <div data-pane="dev" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card"><header><h2>By accident year</h2><span class="sp"></span><span class="mini">Paid ▮ and outstanding ▮ as of the date above. Payout = paid ÷ incurred.</span><button class="btn small" id="csv">All claims (CSV)</button></header><div class="wrap" id="years"></div></div>
+      <div class="card"><header><h2>Development triangle</h2><span class="sp"></span>
+          <label style="flex-direction:row;align-items:center;gap:6px">Show<select id="measure"><option value="incurred">Incurred</option><option value="paid">Paid</option><option value="net">Net of recoveries</option></select></label></header>
+        <div class="wrap" id="tri"></div>
+        <div class="mini pad">Each accident year's total at 12, 24, 36… months after the year began, from the valuation on hand at that age. The last number in each row is still developing. Factors = next age ÷ this age, across the years that have both.</div></div>
+      <div class="card"><header><h2>Large-loss watchlist</h2><span class="sp"></span>
+          <label style="flex-direction:row;align-items:center;gap:6px">Incurred ≥<input id="thr" type="number" value="50000" style="width:110px"></label>
+          <label style="flex-direction:row;align-items:center;gap:6px">or moved ≥<input id="jump" type="number" value="25000" style="width:110px"></label></header><div class="wrap" id="watch"></div></div>
+    </div>
+
+    <!-- Claims list + detail -->
+    <div class="card" data-pane="list">
+      <header><h2>Claims</h2><span class="sp"></span><input id="q" placeholder="Search claim #, claimant" style="width:220px"><button class="btn primary small ed" id="new">+ New claim</button></header>
+      <div class="wrap" id="claims"></div>
+    </div>
+    <div class="card" id="detail" hidden></div>
+
+    <!-- Subrogation -->
+    <div class="card" data-pane="subro"><header><h2>Subrogation — recovering from the at-fault party</h2><span class="sp"></span><span class="mini">Open a claim to start or update its recovery. Deadlines are the dates you enter (e.g. the statute of limitations) — check them with your insurer or attorney.</span></header><div class="wrap" id="subro"></div></div>
+
+    <!-- Loss runs -->
+    <div class="card" data-pane="runs">
+      <header><h2>Loss runs from your insurer</h2><span class="sp"></span><span class="mini">Each upload is a valuation: every claim's paid, reserve and recovery as of that date. New claim numbers become claims.</span></header>
+      <div class="pad row ed">
+        <label>Valuation date (the "as of" on the loss run)<input type="date" id="lr-date"></label><label>Insurer<input id="lr-ins" placeholder="e.g. Great West"></label>
+        <label class="btn small primary" style="flex-direction:row">Choose file (Excel or CSV)<input type="file" id="lr-file" accept=".xlsx,.xls,.csv,.txt" hidden></label>
+      </div>
+      <div class="pad" id="lr-box" hidden></div>
+      <div class="pad"><b>Loaded loss runs</b><div class="wrap" id="batches" style="margin-top:6px"></div></div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = (n) => n == null ? '' : (n < 0 ? '−' : '') + '$' + Math.abs(+n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const big = (n) => { n = +n || 0; const a = Math.abs(n); return (n < 0 ? '−' : '') + (a >= 1e6 ? '$' + (a / 1e6).toFixed(1) + 'M' : a >= 1e4 ? '$' + (a / 1e3).toFixed(0) + 'K' : '$' + a.toLocaleString()); };
+const d = (s) => s ? new Date(s + 'T12:00:00').toLocaleDateString([], { month: 'numeric', day: 'numeric', year: 'numeric' }) : '';
+const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('safety', 'edit');
+const COV = { auto_liability: 'Auto liability', physical_damage: 'Physical damage', cargo: 'Cargo', workers_comp: "Workers' comp", general_liability: 'General liability', other: 'Other' };
+const HANDLED = { insured: 'Insurer', deductible: 'Deductible (we pay first)', self: 'Self-insured' };
+const SUB = { evaluating: 'Evaluating', demand_sent: 'Demand sent', negotiating: 'Negotiating', litigation: 'In litigation', recovered: 'Recovered', closed_no_recovery: 'Closed — no recovery' };
+let TAB = 'dev', ROWS = [], CLAIMS = [], SUBRO = [], LOOK = {}, UP = null, LAYOUT = {}, tt = null;
+function toast(html, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = html; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 5000); }
+const fail = (e) => toast(esc(e.message || e), true);
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('safety')) return;
+  $('app').hidden = false;
+  if (!canEdit()) document.querySelectorAll('.ed').forEach(e => e.hidden = true);
+  $('cov').innerHTML += Object.entries(COV).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  $('asof').value = iso(new Date()); $('lr-date').value = iso(new Date());
+  const [dr, eq, inc, cu, ly] = await Promise.all([sb.from('drivers').select('id, full_name').order('full_name'), sb.from('equipment').select('id, unit_no').order('unit_no'),
+    sb.from('incidents').select('id, incident_no, kind, occurred_at, driver_id').order('occurred_at', { ascending: false }).limit(300), sb.from('customers').select('id, name').order('name'), sb.from('claim_layouts').select('map').maybeSingle()]);
+  LOOK = { drivers: dr.data || [], units: eq.data || [], incidents: inc.data || [], customers: cu.data || [] }; LAYOUT = ly.data?.map || {};
+  const q = new URLSearchParams(location.search);
+  TAB = q.get('tab') || (q.get('incident') ? 'list' : 'dev');
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
+  ['asof', 'cov', 'stat'].forEach(id => $(id).onchange = load); $('measure').onchange = drawTriangle; $('thr').onchange = $('jump').onchange = drawWatch; $('q').oninput = drawList;
+  await load();
+  if (q.get('incident')) { const c = CLAIMS.find(x => x.incident_id === q.get('incident')); openClaim(c ? c.id : null, q.get('incident')); }
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load() {
+  const [a, c, s] = await Promise.all([sb.rpc('claims_as_of', { p_as_of: $('asof').value }), sb.from('claims').select('*').order('loss_date', { ascending: false }), sb.from('claim_subrogation').select('*')]);
+  if (a.error) { $('app').innerHTML = `<div class="card pad error">${esc(a.error.message)} — run 71_claims.sql in the SQL Editor.</div>`; return; }
+  CLAIMS = c.data || []; SUBRO = s.data || [];
+  ROWS = (a.data || []).filter(r => (!$('cov').value || r.coverage === $('cov').value) && (!$('stat').value || ($('stat').value === 'open' ? r.status !== 'closed' : r.status === 'closed')));
+  const sum = (k) => ROWS.reduce((x, r) => x + +(r[k] || 0), 0), inc = sum('incurred'), open = ROWS.filter(r => r.status !== 'closed').length;
+  $('tiles').innerHTML = [['Total incurred', big(inc), `${ROWS.length} claims`], ['Paid to date', big(sum('paid')), inc ? `${(100 * sum('paid') / inc).toFixed(1)}% payout` : '—'],
+    ['Outstanding reserve', big(sum('reserve')), inc ? `${(100 * sum('reserve') / inc).toFixed(1)}% of incurred` : '—'], ['Recovered', big(sum('recovered')), 'subrogation and other recoveries'],
+    ['Net incurred', big(sum('net')), 'incurred − recovered'], ['Open / closed', `${open} / ${ROWS.length - open}`, 'open claims still developing']]
+    .map(([k, v, s2]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s2}</div></div>`).join('');
+  draw();
+}
+function draw() {
+  history.replaceState(null, '', '?tab=' + TAB);
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === TAB));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== TAB);
+  if (TAB !== 'list') $('detail').hidden = true;
+  if (TAB === 'dev') { drawYears(); drawTriangle(); drawWatch(); }
+  if (TAB === 'list') drawList();
+  if (TAB === 'subro') drawSubro();
+  if (TAB === 'runs') loadBatches();
+}
+
+// ── Development ─────────────────────────────────────────────────────
+function drawYears() {
+  const ys = {}; ROWS.forEach(r => { const y = ys[r.accident_year] ||= { n: 0, open: 0, paid: 0, reserve: 0, incurred: 0, recovered: 0, net: 0 };
+    y.n++; if (r.status !== 'closed') y.open++; ['paid', 'reserve', 'incurred', 'recovered', 'net'].forEach(k => y[k] += +(r[k] || 0)); });
+  const keys = Object.keys(ys).sort().reverse(), max = Math.max(1, ...Object.values(ys).map(y => y.incurred));
+  $('years').innerHTML = keys.length ? `<table class="t"><thead><tr><th>Accident year</th><th class="n">Claims</th><th class="n">Open</th><th class="n">Paid</th><th class="n">Outstanding</th><th class="n">Incurred</th><th class="n">Recovered</th><th class="n">Net</th><th class="n">Payout</th><th></th></tr></thead><tbody>
+    ${keys.map(k => { const y = ys[k]; return `<tr><td><b>${k}</b></td><td class="n">${y.n}</td><td class="n">${y.open}</td><td class="n">${money(y.paid)}</td><td class="n">${money(y.reserve)}</td><td class="n">${money(y.incurred)}</td><td class="n">${money(y.recovered)}</td><td class="n">${money(y.net)}</td>
+      <td class="n">${y.incurred ? (100 * y.paid / y.incurred).toFixed(1) + '%' : '—'}</td><td><div class="barx" style="width:${Math.max(8, 160 * y.incurred / max)}px"><i style="width:${y.incurred ? 100 * y.paid / y.incurred : 0}%;background:var(--accent)"></i><i style="width:${y.incurred ? 100 * y.reserve / y.incurred : 0}%;background:var(--warn)"></i></div></td></tr>`; }).join('')}</tbody></table>`
+    : '<div class="empty">No claims yet. Upload a loss run (Loss runs tab) or add a claim (Claims tab).</div>';
+}
+async function drawTriangle() {
+  const { data, error } = await sb.rpc('claims_triangle', { p_measure: $('measure').value, p_coverage: $('cov').value || null }); if (error) return fail(error);
+  const rows = data || [], years = [...new Set(rows.map(r => r.accident_year))].sort(), ages = [...new Set(rows.map(r => r.months))].sort((a, b) => a - b);
+  const at = (y, m) => rows.find(r => r.accident_year === y && r.months === m);
+  const f = ages.slice(0, -1).map((m, i) => { const n = ages[i + 1], ys = years.filter(y => at(y, m) && at(y, n) && +at(y, m).amount > 0);
+    const a = ys.reduce((s, y) => s + +at(y, m).amount, 0), b = ys.reduce((s, y) => s + +at(y, n).amount, 0); return a ? (b / a).toFixed(3) : ''; });
+  $('tri').innerHTML = years.length ? `<table class="t"><thead><tr><th>Accident year</th>${ages.map(m => `<th class="n">${m} mo</th>`).join('')}</tr></thead><tbody>
+    ${years.map(y => `<tr><td><b>${y}</b></td>${ages.map(m => { const c = at(y, m), last = c && !at(y, m + 12); return `<td class="n"${last ? ' style="color:var(--warn)" title="still developing"' : ''}>${c ? money(c.amount) : ''}</td>`; }).join('')}</tr>`).join('')}
+    <tr class="tot"><td>Age-to-age factor</td>${ages.map((m, i) => `<td class="n">${f[i] ? f[i] + ` <span class="mini">${m}→${ages[i + 1]}</span>` : ''}</td>`).join('')}</tr></tbody></table>` : '<div class="empty">The triangle fills in as valuations come in (each loss run upload is one).</div>';
+}
+function drawWatch() {
+  const thr = +$('thr').value || 0, jump = +$('jump').value || 0;
+  const w = ROWS.filter(r => r.status !== 'closed' && (+r.incurred >= thr || (r.prev_incurred != null && Math.abs(+r.incurred - +r.prev_incurred) >= jump))).sort((a, b) => b.incurred - a.incurred);
+  $('watch').innerHTML = w.length ? `<table class="t"><thead><tr><th>Claim</th><th>Coverage</th><th>Loss date</th><th class="n">Incurred</th><th class="n">Before</th><th class="n">Change</th><th class="n">Outstanding</th><th>Subrogation</th></tr></thead><tbody>
+    ${w.map(r => { const ch = r.prev_incurred == null ? null : +r.incurred - +r.prev_incurred; return `<tr class="click" data-open="${r.claim_id}"><td><b>${esc(r.claim_no || '—')}</b> <span class="mini">${esc(r.claimant || '')}</span></td><td>${COV[r.coverage]}</td><td>${d(r.loss_date)}</td>
+      <td class="n">${money(r.incurred)}</td><td class="n">${r.prev_incurred == null ? '' : money(r.prev_incurred)}</td><td class="n"${ch > 0 ? ' style="color:var(--late)"' : ''}>${ch == null ? '' : (ch > 0 ? '+' : '') + money(ch)}</td><td class="n">${money(r.reserve)}</td><td>${r.subro_status ? SUB[r.subro_status] : ''}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">No open claims above those amounts.</div>';
+  document.querySelectorAll('#watch [data-open]').forEach(tr => tr.onclick = () => { TAB = 'list'; draw(); openClaim(tr.dataset.open); });
+}
+$('csv').onclick = () => {
+  const cols = ['claim_no', 'coverage', 'claimant', 'loss_date', 'accident_year', 'status', 'handled', 'insurer', 'valuation_date', 'paid', 'reserve', 'incurred', 'recovered', 'net', 'subro_status'];
+  const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([[cols.join(','), ...ROWS.map(r => cols.map(c => q(r[c])).join(','))].join('\r\n')], { type: 'text/csv' }));
+  a.download = `claims-as-of-${$('asof').value}.csv`; document.body.appendChild(a); a.click(); a.remove();
+};
+
+// ── Claims list and detail ──────────────────────────────────────────
+function drawList() {
+  const q = $('q').value.trim().toLowerCase(), byId = Object.fromEntries(ROWS.map(r => [r.claim_id, r]));
+  const list = CLAIMS.filter(c => byId[c.id] || !$('cov').value && !$('stat').value).filter(c => !q || [c.claim_no, c.claimant, c.insurer].join(' ').toLowerCase().includes(q));
+  $('claims').innerHTML = list.length ? `<table class="t"><thead><tr><th>Claim #</th><th>Coverage</th><th>Claimant</th><th>Loss date</th><th>Status</th><th>Handled by</th><th class="n">Incurred</th><th class="n">Outstanding</th><th>Subrogation</th></tr></thead><tbody>
+    ${list.map(c => { const r = byId[c.id] || {}; return `<tr class="click" data-open="${c.id}"><td><b>${esc(c.claim_no || '—')}</b>${c.incident_id ? ' <span class="mini">incident</span>' : ''}${c.litigated ? ' <span class="chip late">litigated</span>' : ''}</td><td>${COV[c.coverage]}</td><td>${esc(c.claimant || '')}</td><td>${d(c.loss_date)}</td>
+      <td>${r.status === 'closed' || c.status === 'closed' ? '<span class="chip">Closed</span>' : '<span class="chip warn">Open</span>'}</td><td>${HANDLED[c.handled]}</td><td class="n">${money(r.incurred)}</td><td class="n">${money(r.reserve)}</td><td>${r.subro_status ? SUB[r.subro_status] : ''}</td></tr>`; }).join('')}</tbody></table>` : '<div class="empty">No claims match.</div>';
+  document.querySelectorAll('#claims [data-open]').forEach(tr => tr.onclick = () => openClaim(tr.dataset.open));
+}
+$('new').onclick = () => openClaim(null);
+const opt = (list, val, lab, blank) => `<option value="">${blank}</option>` + list.map(x => `<option value="${x.id}" ${x.id === val ? 'selected' : ''}>${esc(lab(x))}</option>`).join('');
+async function openClaim(id, fromIncident) {
+  const c = id ? CLAIMS.find(x => x.id === id) : (() => { const i = LOOK.incidents.find(x => x.id === fromIncident);
+    return { coverage: i && i.kind === 'injury' ? 'workers_comp' : i && i.kind === 'cargo' ? 'cargo' : 'auto_liability', loss_date: i ? i.occurred_at.slice(0, 10) : iso(new Date()), status: 'open', handled: 'insured', incident_id: fromIncident || null, driver_id: i?.driver_id || null }; })();
+  const dis = canEdit() ? '' : ' disabled';
+  const [v, tx, sub] = id ? await Promise.all([sb.from('claim_valuations').select('*').eq('claim_id', id).order('valuation_date', { ascending: false }), sb.from('claim_transactions').select('*').eq('claim_id', id).order('on_date'), sb.from('claim_subrogation').select('*').eq('claim_id', id).maybeSingle()]) : [{ data: [] }, { data: [] }, { data: null }];
+  const s = sub.data;
+  const box = $('detail'); box.hidden = false;
+  box.innerHTML = `<header><h2>${id ? 'Claim ' + esc(c.claim_no || '') : 'New claim'}</h2><span class="sp"></span><button class="btn small" id="c-close">Close</button></header>
+    <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+      <div class="grid">
+        <label>Claim #<input id="c-no" value="${esc(c.claim_no || '')}"${dis}></label>
+        <label>Coverage<select id="c-cov"${dis}>${Object.entries(COV).map(([k, l]) => `<option value="${k}" ${c.coverage === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label>Claimant<input id="c-claimant" value="${esc(c.claimant || '')}"${dis}></label>
+        <label>Loss date<input type="date" id="c-loss" value="${c.loss_date || ''}"${dis}></label>
+        <label>Reported<input type="date" id="c-rep" value="${c.reported_on || ''}"${dis}></label>
+        <label>Status<select id="c-status"${dis}>${['open', 'closed', 'reopened'].map(x => `<option ${c.status === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+        <label>Handled by<select id="c-handled"${dis}>${Object.entries(HANDLED).map(([k, l]) => `<option value="${k}" ${c.handled === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label>Deductible<input type="number" id="c-ded" value="${c.deductible ?? ''}"${dis}></label>
+        <label>Insurer<input id="c-ins" value="${esc(c.insurer || '')}"${dis}></label>
+        <label>Adjuster<input id="c-adj" value="${esc(c.adjuster || '')}"${dis}></label>
+        <label>Adjuster phone / email<input id="c-adjc" value="${esc(c.adjuster_contact || '')}"${dis}></label>
+        <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500;align-self:end"><input type="checkbox" id="c-lit" ${c.litigated ? 'checked' : ''} style="height:auto"${dis}> In litigation</label>
+        <label>Incident<select id="c-inc"${dis}>${opt(LOOK.incidents, c.incident_id, i => `#${i.incident_no} ${i.kind} ${i.occurred_at.slice(0, 10)}`, '—')}</select></label>
+        <label>Driver<select id="c-drv"${dis}>${opt(LOOK.drivers, c.driver_id, x => x.full_name, '—')}</select></label>
+        <label>Unit<select id="c-unit"${dis}>${opt(LOOK.units, c.equipment_id, x => x.unit_no, '—')}</select></label>
+        <label>Customer (cargo)<select id="c-cust"${dis}>${opt(LOOK.customers, c.customer_id, x => x.name, '—')}</select></label>
+      </div>
+      <label>What happened<textarea id="c-desc" rows="2"${dis}>${esc(c.description || '')}</textarea></label>
+      ${canEdit() ? `<div class="row"><button class="btn primary small" id="c-save">${id ? 'Save' : 'Create claim'}</button><span class="mini" id="c-msg"></span></div>` : ''}
+      ${id ? `
+      <div><b>Valuations</b> <span class="mini">— from loss runs, and kept current by the entries below</span>
+        ${(v.data || []).length ? `<table class="t" style="margin-top:6px"><thead><tr><th>As of</th><th>From</th><th class="n">Paid</th><th class="n">Outstanding</th><th class="n">Incurred</th><th class="n">Recovered</th><th>Status</th></tr></thead><tbody>${v.data.map(x => `<tr><td>${d(x.valuation_date)}</td><td>${x.source === 'loss_run' ? 'Loss run' : 'Entries'}</td><td class="n">${money(x.paid)}</td><td class="n">${money(x.reserve)}</td><td class="n">${money(x.incurred)}</td><td class="n">${money(x.recovered)}</td><td>${esc(x.status || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="mini">None yet.</div>'}</div>
+      <div><b>Entries</b> <span class="mini">— for deductible and self-insured claims: set the reserve (what's still expected to be paid), record payments, expenses and recoveries. Payments draw the reserve down.</span>
+        ${(tx.data || []).length ? `<table class="t" style="margin-top:6px"><thead><tr><th>Date</th><th>Entry</th><th class="n">Amount</th><th>Payee / from</th><th>Note</th><th></th></tr></thead><tbody>${tx.data.map(x => `<tr><td>${d(x.on_date)}</td><td>${{ reserve: 'Reserve set to', payment: 'Payment', expense: 'Expense', recovery: 'Recovery' }[x.kind]}</td><td class="n">${money(x.amount)}</td><td>${esc(x.payee || '')}</td><td>${esc(x.note || '')}</td><td>${canEdit() ? `<button class="btn small" data-deltx="${x.id}">Remove</button>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+        ${canEdit() ? `<div class="row" style="margin-top:8px"><input type="date" id="t-date" value="${iso(new Date())}"><select id="t-kind"><option value="reserve">Reserve set to</option><option value="payment">Payment</option><option value="expense">Expense</option><option value="recovery">Recovery</option></select>
+          <input type="number" id="t-amt" placeholder="amount" style="width:120px"><input id="t-payee" placeholder="payee / from" style="width:160px"><input id="t-note" placeholder="note" style="width:200px"><button class="btn small" id="t-add">Add</button></div>` : ''}</div>
+      <div class="card" style="border-color:var(--accent)"><header><h2>Subrogation</h2><span class="sp"></span>${s ? `<span class="chip ${s.status === 'recovered' ? 'ok' : s.status === 'closed_no_recovery' ? '' : 'warn'}">${SUB[s.status]}</span>` : '<span class="mini">not started</span>'}</header><div class="pad">
+        <div class="grid">
+          <label>Status<select id="s-status"${dis}>${Object.entries(SUB).map(([k, l]) => `<option value="${k}" ${(s?.status || 'evaluating') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label>At-fault party<input id="s-party" value="${esc(s?.responsible_party || '')}"${dis}></label><label>Their insurer<input id="s-ins" value="${esc(s?.their_insurer || '')}"${dis}></label>
+          <label>Their claim #<input id="s-no" value="${esc(s?.their_claim_no || '')}"${dis}></label>
+          <label>Pursued by<select id="s-by"${dis}>${[['insurer', 'Our insurer'], ['in_house', 'Us'], ['agency', 'Recovery agency'], ['attorney', 'Attorney']].map(([k, l]) => `<option value="${k}" ${(s?.pursued_by || 'insurer') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label>Fee %<input type="number" id="s-fee" value="${s?.fee_pct ?? ''}"${dis}></label><label>Demand $<input type="number" id="s-dem" value="${s?.demand_amount ?? ''}"${dis}></label>
+          <label>Demand sent<input type="date" id="s-dd" value="${s?.demand_date || ''}"${dis}></label><label>Deadline to file<input type="date" id="s-dl" value="${s?.deadline || ''}"${dis}></label>
+        </div>
+        <label style="margin-top:8px">Notes<textarea id="s-notes" rows="2"${dis}>${esc(s?.notes || '')}</textarea></label>
+        ${canEdit() ? `<div class="row" style="margin-top:8px"><button class="btn small primary" id="s-save">${s ? 'Save recovery' : 'Start recovery'}</button><span class="mini">Money recovered is entered as a Recovery above (or comes from the loss run).</span></div>` : ''}</div></div>` : ''}
+    </div>`;
+  box.scrollIntoView({ behavior: 'smooth' });
+  $('c-close').onclick = () => { box.hidden = true; };
+  if ($('c-save')) $('c-save').onclick = async () => {
+    const row = { claim_no: $('c-no').value.trim() || null, coverage: $('c-cov').value, claimant: $('c-claimant').value.trim() || null, loss_date: $('c-loss').value, reported_on: $('c-rep').value || null,
+      status: $('c-status').value, handled: $('c-handled').value, deductible: $('c-ded').value === '' ? null : +$('c-ded').value, insurer: $('c-ins').value.trim() || null, adjuster: $('c-adj').value.trim() || null,
+      adjuster_contact: $('c-adjc').value.trim() || null, litigated: $('c-lit').checked, incident_id: $('c-inc').value || null, driver_id: $('c-drv').value || null, equipment_id: $('c-unit').value || null,
+      customer_id: $('c-cust').value || null, description: $('c-desc').value.trim() || null };
+    if (!row.loss_date) return $('c-msg').innerHTML = '<span class="error">Enter the loss date.</span>';
+    const r = id ? await sb.from('claims').update(row).eq('id', id).select().single() : await sb.from('claims').insert(row).select().single();
+    if (r.error) return $('c-msg').innerHTML = `<span class="error">${esc(/claims_no_uq|duplicate/.test(r.error.message) ? 'That claim # is already used.' : r.error.message)}</span>`;
+    toast('Saved.'); await load(); TAB = 'list'; draw(); openClaim(r.data.id);
+  };
+  if ($('t-add')) $('t-add').onclick = async () => {
+    const amt = +$('t-amt').value; if (!(amt >= 0) || $('t-amt').value === '') return fail('Enter the amount.');
+    const { error } = await sb.from('claim_transactions').insert({ claim_id: id, on_date: $('t-date').value, kind: $('t-kind').value, amount: amt, payee: $('t-payee').value.trim() || null, note: $('t-note').value.trim() || null });
+    if (error) return fail(error); await load(); openClaim(id);
+  };
+  document.querySelectorAll('[data-deltx]').forEach(b => b.onclick = async () => { if (!confirm('Remove this entry?')) return; const { error } = await sb.from('claim_transactions').delete().eq('id', b.dataset.deltx); if (error) return fail(error); await load(); openClaim(id); });
+  if ($('s-save')) $('s-save').onclick = async () => {
+    const row = { claim_id: id, status: $('s-status').value, responsible_party: $('s-party').value.trim() || null, their_insurer: $('s-ins').value.trim() || null, their_claim_no: $('s-no').value.trim() || null,
+      pursued_by: $('s-by').value, fee_pct: $('s-fee').value === '' ? null : +$('s-fee').value, demand_amount: $('s-dem').value === '' ? null : +$('s-dem').value, demand_date: $('s-dd').value || null,
+      deadline: $('s-dl').value || null, notes: $('s-notes').value.trim() || null, updated_at: new Date().toISOString() };
+    const { error } = await sb.from('claim_subrogation').upsert(row, { onConflict: 'claim_id' }); if (error) return fail(error); toast('Recovery saved.'); await load(); openClaim(id);
+  };
+}
+
+// ── Subrogation board ───────────────────────────────────────────────
+function drawSubro() {
+  const byId = Object.fromEntries(ROWS.map(r => [r.claim_id, r])), cl = Object.fromEntries(CLAIMS.map(c => [c.id, c]));
+  const today = new Date(iso(new Date()) + 'T12:00:00');
+  const rows = SUBRO.map(s => ({ s, c: cl[s.claim_id], r: byId[s.claim_id] || {} })).filter(x => x.c).sort((a, b) => (a.s.deadline || '9999').localeCompare(b.s.deadline || '9999'));
+  const openR = rows.filter(x => !['recovered', 'closed_no_recovery'].includes(x.s.status)), dem = rows.reduce((a, x) => a + +(x.s.demand_amount || 0), 0), rec = rows.reduce((a, x) => a + +(x.r.recovered || 0), 0);
+  const soon = openR.filter(x => x.s.deadline && (new Date(x.s.deadline + 'T12:00:00') - today) / 864e5 <= 90).length;
+  $('subro').innerHTML = `<div class="tiles pad">${[['Open recoveries', openR.length], ['Demanded', big(dem)], ['Recovered', big(rec)], ['Recovery rate', dem ? (100 * rec / dem).toFixed(0) + '%' : '—'], ['Deadlines ≤ 90 days', soon]]
+      .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k.startsWith('Deadlines') && v ? 'error' : ''}">${v}</div></div>`).join('')}</div>`
+    + (rows.length ? `<table class="t"><thead><tr><th>Claim</th><th>At-fault party</th><th>Their insurer</th><th>Status</th><th>Pursued by</th><th class="n">Demand</th><th class="n">Recovered</th><th class="n">Net of fee</th><th>Deadline</th></tr></thead><tbody>
+      ${rows.map(({ s, c, r }) => { const left = s.deadline ? Math.round((new Date(s.deadline + 'T12:00:00') - today) / 864e5) : null, open = !['recovered', 'closed_no_recovery'].includes(s.status);
+        return `<tr class="click" data-open="${c.id}"><td><b>${esc(c.claim_no || '—')}</b> <span class="mini">${COV[c.coverage]}</span></td><td>${esc(s.responsible_party || '')}</td><td>${esc(s.their_insurer || '')}</td><td>${SUB[s.status]}</td>
+          <td>${{ insurer: 'Our insurer', in_house: 'Us', agency: 'Agency', attorney: 'Attorney' }[s.pursued_by]}${s.fee_pct ? ` <span class="mini">${s.fee_pct}%</span>` : ''}</td><td class="n">${money(s.demand_amount)}</td><td class="n">${money(r.recovered)}</td>
+          <td class="n">${r.recovered ? money(+r.recovered * (1 - (+s.fee_pct || 0) / 100)) : ''}</td>
+          <td>${s.deadline ? `${d(s.deadline)} ${open ? `<span class="chip ${left < 0 ? 'late' : left <= 90 ? 'late' : left <= 180 ? 'warn' : ''}">${left < 0 ? 'passed' : left + ' days'}</span>` : ''}` : open ? '<span class="chip warn">no date</span>' : ''}</td></tr>`; }).join('')}</tbody></table>`
+      : '<div class="empty">No recoveries yet. Open a claim where someone else was at fault and start one.</div>');
+  document.querySelectorAll('#subro [data-open]').forEach(tr => tr.onclick = () => { TAB = 'list'; draw(); openClaim(tr.dataset.open); });
+}
+
+// ── Loss run upload ─────────────────────────────────────────────────
+const LRF = [['claim_no', 'Claim #', /claim ?(#|no|num|number)|^claim$/i], ['loss_date', 'Loss / accident date', /loss ?date|date of loss|accident ?date|occur|dol/i], ['coverage', 'Coverage / line', /cover|line|lob|policy ?type/i],
+  ['claimant', 'Claimant', /claimant|name/i], ['status', 'Status', /status|open|closed/i], ['paid', 'Paid (total)', /total ?paid|^paid|paid ?to ?date|paid$/i], ['reserve', 'Reserve / outstanding', /reserve|outstanding|o\/s/i],
+  ['incurred', 'Incurred (total)', /incurred/i], ['recovered', 'Recovered / subrogation (optional)', /recover|subro|salvage/i], ['insurer', 'Insurer (optional)', /insurer|carrier|company/i], ['description', 'Description (optional)', /desc|narrative|cause|summary/i]];
+const toDate = (v) => { if (v instanceof Date && !isNaN(v)) return iso(v); if (typeof v === 'number' && v > 20000 && v < 80000) return iso(new Date(Math.round((v - 25569) * 864e5) + new Date().getTimezoneOffset() * 6e4));
+  const s = String(v || '').trim(); let m; if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  if ((m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/))) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`; const x = new Date(s); return isNaN(x) ? '' : iso(x); };
+const numv = (v) => { const x = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isNaN(x) ? '' : x; };
+$('lr-file').onchange = async () => {
+  const f = $('lr-file').files[0]; $('lr-file').value = ''; if (!f) return; if (!window.XLSX) return fail('The spreadsheet reader did not load. Check your connection and refresh.');
+  const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true, raw: /\.(csv|txt)$/i.test(f.name) });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' }).filter(r => r.some(c => String(c).trim() !== ''));
+  const header = Math.max(0, rows.slice(0, 20).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 3));
+  UP = { name: f.name, rows, header, map: {} }; guess(); drawMap();
+};
+function guess() { const head = UP.rows[UP.header].map(h => String(h).trim()), used = new Set(); UP.map = {};
+  LRF.forEach(([k]) => { const i = LAYOUT[k] != null ? head.indexOf(LAYOUT[k]) : -1; if (i >= 0) { UP.map[k] = i; used.add(i); } });
+  LRF.forEach(([k, , re]) => { if (UP.map[k] != null) return; const i = head.findIndex((h, j) => h && !used.has(j) && re.test(h)); if (i >= 0) { UP.map[k] = i; used.add(i); } }); }
+function parsed() { const g = (r, k) => UP.map[k] != null ? r[UP.map[k]] : '';
+  return UP.rows.slice(UP.header + 1).map((r, i) => ({ row: UP.header + i + 2, claim_no: String(g(r, 'claim_no')).trim(), loss_date: toDate(g(r, 'loss_date')), coverage: String(g(r, 'coverage')).trim(),
+    claimant: String(g(r, 'claimant')).trim(), status: String(g(r, 'status')).trim(), paid: numv(g(r, 'paid')), reserve: numv(g(r, 'reserve')), incurred: numv(g(r, 'incurred')),
+    recovered: numv(g(r, 'recovered')), insurer: String(g(r, 'insurer')).trim(), description: String(g(r, 'description')).trim() })).filter(x => x.claim_no); }
+function drawMap() {
+  const head = UP.rows[UP.header].map(h => String(h).trim()), P = parsed(), miss = ['claim_no'].concat(UP.map.paid == null && UP.map.incurred == null ? ['paid or incurred'] : []).filter(k => k !== 'claim_no' || UP.map.claim_no == null);
+  const opts = (sel) => '<option value="">(not in file)</option>' + head.map((h, j) => `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(h || 'Column ' + (j + 1))}</option>`).join('');
+  const box = $('lr-box'); box.hidden = false;
+  box.innerHTML = `<div class="row"><b>${esc(UP.name)}</b><span class="mini">${P.length} claims</span><span class="sp"></span><label>Header row<select id="lr-head">${UP.rows.slice(0, 20).map((r, i) => `<option value="${i}" ${i === UP.header ? 'selected' : ''}>Row ${i + 1}: ${esc(r.filter(Boolean).slice(0, 3).join(' | ').slice(0, 50))}</option>`).join('')}</select></label></div>
+    <div class="grid" style="margin-top:8px">${LRF.map(([k, l]) => `<label>${l}<select data-map="${k}">${opts(UP.map[k])}</select></label>`).join('')}</div>
+    <div class="wrap" style="margin-top:10px;max-height:220px;overflow:auto"><table class="t"><thead><tr><th>Claim #</th><th>Loss date</th><th>Coverage</th><th>Status</th><th class="n">Paid</th><th class="n">Reserve</th><th class="n">Incurred</th></tr></thead><tbody>
+      ${P.slice(0, 10).map(x => `<tr><td>${esc(x.claim_no)}</td><td>${esc(x.loss_date)}</td><td>${esc(x.coverage)}</td><td>${esc(x.status)}</td><td class="n">${x.paid}</td><td class="n">${x.reserve}</td><td class="n">${x.incurred}</td></tr>`).join('')}</tbody></table></div>
+    <div class="row" style="margin-top:10px">${miss.length ? `<span class="error">Match: ${miss.join(', ')}</span>` : `<button class="btn primary" id="lr-go">Load ${P.length} claims as of ${d($('lr-date').value)}</button>`}<button class="btn small" id="lr-x">Cancel</button><span id="lr-msg" class="mini"></span></div>`;
+  $('lr-head').onchange = () => { UP.header = +$('lr-head').value; guess(); drawMap(); };
+  document.querySelectorAll('#lr-box [data-map]').forEach(s => s.onchange = () => { if (s.value === '') delete UP.map[s.dataset.map]; else UP.map[s.dataset.map] = +s.value; drawMap(); });
+  $('lr-x').onclick = () => { UP = null; box.hidden = true; };
+  if ($('lr-go')) $('lr-go').onclick = async () => {
+    $('lr-go').disabled = true; const head2 = UP.rows[UP.header].map(h => String(h).trim());
+    const layout = Object.fromEntries(Object.entries(UP.map).map(([k, i]) => [k, head2[i]])); await sb.from('claim_layouts').upsert({ map: layout }); LAYOUT = layout;
+    const { data, error } = await sb.rpc('claims_import', { p_valuation: $('lr-date').value, p_insurer: $('lr-ins').value.trim() || null, p_file: UP.name, p_rows: parsed() });
+    if (error) { $('lr-go').disabled = false; return $('lr-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; }
+    box.innerHTML = `<b class="ok">Loaded ${data.loaded} claims (${data.new_claims} new).</b> ${data.skipped ? `<span class="warn">${data.skipped} skipped:</span> ${data.problems.slice(0, 8).map(p => `row ${p.row} — ${esc(p.why)}`).join('; ')}` : ''}`;
+    UP = null; load();
+  };
+}
+async function loadBatches() {
+  const { data } = await sb.from('claim_batches').select('*').order('valuation_date', { ascending: false }).limit(40);
+  $('batches').innerHTML = (data || []).length ? `<table class="t"><thead><tr><th>Valuation date</th><th>Insurer</th><th>File</th><th class="n">Claims</th><th class="n">New</th><th></th></tr></thead><tbody>${data.map(b => `<tr><td>${d(b.valuation_date)}</td><td>${esc(b.insurer || '')}</td><td>${esc(b.file_name || '')}</td><td class="n">${b.rows_loaded}</td><td class="n">${b.claims_created}</td>
+    <td>${canEdit() ? `<button class="btn small" data-delb="${b.id}">Remove this valuation</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mini">No loss runs loaded yet.</div>';
+  document.querySelectorAll('[data-delb]').forEach(b => b.onclick = async () => { if (!confirm('Remove this loss run\'s valuations? (Claims it created stay; load a corrected file afterwards.)')) return; const { error } = await sb.from('claim_batches').delete().eq('id', b.dataset.delb); if (error) return fail(error); loadBatches(); load(); });
+}
+
+start();
+</script>
+</body>
+</html>

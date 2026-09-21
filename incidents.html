@@ -204,7 +204,7 @@ async function show(id) {
       <div class="grid">
         <label>Status<select id="o-status"${ed}>${['open', 'review', 'closed'].map(s => `<option value="${s}"${i.status === s ? ' selected' : ''}>${{ open: 'Open', review: 'In review', closed: 'Closed' }[s]}</option>`).join('')}</select></label>
         <label>Preventable?<select id="o-prev"${ed}><option value="">—</option>${[['pending', 'Pending'], ['preventable', 'Preventable'], ['non_preventable', 'Non-preventable']].map(([v, t]) => `<option value="${v}"${i.preventable === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
-        <label>Claim #<input id="o-claim" value="${esc(i.claim_no || '')}"${ed}></label>
+        <label>Claim #<input id="o-claim" value="${esc(i.claim_no || '')}"${ed}><a class="mini" href="claims.html?incident=${i.id}">Claims & money for this incident →</a></label>
         <label>Insurer notified<input id="o-ins" type="datetime-local" value="${i.insurer_notified_at ? new Date(new Date(i.insurer_notified_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"${ed}></label>
         <label>Estimated cost $<input id="o-cost" type="number" step="0.01" value="${i.est_cost ?? ''}"${ed}></label>
         ${i.test_required || i.alcohol_test_at || i.drug_test_at ? `
