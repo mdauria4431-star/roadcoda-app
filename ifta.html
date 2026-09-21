@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IFTA · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select,textarea{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  textarea{height:auto;padding:8px;font-family:var(--mono)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .sp{flex:1}
+  .bar,.row{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .t td{padding:6px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  .t td.n,.t th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .t tr.tot td{font-weight:700;background:var(--panel-2)}
+  .t tr.non td{opacity:.6}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--warn);color:var(--warn);margin:1px 3px 1px 0}
+  .legal{border:1px solid var(--warn);background:var(--panel-2);border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5}
+  .legal b{color:var(--warn)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.3);line-height:1.5}
+  .toast.err{border-color:var(--late)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="equipment.html">Equipment</a><a class="on" href="ifta.html">IFTA</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>IFTA fuel tax</h1><span class="sp"></span>
+      <label>Period<select id="per"></select></label>
+      <div class="tabs" id="tabs"><button data-t="rep">Report</button><button data-t="miles">Miles</button><button data-t="fuel">Fuel</button><button data-t="rates">Rates</button></div>
+    </div>
+    <div class="legal"><b>Review before filing.</b> This is a worksheet from your ELD mileage and fuel records. You file the return on your base jurisdiction's IFTA site, which works out the tax. Check the numbers against your records — RoadCoda doesn't check your base state's rules.</div>
+    <div class="tiles" id="tiles"></div>
+
+    <!-- Report -->
+    <div data-pane="rep" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card" id="fix-card" hidden><header><h2>Fix before filing</h2></header><div class="pad" id="fix"></div></div>
+      <div class="card">
+        <header><h2>By jurisdiction</h2><span class="sp"></span><span class="mini">Taxable gallons = taxable miles ÷ fleet MPG. Net = taxable − tax-paid gallons (negative = credit).</span>
+          <button class="btn small" id="csv-j">Worksheet (CSV)</button></header>
+        <div class="wrap" id="jur"></div>
+      </div>
+      <div class="card">
+        <header><h2>By truck</h2><span class="sp"></span><span class="mini">ELD miles against the truck's odometer history, and each truck's MPG.</span><button class="btn small" id="csv-t">By truck (CSV)</button></header>
+        <div class="wrap" id="trk"></div>
+      </div>
+    </div>
+
+    <!-- Upload (miles / fuel share it) -->
+    <div class="card" data-pane="up">
+      <header><h2 id="up-title">Upload</h2><span class="sp"></span><span class="mini" id="up-hint"></span>
+        <label class="btn small primary ed" style="flex-direction:row">Choose file (CSV or Excel)<input type="file" id="up-file" accept=".csv,.txt,.xlsx,.xls" hidden></label></header>
+      <div class="pad" id="up-box" hidden></div>
+      <div class="pad"><b>Loaded files</b><div class="wrap" id="batches" style="margin-top:6px"></div></div>
+    </div>
+
+    <!-- Fuel extras -->
+    <div class="card" data-pane="fuel">
+      <header><h2>Fuel in this period</h2><span class="sp"></span><span class="mini">Card statements, receipts typed here, and fuel written on trip sheets. Diesel counts; DEF, gasoline and reefer fuel are left out.</span></header>
+      <div class="pad row ed">
+        <b style="align-self:center">Add a receipt:</b>
+        <select id="r-truck"></select><input id="r-date" type="date"><input id="r-st" maxlength="2" placeholder="ST" style="width:56px;text-transform:uppercase">
+        <input id="r-gal" type="number" step="0.001" min="0" placeholder="gallons" style="width:100px"><input id="r-amt" type="number" step="0.01" min="0" placeholder="$ (optional)" style="width:110px">
+        <button class="btn small" id="r-add">Add</button>
+      </div>
+      <div class="wrap" id="fuel-list"></div>
+    </div>
+
+    <!-- Rates -->
+    <div class="card" data-pane="rates">
+      <header><h2>Tax rates (optional)</h2><span class="sp"></span><span class="mini" id="rate-q"></span></header>
+      <div class="pad" style="display:flex;flex-direction:column;gap:10px">
+        <div class="mini">Only for an estimate of what you'll owe. Rates change every quarter — copy them from the IFTA tax rate matrix for the quarter (one per line, e.g. <span style="font-family:var(--mono)">NJ 0.4890</span>). Your base state's portal uses its own rates when you file.</div>
+        <textarea id="rates-tx" rows="10" placeholder="NJ 0.4890&#10;NY 0.4520"></textarea>
+        <div class="row"><button class="btn small primary ed" id="rates-save">Save rates for this quarter</button><span class="mini" id="rates-msg"></span></div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = (n, d = 0) => n == null ? '' : Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+const money = (n) => n == null ? '' : (n < 0 ? '−' : '') + '$' + Math.abs(+n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('ifta', 'edit');
+let TAB = 'rep', FROM, TO, TRUCKS = [], JUR = [], REP = [], TRK = [], LAYOUT = {}, UP = null, tt = null;
+function toast(html, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = html; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 5000); }
+const fail = (e) => toast(esc(e.message || e), true);
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('ifta')) return;
+  $('app').hidden = false;
+  if (!canEdit()) document.querySelectorAll('.ed').forEach(e => e.hidden = true);
+  const [t, j, l] = await Promise.all([sb.from('equipment').select('id, unit_no, unit_type, active').neq('unit_type', 'trailer').order('unit_no'),
+                                       sb.from('ifta_jurisdictions').select('*').order('code'), sb.from('ifta_layouts').select('*')]);
+  if (j.error) { $('app').innerHTML = `<div class="card empty error">${esc(j.error.message)} — run 68_ifta.sql in the SQL Editor.</div>`; return; }
+  TRUCKS = t.data || []; JUR = j.data || []; (l.data || []).forEach(x => LAYOUT[x.kind] = x.map || {});
+  $('r-truck').innerHTML = TRUCKS.filter(x => x.active).map(x => `<option value="${x.id}">${esc(x.unit_no)}</option>`).join('');
+  // Periods: the last 8 quarters, then the last 12 months
+  const now = new Date(), opts = [], qStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+  for (let i = 0; i < 8; i++) { const s = new Date(qStart.getFullYear(), qStart.getMonth() - 3 * i, 1), e = new Date(s.getFullYear(), s.getMonth() + 3, 0);
+    opts.push([`${iso(s)}|${iso(e)}`, `${s.getFullYear()} Q${Math.floor(s.getMonth() / 3) + 1}${i === 0 ? ' (current)' : ''}`]); }
+  for (let i = 0; i < 12; i++) { const s = new Date(now.getFullYear(), now.getMonth() - i, 1), e = new Date(s.getFullYear(), s.getMonth() + 1, 0);
+    opts.push([`${iso(s)}|${iso(e)}`, s.toLocaleDateString([], { month: 'long', year: 'numeric' })]); }
+  $('per').innerHTML = `<optgroup label="Quarter">${opts.slice(0, 8).map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</optgroup><optgroup label="Month">${opts.slice(8).map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</optgroup>`;
+  const q = new URLSearchParams(location.search);
+  $('per').value = q.get('p') && opts.some(o => o[0] === q.get('p')) ? q.get('p') : opts[1][0];   // last finished quarter
+  TAB = q.get('tab') || 'rep';
+  $('per').onchange = load; load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
+
+async function load() {
+  [FROM, TO] = $('per').value.split('|');
+  const [r, t] = await Promise.all([sb.rpc('ifta_report', { p_from: FROM, p_to: TO }), sb.rpc('ifta_trucks', { p_from: FROM, p_to: TO })]);
+  if (r.error) return fail(r.error);
+  REP = r.data || []; TRK = t.data || [];
+  draw();
+}
+function draw() {
+  history.replaceState(null, '', `?p=${FROM}|${TO}&tab=${TAB}`);
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === TAB));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = !(p.dataset.pane === TAB || (p.dataset.pane === 'up' && (TAB === 'miles' || TAB === 'fuel'))));
+  const mem = REP.filter(r => r.member), miles = REP.reduce((a, r) => a + +r.miles, 0), paid = REP.reduce((a, r) => a + +r.paid_gallons, 0);
+  const mpg = REP[0]?.fleet_mpg, tax = REP.some(r => r.est_tax != null) ? REP.reduce((a, r) => a + +(r.est_tax || 0), 0) : null;
+  $('tiles').innerHTML = [['Miles', num(miles)], ['Tax-paid gallons', num(paid, 1)], ['Fleet MPG', mpg ? num(mpg, 2) : '—'], ['Jurisdictions', mem.length],
+    ['Estimated tax', tax == null ? '—' : money(tax)]].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  if (TAB === 'rep') drawReport();
+  if (TAB === 'miles' || TAB === 'fuel') { drawUpload(); loadBatches(); }
+  if (TAB === 'fuel') loadFuel();
+  if (TAB === 'rates') drawRates();
+}
+
+// ── Report ──────────────────────────────────────────────────────────
+async function drawReport() {
+  const tot = (k) => REP.filter(r => r.member).reduce((a, r) => a + +(r[k] || 0), 0);
+  $('jur').innerHTML = REP.length ? `<table class="t"><thead><tr><th>Jurisdiction</th><th class="n">Total miles</th><th class="n">Taxable miles</th><th class="n">Taxable gallons</th><th class="n">Tax-paid gallons</th><th class="n">Net gallons</th><th class="n">Rate</th><th class="n">Est. tax</th></tr></thead><tbody>
+    ${REP.map(r => `<tr class="${r.member ? '' : 'non'}"><td><b>${esc(r.jurisdiction)}</b> ${esc(r.name)}${r.member ? '' : ' <span class="mini">not IFTA — not on the return</span>'}</td><td class="n">${num(r.miles)}</td><td class="n">${num(r.taxable_miles)}</td>
+      <td class="n">${num(r.taxable_gallons, 2)}</td><td class="n">${num(r.paid_gallons, 2)}</td><td class="n">${r.net_gallons == null ? '' : num(r.net_gallons, 2)}</td><td class="n">${r.rate == null ? '' : (+r.rate).toFixed(4)}</td><td class="n">${money(r.est_tax)}</td></tr>`).join('')}
+    <tr class="tot"><td>IFTA total</td><td class="n">${num(tot('miles'))}</td><td class="n">${num(tot('taxable_miles'))}</td><td class="n">${num(tot('taxable_gallons'), 2)}</td><td class="n">${num(tot('paid_gallons'), 2)}</td><td class="n">${num(tot('net_gallons'), 2)}</td><td></td><td class="n">${REP.some(r => r.est_tax != null) ? money(tot('est_tax')) : ''}</td></tr></tbody></table>`
+    : '<div class="empty">No miles or fuel in this period yet. Upload the ELD\'s mileage report on the Miles tab and your fuel card statement on the Fuel tab.</div>';
+  $('trk').innerHTML = TRK.length ? `<table class="t"><thead><tr><th>Truck</th><th class="n">ELD miles</th><th class="n">Odometer miles</th><th class="n">Gallons</th><th class="n">MPG</th><th class="n">States</th><th>Check</th></tr></thead><tbody>
+    ${TRK.map(t => `<tr><td><b>${esc(t.unit)}</b></td><td class="n">${num(t.miles)}</td><td class="n">${t.odometer_miles == null ? '—' : num(t.odometer_miles)}</td><td class="n">${num(t.gallons, 1)}</td><td class="n">${t.mpg == null ? '—' : num(t.mpg, 2)}</td><td class="n">${t.states}</td><td>${(t.flags || []).map(f => `<span class="chip">${esc(f)}</span>`).join('')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No trucks with miles or fuel in this period.</div>';
+  // units the ELD / card named that aren't matched to a truck
+  const [m, f] = await Promise.all([sb.from('ifta_miles').select('unit_text, miles').is('truck_id', null).gte('on_date', FROM).lte('on_date', TO),
+                                    sb.from('ifta_fuel').select('unit_text, gallons').is('truck_id', null).gte('bought_on', FROM).lte('bought_on', TO)]);
+  const um = {}; (m.data || []).forEach(x => { const k = x.unit_text || '(no unit)'; um[k] = um[k] || { mi: 0, g: 0 }; um[k].mi += +x.miles; });
+  (f.data || []).forEach(x => { const k = x.unit_text || '(no unit)'; um[k] = um[k] || { mi: 0, g: 0 }; um[k].g += +x.gallons; });
+  const flagged = TRK.filter(t => (t.flags || []).length);
+  $('fix-card').hidden = !Object.keys(um).length && !flagged.length;
+  $('fix').innerHTML = (Object.keys(um).length ? `<p><b>Units not matched to a truck</b> — their miles and fuel still count in the state totals, but not per truck. Pick the truck:</p>
+    ${Object.entries(um).map(([u, v]) => `<div class="row" style="margin:4px 0"><span style="min-width:220px"><b>${esc(u)}</b> <span class="mini">${num(v.mi)} mi · ${num(v.g, 1)} gal</span></span>
+      ${u !== '(no unit)' && canEdit() ? `<select data-mu="${esc(u)}"><option value="">— pick the truck —</option>${TRUCKS.map(t => `<option value="${t.id}">${esc(t.unit_no)}</option>`).join('')}</select>` : ''}</div>`).join('')}` : '')
+    + (flagged.length ? `<p style="margin-top:8px"><b>Trucks to look at:</b> ${flagged.map(t => `${esc(t.unit)} (${t.flags.map(esc).join(', ')})`).join(' · ')}</p>` : '');
+  document.querySelectorAll('[data-mu]').forEach(s => s.onchange = async () => { if (!s.value) return; const { data, error } = await sb.rpc('ifta_match_unit', { p_unit: s.dataset.mu, p_truck: s.value }); if (error) return fail(error); toast(`${data} rows matched.`); load(); });
+}
+function csv(rows) { return rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n') + '\r\n'; }
+function save(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+$('csv-j').onclick = () => {
+  const rows = [[`IFTA worksheet ${FROM} to ${TO} — REVIEW BEFORE FILING`], [`Fleet MPG ${REP[0]?.fleet_mpg ?? ''}`], [],
+    ['Jurisdiction', 'Name', 'IFTA member', 'Total miles', 'Taxable miles', 'Taxable gallons', 'Tax-paid gallons', 'Net taxable gallons', 'Rate', 'Estimated tax'],
+    ...REP.map(r => [r.jurisdiction, r.name, r.member ? 'Y' : 'N', r.miles, r.taxable_miles, r.taxable_gallons, r.paid_gallons, r.net_gallons ?? '', r.rate ?? '', r.est_tax ?? ''])];
+  save(`IFTA-worksheet-${FROM}-to-${TO}.csv`, csv(rows));
+};
+$('csv-t').onclick = () => save(`IFTA-by-truck-${FROM}-to-${TO}.csv`, csv([['Truck', 'ELD miles', 'Odometer miles', 'Gallons', 'MPG', 'States', 'Check'], ...TRK.map(t => [t.unit, t.miles, t.odometer_miles ?? '', t.gallons, t.mpg ?? '', t.states, (t.flags || []).join('; ')])]));
+
+// ── Uploads (miles and fuel) ────────────────────────────────────────
+const UPF = {
+  miles: [['unit', 'Truck / unit / VIN', /unit|vehicle|truck|asset|vin|equip/i], ['date', 'Date or month', /date|month|period|day/i], ['jurisdiction', 'State / province', /juris|state|prov|region/i],
+          ['taxable_miles', 'Taxable miles (optional)', /taxable/i], ['miles', 'Miles', /mile|distance|mi\b/i]],
+  fuel: [['unit', 'Truck / unit / VIN', /unit|vehicle|truck|asset|vin|equip/i], ['date', 'Date', /date|trans.*time|purchase/i], ['jurisdiction', 'State / province', /^st$|state|juris|prov/i],
+         ['gallons', 'Gallons', /gal|qty|quantity|volume|units/i], ['amount', 'Amount $ (optional)', /amount|total|cost|\$/i], ['fuel_type', 'Fuel type (optional)', /product|fuel ?type|item|desc/i],
+         ['card_ref', 'Card / transaction # (optional)', /card|trans|ref|invoice/i], ['location', 'Location (optional)', /location|site|merchant|city|truck ?stop/i]],
+};
+function drawUpload() {
+  const k = TAB; $('up-title').textContent = k === 'miles' ? 'ELD mileage by state' : 'Fuel card statements';
+  $('up-hint').textContent = k === 'miles' ? "Download your ELD's IFTA / jurisdiction mileage report (by truck, by state; daily or monthly) and upload it here." : 'Any fuel card (Comdata, WEX, EFS, …): download the transaction statement and upload it here.';
+  if (!UP || UP.kind !== k) $('up-box').hidden = true;
+}
+$('up-file').onchange = async () => {
+  const f = $('up-file').files[0]; $('up-file').value = ''; if (!f) return;
+  if (!window.XLSX) return fail('The spreadsheet reader did not load. Check your connection and refresh.');
+  const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true, raw: /\.(csv|txt)$/i.test(f.name) });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' }).filter(r => r.some(c => String(c).trim() !== ''));
+  if (!rows.length) return fail('No rows found in that file.');
+  const header = Math.max(0, rows.slice(0, 15).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 3));
+  UP = { kind: TAB, name: f.name, rows, header, map: {} };
+  guess(); drawMap();
+};
+function guess() {
+  const head = UP.rows[UP.header].map(h => String(h).trim()), saved = LAYOUT[UP.kind] || {}, used = new Set(); UP.map = {};
+  UPF[UP.kind].forEach(([k]) => { const i = saved[k] != null ? head.indexOf(saved[k]) : -1; if (i >= 0) { UP.map[k] = i; used.add(i); } });   // remembered by header name
+  UPF[UP.kind].forEach(([k, , re]) => { if (UP.map[k] != null) return; const i = head.findIndex((h, j) => h && !used.has(j) && re.test(h)); if (i >= 0) { UP.map[k] = i; used.add(i); } });
+}
+function toDate(v) {
+  if (v instanceof Date && !isNaN(v)) return iso(v);
+  if (typeof v === 'number' && v > 20000 && v < 80000) return iso(new Date(Math.round((v - 25569) * 864e5) + new Date().getTimezoneOffset() * 6e4));
+  const s = String(v || '').trim(); let m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/))) return `${m[1]}-${m[2].padStart(2, '0')}-${(m[3] || '1').padStart(2, '0')}`;
+  if ((m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/))) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  if ((m = s.match(/^(\d{1,2})[\/\-](\d{4})$/))) return `${m[2]}-${m[1].padStart(2, '0')}-01`;
+  const d = new Date(s.replace(/-(\d{2})$/, ' 20$1')); return isNaN(d) ? '' : iso(d);
+}
+const numv = (v) => { const x = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return isNaN(x) ? '' : x; };
+function parsed() {
+  const g = (r, k) => UP.map[k] != null ? r[UP.map[k]] : '';
+  return UP.rows.slice(UP.header + 1).map((r, i) => ({ row: UP.header + i + 2, unit: String(g(r, 'unit')).trim(), date: toDate(g(r, 'date')), jurisdiction: String(g(r, 'jurisdiction')).trim(),
+    miles: numv(g(r, 'miles')), taxable_miles: numv(g(r, 'taxable_miles')), gallons: numv(g(r, 'gallons')), amount: numv(g(r, 'amount')),
+    fuel_type: String(g(r, 'fuel_type')).trim(), card_ref: String(g(r, 'card_ref')).trim(), location: String(g(r, 'location')).trim() }))
+    .filter(x => x.jurisdiction || x.miles !== '' || x.gallons !== '');
+}
+function drawMap() {
+  const head = UP.rows[UP.header].map(h => String(h).trim()), P = parsed(), k = UP.kind, need = k === 'miles' ? ['date', 'jurisdiction', 'miles'] : ['date', 'jurisdiction', 'gallons'];
+  const opts = (sel) => '<option value="">(not in file)</option>' + head.map((h, j) => `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(h || 'Column ' + (j + 1))}</option>`).join('');
+  const miss = need.filter(x => UP.map[x] == null);
+  const box = $('up-box'); box.hidden = false;
+  box.innerHTML = `<div class="row"><b>${esc(UP.name)}</b><span class="mini">${P.length} rows</span><span class="sp"></span><label>Header row<select id="up-head">${UP.rows.slice(0, 15).map((r, i) => `<option value="${i}" ${i === UP.header ? 'selected' : ''}>Row ${i + 1}: ${esc(r.filter(Boolean).slice(0, 3).join(' | ').slice(0, 50))}</option>`).join('')}</select></label></div>
+    <div class="grid" style="margin-top:8px">${UPF[k].map(([f, label]) => `<label>${label}<select data-map="${f}">${opts(UP.map[f])}</select></label>`).join('')}</div>
+    <div class="wrap" style="margin-top:10px;max-height:240px;overflow:auto"><table class="t"><thead><tr><th>Row</th><th>Unit</th><th>Date</th><th>State</th><th class="n">${k === 'miles' ? 'Miles' : 'Gallons'}</th>${k === 'fuel' ? '<th>Fuel</th>' : ''}</tr></thead><tbody>
+      ${P.slice(0, 12).map(x => `<tr><td class="n">${x.row}</td><td>${esc(x.unit)}</td><td>${esc(x.date) || '<span class="error">?</span>'}</td><td>${esc(x.jurisdiction)}</td><td class="n">${k === 'miles' ? x.miles : x.gallons}</td>${k === 'fuel' ? `<td>${esc(x.fuel_type)}</td>` : ''}</tr>`).join('')}</tbody></table></div>
+    <div class="row" style="margin-top:10px">${miss.length ? `<span class="error">Match these columns first: ${miss.join(', ')}</span>` : `<button class="btn primary ed" id="up-go">Load ${P.length} rows</button>`}<button class="btn small" id="up-x">Cancel</button><span id="up-msg" class="mini"></span></div>`;
+  $('up-head').onchange = () => { UP.header = +$('up-head').value; guess(); drawMap(); };
+  document.querySelectorAll('[data-map]').forEach(s => s.onchange = () => { if (s.value === '') delete UP.map[s.dataset.map]; else UP.map[s.dataset.map] = +s.value; drawMap(); });
+  $('up-x').onclick = () => { UP = null; box.hidden = true; };
+  if ($('up-go')) $('up-go').onclick = go;
+}
+async function go() {
+  const P = parsed(), head = UP.rows[UP.header].map(h => String(h).trim()); $('up-go').disabled = true;
+  const layout = Object.fromEntries(Object.entries(UP.map).map(([k, i]) => [k, head[i]]));   // remembered by header name
+  await sb.from('ifta_layouts').upsert({ kind: UP.kind, map: layout }, { onConflict: 'carrier_id,kind' }); LAYOUT[UP.kind] = layout;
+  let tot = { loaded: 0, already_loaded: 0, skipped: 0, problems: [], unmatched_units: [] };
+  for (let i = 0; i < P.length; i += 5000) {
+    const { data, error } = await sb.rpc('ifta_import', { p_kind: UP.kind, p_file: UP.name, p_rows: P.slice(i, i + 5000) });
+    if (error) { $('up-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; $('up-go').disabled = false; return; }
+    tot.loaded += data.loaded; tot.already_loaded += data.already_loaded; tot.skipped += data.skipped; tot.problems.push(...data.problems); tot.unmatched_units.push(...data.unmatched_units);
+  }
+  const u = [...new Set(tot.unmatched_units)];
+  $('up-box').innerHTML = `<div><b class="ok">Loaded ${tot.loaded} rows.</b> ${tot.already_loaded ? `${tot.already_loaded} were already loaded and were skipped. ` : ''}${tot.skipped ? `<span class="warn">${tot.skipped} skipped:</span> ${tot.problems.slice(0, 8).map(p => `row ${p.row} — ${esc(p.why)}`).join('; ')}` : ''}
+    ${u.length ? `<div class="warn" style="margin-top:6px">Not matched to a truck: ${u.map(esc).join(', ')} — match them on the Report tab.</div>` : ''}</div>`;
+  UP = null; loadBatches(); load();
+}
+async function loadBatches() {
+  const { data } = await sb.from('ifta_batches').select('*').eq('kind', TAB === 'fuel' ? 'fuel' : 'miles').order('uploaded_at', { ascending: false }).limit(30);
+  $('batches').innerHTML = (data || []).length ? `<table class="t"><thead><tr><th>File</th><th class="n">Rows</th><th>Loaded</th><th></th></tr></thead><tbody>${data.map(b => `<tr><td>${esc(b.file_name || '')}</td><td class="n">${b.rows_loaded}</td><td>${new Date(b.uploaded_at).toLocaleString()}</td>
+    <td>${canEdit() ? `<button class="btn small" data-delb="${b.id}">Remove this file's rows</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mini">Nothing uploaded yet.</div>';
+  document.querySelectorAll('[data-delb]').forEach(b => b.onclick = async () => { if (!confirm("Remove every row this file loaded? (Load a corrected file afterwards.)")) return; const { error } = await sb.from('ifta_batches').delete().eq('id', b.dataset.delb); if (error) return fail(error); loadBatches(); load(); });
+}
+
+// ── Fuel list and receipts ──────────────────────────────────────────
+async function loadFuel() {
+  $('r-date').value = TO;
+  const { data, error } = await sb.from('ifta_fuel_all').select('*').gte('bought_on', FROM).lte('bought_on', TO).order('bought_on').limit(2000);
+  if (error) return fail(error);
+  const unit = (id) => TRUCKS.find(t => t.id === id)?.unit_no;
+  $('fuel-list').innerHTML = (data || []).length ? `<table class="t"><thead><tr><th>Date</th><th>Truck</th><th>State</th><th class="n">Gallons</th><th class="n">Amount</th><th>Fuel</th><th>From</th><th>Tax paid</th><th></th></tr></thead><tbody>
+    ${data.map(f => `<tr><td>${esc(f.bought_on)}</td><td>${esc(unit(f.truck_id) || f.unit_text || '—')}</td><td>${esc(f.jurisdiction)}</td><td class="n">${num(f.gallons, 3)}</td><td class="n">${money(f.amount)}</td>
+      <td>${esc(f.fuel_type || '')}</td><td>${{ card: 'Card', receipt: 'Receipt', office: 'Office', trip_sheet: 'Trip sheet' }[f.source] || f.source}</td>
+      <td>${f.source === 'trip_sheet' ? 'yes' : `<input type="checkbox" data-tp="${f.ref_id}" ${f.tax_paid ? 'checked' : ''} ${canEdit() ? '' : 'disabled'} style="height:auto">`}</td>
+      <td>${canEdit() && f.source !== 'trip_sheet' ? `<button class="btn small" data-delf="${f.ref_id}">Remove</button>` : f.source === 'trip_sheet' ? '<span class="mini">edit on the trip</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No fuel in this period.</div>';
+  document.querySelectorAll('[data-tp]').forEach(c => c.onchange = async () => { const { error } = await sb.from('ifta_fuel').update({ tax_paid: c.checked }).eq('id', c.dataset.tp); if (error) return fail(error); load(); });
+  document.querySelectorAll('[data-delf]').forEach(b => b.onclick = async () => { const { error } = await sb.from('ifta_fuel').delete().eq('id', b.dataset.delf); if (error) return fail(error); load(); });
+}
+$('r-add').onclick = async () => {
+  const st = $('r-st').value.trim().toUpperCase(), g = +$('r-gal').value;
+  if (!JUR.some(j => j.code === st)) return fail('Enter the two-letter state or province.'); if (!(g > 0)) return fail('Enter the gallons.');
+  const { error } = await sb.from('ifta_fuel').insert({ truck_id: $('r-truck').value, bought_on: $('r-date').value, jurisdiction: st, gallons: g, amount: $('r-amt').value ? +$('r-amt').value : null, source: 'receipt' });
+  if (error) return fail(error); $('r-gal').value = ''; $('r-amt').value = ''; toast('Receipt added.'); load();
+};
+
+// ── Rates ───────────────────────────────────────────────────────────
+async function drawRates() {
+  const q = new Date(FROM + 'T12:00:00'), qs = iso(new Date(q.getFullYear(), Math.floor(q.getMonth() / 3) * 3, 1));
+  $('rate-q').textContent = `Quarter starting ${qs}`;
+  const { data } = await sb.from('ifta_rates').select('jurisdiction, rate').eq('quarter', qs).order('jurisdiction');
+  $('rates-tx').value = (data || []).map(r => `${r.jurisdiction} ${(+r.rate).toFixed(4)}`).join('\n'); $('rates-tx').dataset.q = qs; $('rates-msg').textContent = '';
+}
+$('rates-save').onclick = async () => {
+  const qs = $('rates-tx').dataset.q, rows = [], bad = [];
+  $('rates-tx').value.split('\n').map(l => l.trim()).filter(Boolean).forEach(l => { const m = l.match(/^([A-Za-z .]+?)[\s,:;=\t]+\$?(\d*\.\d+|\d+)$/); const code = m && (JUR.find(j => j.code === m[1].trim().toUpperCase()) || JUR.find(j => j.name.toLowerCase() === m[1].trim().toLowerCase()));
+    if (!code) bad.push(l); else rows.push({ quarter: qs, jurisdiction: code.code, rate: +m[2] }); });
+  if (bad.length) return $('rates-msg').innerHTML = `<span class="error">Couldn't read: ${bad.slice(0, 5).map(esc).join(' · ')}</span>`;
+  const d = await sb.from('ifta_rates').delete().eq('quarter', qs); if (d.error) return fail(d.error);
+  if (rows.length) { const { error } = await sb.from('ifta_rates').insert(rows); if (error) return fail(error); }
+  $('rates-msg').innerHTML = `<span class="ok">Saved ${rows.length} rates.</span>`; load();
+};
+
+start();
+</script>
+</body>
+</html>
