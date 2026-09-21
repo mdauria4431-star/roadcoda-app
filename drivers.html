@@ -129,6 +129,7 @@
         <label>Home account<select id="f-home_customer_id"><option value="">None (floater)</option></select></label>
         <label>Home terminal<select id="f-home_terminal_id"><option value="">–</option></select></label>
         <label>Hire date<input id="f-hire_date" type="date"></label>
+        <label>Driver type<select id="f-driver_type"><option value="road">Road driver</option><option value="team">Team driver</option><option value="yard">Yard jockey (clocks in / out, hourly)</option></select></label>
         <label id="end-wrap" hidden>End date<input id="f-end_date" type="date"></label>
         <label class="span2" style="grid-column:1/-1">Notes<textarea id="f-notes"></textarea></label>
       </div>
@@ -144,11 +145,12 @@
       <div id="pay-sec" class="pay" hidden>
         <h3>Pay <span style="text-transform:none;letter-spacing:0;font-weight:400">· changes here save right away · <a href="#" id="hist-toggle">show past rates</a></span></h3>
         <div class="tablewrap"><table class="paytbl">
-          <thead><tr><th>Pay type</th><th>Customer</th><th>Rate</th><th>Since</th><th>Note</th><th></th></tr></thead>
+          <thead><tr><th>Pay type</th><th>Customer</th><th>Trips</th><th>Rate</th><th>Since</th><th>Note</th><th></th></tr></thead>
           <tbody id="pay-body"></tbody></table></div>
         <div class="addpay" id="addpay">
           <label>Pay type<select id="ap-item"></select></label>
           <label>Customer<select id="ap-cust"></select></label>
+          <label>Trips<select id="ap-crew"><option value="any">Any trip</option><option value="single">Single-driver trips</option><option value="team">Team trips</option></select></label>
           <label>Rate<input id="ap-rate" type="number" min="0" step="0.01"></label>
           <label>Starts<input id="ap-from" type="date"></label>
           <label>Note<input id="ap-note" autocomplete="off" placeholder="optional"></label>
@@ -252,7 +254,7 @@ const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString(undefine
 const UNITS = { mile: 'mile', stop: 'stop', day: 'day', hour: 'hour', load: 'load', each: 'each time', week: 'week', percent: '% of revenue' };
 const fmtRate = (r, unit) => r == null ? '' : unit === 'percent' ? `${Number(r)}%` : `$${Number(r) < 1 ? Number(r).toFixed(3).replace(/0$/, '') : Number(r).toFixed(2)}/${unit}`;
 const FIELDS = ['full_name', 'employee_no', 'phone', 'email', 'address', 'emergency_name', 'emergency_phone', 'cdl_number', 'cdl_class', 'cdl_state',
-                'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'home_customer_id', 'home_terminal_id', 'hire_date', 'end_date', 'notes'];
+                'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'home_customer_id', 'home_terminal_id', 'hire_date', 'end_date', 'notes', 'driver_type'];
 const MANAGERS = ['owner', 'dispatcher', 'safety'];
 const SOON_DAYS = 30;
 let cards = [], openEvents = [], events = [];
@@ -380,7 +382,8 @@ $('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history
 function edit(d, quiet) {
   cur = d;
   FIELDS.forEach(f => { $('f-' + f).value = d && d[f] != null ? d[f] : ''; });
-  $('ed-title').textContent = d ? d.full_name : 'New driver';
+  if (!$('f-driver_type').value) $('f-driver_type').value = 'road';
+  $('f-driver_type').closest('label').hidden = !!(d && !('driver_type' in d));   // before 60_payroll_rules.sql
   $('ed-status').innerHTML = d ? (d.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-none">Inactive</span>') : '';
   $('end-wrap').hidden = !(d && !d.active);
   $('active-btn').hidden = !d;
@@ -446,6 +449,7 @@ function readForm() {
   if (v.cdl_state) v.cdl_state = v.cdl_state.toUpperCase();
   if (v.email) v.email = v.email.toLowerCase();
   if (cur && cur.active) delete v.end_date;   // only editable once inactive
+  if (!v.driver_type || (cur && !('driver_type' in cur))) delete v.driver_type;
   return v;
 }
 function niceError(e) {
@@ -586,13 +590,14 @@ function renderPay() {
   const rows = mine.map(({ r, i }) => {
     const ended = r.effective_to && r.effective_to < today, future = r.effective_from > today;
     return `<tr class="${ended ? 'old' : ''}"><td>${esc(i.name)}${i.applies_to !== 'all' ? ` <span class="hint">(${i.applies_to} stops)</span>` : ''}</td><td>${esc(custName(r.customer_id))}</td>
+      <td>${r.crew === 'team' ? '<span class="pill p-warn">team</span>' : r.crew === 'single' ? 'single' : '<span class="hint">any</span>'}</td>
       <td class="mono">${esc(fmtRate(r.rate, i.unit))}</td>
       <td>${fmtDate(r.effective_from)}${future ? ' <span class="pill p-warn">starts later</span>' : ''}${r.effective_to ? ` – ${fmtDate(r.effective_to)}` : ''}</td>
       <td class="hint">${esc(r.note || '')}</td>
       <td style="white-space:nowrap">${ended ? '' : `<button class="btn small" data-chg="${r.id}" type="button">Change</button> <button class="btn small danger" data-end="${r.id}" type="button">End</button>`}</td></tr>`;
-  }).concat(defs.map(i => `<tr class="def"><td>${esc(i.name)}</td><td>All customers</td><td class="mono">${esc(fmtRate(i.pay_default, i.unit))}</td><td>company default</td><td></td>
+  }).concat(defs.map(i => `<tr class="def"><td>${esc(i.name)}</td><td>All customers</td><td class="hint">any</td><td class="mono">${esc(fmtRate(i.pay_default, i.unit))}</td><td>company default</td><td></td>
       <td><button class="btn small" data-own="${i.id}" type="button">Set own rate</button></td></tr>`));
-  $('pay-body').innerHTML = rows.join('') || '<tr><td colspan="6" class="hint">No pay set yet. Add the first rate below.</td></tr>';
+  $('pay-body').innerHTML = rows.join('') || '<tr><td colspan="7" class="hint">No pay set yet. Add the first rate below.</td></tr>';
   $('ap-item').innerHTML = items.filter(i => i.active && i.pays_driver).map(i => `<option value="${i.id}">${esc(i.name)} (per ${esc(UNITS[i.unit])})</option>`).join('');
   $('ap-cust').innerHTML = '<option value="">All customers</option>' + customers.map(c => `<option value="${c.id}">${c.parent_customer_id ? '\u00a0\u00a0\u00a0› ' : ''}${esc(c.name)}</option>`).join('');
   if (!$('ap-from').value) $('ap-from').value = today;
@@ -604,6 +609,7 @@ $('pay-body').onclick = async (ev) => {
     const r = rates.find(x => x.id === b.dataset.chg);
     $('ap-item').value = r ? r.activity_type_id : b.dataset.own;
     $('ap-cust').value = r?.customer_id || '';
+    $('ap-crew').value = r?.crew || 'any';
     $('ap-rate').value = ''; $('ap-note').value = ''; $('ap-from').value = todayISO();
     $('pay-msg').textContent = r ? 'Enter the new rate and the day it starts; the old rate ends the day before.' : 'Enter this driver\'s own rate.';
     $('ap-rate').focus(); return;
@@ -624,7 +630,7 @@ $('ap-btn').onclick = async () => {
   if (rate === '' || Number(rate) < 0) { $('pay-msg').innerHTML = '<span class="error">Enter a rate.</span>'; return; }
   $('ap-btn').disabled = true;
   const { error } = await sb.rpc('set_driver_pay_rate', { p_driver: cur.id, p_item: $('ap-item').value, p_customer: $('ap-cust').value || null,
-    p_rate: Number(rate), p_from: $('ap-from').value || todayISO(), p_note: $('ap-note').value });
+    p_rate: Number(rate), p_from: $('ap-from').value || todayISO(), p_note: $('ap-note').value, p_crew: $('ap-crew').value });
   $('ap-btn').disabled = false;
   if (error) { $('pay-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
   $('ap-rate').value = ''; $('ap-note').value = '';

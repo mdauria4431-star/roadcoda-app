@@ -214,7 +214,7 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 // ── Read everything the trip needs ───────────────────────────────────
 async function load() {
   const L = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
+    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, driver2_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
     .eq('id', LOAD).maybeSingle();
   if (L.error || !L.data) { $('trip').innerHTML = `<div class="card empty error">${esc(L.error?.message || 'That load was not found, or it belongs to another carrier.')}</div>`; return; }
   const l = L.data;
@@ -332,6 +332,7 @@ function draw() {
     </div>
     <div class="facts">
       <div class="f"><b>Driver</b><select class="ed" data-load="driver_id"${dis}>${opt(drvList, l.driver_id, '— none —')}</select>${hosLine}</div>
+      ${'driver2_id' in l && l.driver_id ? `<div class="f"><b>Co-driver (team)</b><select class="ed" data-load="driver2_id"${dis}>${opt(drvList.filter(x => x.id !== l.driver_id), l.driver2_id, '— none (single) —')}</select></div>` : ''}
       <div class="f"><b>Truck</b><select class="ed" data-load="truck_id"${dis}>${opt(trkList, l.truck_id, '— none —')}</select></div>
       <div class="f"><b>Trailer</b>${l.bobtail
         ? `<span>Bobtail — no trailer</span>`
@@ -520,7 +521,7 @@ function payItemsHtml(edit) {
     return `<tr><td>${esc(t.name)}${t.is_deduction ? ' <span class="flag warn">DED</span>' : ''}${t.bills_customer ? ' <span class="mini">· also billed</span>' : ''}</td>
       <td class="dim">${esc(stopName(a.stop_id))}</td>
       <td class="n">${t.is_deduction ? '−$' + Number(a.amount).toFixed(2) : Number(a.qty).toLocaleString() + (t.unit === 'hour' ? ' h' : '')}</td>
-      <td class="dim">${esc(a.note || '')}</td><td class="mini">${esc(nameOf(a.created_by))} · ${when(a.created_at)}</td>
+      <td class="dim">${esc(a.note || '')}${a.driver_id ? `<div class="mini">for ${esc(T.drivers.find(d => d.id === a.driver_id)?.full_name || 'co-driver')}</div>` : ''}</td><td class="mini">${esc(nameOf(a.created_by))} · ${when(a.created_at)}</td>
       <td>${edit && !T.l.invoice_id ? `<button class="btn small" data-act-del="${a.id}">Remove</button>` : ''}</td></tr>`;
   }).join('');
   const opts = T.actTypes.map(t => `<option value="${t.id}" data-ded="${t.is_deduction ? 1 : 0}" data-unit="${t.unit}">${esc(t.name)}${t.is_deduction ? ' (deduction)' : ''}</option>`).join('');
@@ -528,6 +529,7 @@ function payItemsHtml(edit) {
   const form = edit ? `<div class="acts" style="padding-top:12px">
       <select id="pi-type" style="max-width:230px"><option value="">Add a pay item or deduction…</option>${opts}</select>
       <select id="pi-stop" style="max-width:230px">${stopOpts}</select>
+      ${T.l.driver2_id ? `<select id="pi-for" style="max-width:200px" aria-label="For which driver"><option value="">For ${esc(T.l.drivers?.full_name || 'the lead driver')}</option><option value="${T.l.driver2_id}">For ${esc(T.drivers.find(d => d.id === T.l.driver2_id)?.full_name || 'the co-driver')}</option></select>` : ''}
       <input id="pi-qty" type="number" min="0" step="0.25" placeholder="How many" style="width:110px">
       <input id="pi-note" placeholder="Note (optional)" maxlength="200" style="max-width:260px">
       <button class="btn small primary" id="pi-add">Add</button></div>` : '';
@@ -539,12 +541,13 @@ function payItemsHtml(edit) {
 // ── Audit ────────────────────────────────────────────────────────────
 const FIELD = { arrived_at: 'arrival', departed_at: 'departure', seal_no: 'seal', issue_type: 'OS&D type', issue_resolution: 'OS&D resolution',
   status: 'status', window_start: 'window start', window_end: 'window end', qty_ordered: 'ordered', qty_delivered: 'delivered count',
-  driver_id: 'driver', truck_id: 'truck', trailer_id: 'trailer', trailer2_id: 'second trailer', bobtail: 'bobtail', service_date: 'service date', miles: 'miles', trip_sheet_at: 'trip sheet' };
+  driver_id: 'driver', driver2_id: 'co-driver', truck_id: 'truck', trailer_id: 'trailer', trailer2_id: 'second trailer', bobtail: 'bobtail', service_date: 'service date', miles: 'miles', trip_sheet_at: 'trip sheet' };
 function showVal(field, v) {
   if (v == null || v === '') return '—';
   if (/_at$/.test(field)) return when(v);
   if (field === 'driver_id') return T.drivers.find(d => d.id === v)?.full_name || 'another driver';
   if (field === 'bobtail') return v === 'true' ? 'yes' : 'no';
+  if (field === 'driver2_id') return v ? (T.drivers.find(d => d.id === v)?.full_name || 'a driver') : 'none';
   if (field === 'truck_id' || field === 'trailer_id' || field === 'trailer2_id') return T.units.find(u => u.id === v)?.unit_no || 'another unit';
   return String(v);
 }
@@ -570,12 +573,14 @@ function wire(edit) {
     // the first trailer takes off the second.
     if (f === 'truck_id') { const u = T.units.find(x => x.id === now); if (u && u.unit_type !== 'tractor' && T.l.bobtail) upd.bobtail = false; }
     if (f === 'trailer_id' && !now && T.l.trailer2_id) upd.trailer2_id = null;
+    if (f === 'driver_id' && T.l.driver2_id && (!now || now === T.l.driver2_id)) upd.driver2_id = null;
     const { error } = await sb.from('loads').update(upd).eq('id', T.l.id);
     if (error) { fail(error); return draw(); }
     toast(`${FIELD[f]} changed to ${esc(showVal(f, now))}`, async () => {
       const back = { [f]: was };
       if ('bobtail' in upd && f !== 'bobtail') back.bobtail = T.l.bobtail;
       if ('trailer2_id' in upd && f !== 'trailer2_id') back.trailer2_id = T.l.trailer2_id;
+      if ('driver2_id' in upd && f !== 'driver2_id') back.driver2_id = T.l.driver2_id;
       const r = await sb.from('loads').update(back).eq('id', T.l.id); if (r.error) fail(r.error); else { toast('Undone'); load(); }
     });
     load();
@@ -704,7 +709,8 @@ function wire(edit) {
       const v = parseFloat($('pi-qty').value);
       if (!(v > 0)) return fail(o.dataset.ded === '1' ? 'Enter the amount to deduct.' : 'Enter how many.');
       const row = { load_id: T.l.id, activity_type_id: o.value, stop_id: $('pi-stop').value || null, note: $('pi-note').value.trim() || null,
-                    qty: o.dataset.ded === '1' ? 1 : v, amount: o.dataset.ded === '1' ? v : null };
+                    qty: o.dataset.ded === '1' ? 1 : v, amount: o.dataset.ded === '1' ? v : null,
+                    ...($('pi-for') && $('pi-for').value ? { driver_id: $('pi-for').value } : {}) };
       const { data, error } = await sb.from('load_activities').insert(row).select('id').single();
       if (error) return fail(error);
       toast(`${esc(o.textContent)} added`, async () => { const r = await sb.from('load_activities').delete().eq('id', data.id); if (r.error) fail(r.error); else { toast('Undone'); load(); } });

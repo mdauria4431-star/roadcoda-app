@@ -103,7 +103,7 @@
       <header><h2>Pay week</h2></header>
       <div class="settings">
         <label>Week starts on<select id="s-start"></select></label>
-        <label>A trip counts on<select id="s-basis"><option value="service">its service date</option><option value="finished">the day its last stop finished</option></select></label>
+        <label>A trip counts on<select id="s-basis"><option value="finished">the day its last stop finished (completed loads)</option><option value="service">its service date</option></select></label>
         <button class="btn primary small" id="s-save">Save</button>
         <span class="mini" style="max-width:420px">Changing this later is safe — each trip is paid once, in the first open week it falls in.</span>
       </div>
@@ -133,6 +133,16 @@
         <span class="sp"></span>
         <button class="btn small danger" id="reopen" hidden>Reopen…</button>
       </div>
+    </div>
+
+    <div class="card" id="yard-card" hidden>
+      <header><h2>Yard shifts this week</h2><span class="sp"></span><span class="mini">Clocked in the driver app; correct or add here. Paid by the hour, billed on contracts with a "Yard jockey hours" line.</span></header>
+      <div id="yard"></div>
+    </div>
+
+    <div class="card" id="pto-card" hidden>
+      <header><h2>Paid time off</h2><span class="sp"></span><span class="mini">Rate = pay ÷ hours worked over the driver's last 13 approved weeks</span></header>
+      <div id="pto"></div>
     </div>
 
     <div class="card" id="hist-card" hidden>
@@ -190,7 +200,8 @@ async function start() {
   $('s-start').innerHTML = DN.map((d, i) => `<option value="${i + 1}"${car.pay_week_start === i + 1 ? ' selected' : ''}>${d}</option>`).join('');
   $('s-basis').value = car.pay_week_basis;
   $('set-btn').hidden = !canEdit();
-  const { data: dr } = await sb.from('drivers').select('id, full_name, payroll_name, employee_no');
+  let { data: dr, error: dre } = await sb.from('drivers').select('id, full_name, payroll_name, employee_no, driver_type, home_customer_id');
+  if (dre) ({ data: dr } = await sb.from('drivers').select('id, full_name, payroll_name, employee_no'));   // before 60
   (dr || []).forEach(d => DRIVERS[d.id] = d);
   const q = new URLSearchParams(location.search).get('week');
   FROM = weekOf(/^\d{4}-\d{2}-\d{2}$/.test(q || '') ? q : addDays(TODAY, -7));
@@ -229,6 +240,72 @@ async function load() {
   const who = [PERIOD?.approved_by, PERIOD?.reopened_by, ...HIST.map(x => x.who)].filter(Boolean);
   if (who.length) { const { data } = await sb.rpc('carrier_user_names', { p_ids: who }); (data || []).forEach(r => NAMES[r.user_id] = r.full_name); }
   draw();
+  drawExtras();
+}
+
+// ---------- Yard shifts and paid time off (60) ----------
+const tHM = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const localDT = (t) => { const d = new Date(t); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+async function drawExtras() {
+  const to = addDays(FROM, 6), ed = canEdit() && !PERIOD?.approved_at;
+  const [ys, off, rates, custs] = await Promise.all([
+    sb.from('yard_shifts').select('*').gte('work_date', FROM).lte('work_date', to).order('clock_in'),
+    sb.from('driver_time_off').select('*').gte('work_date', FROM).lte('work_date', to).order('work_date'),
+    sb.rpc('pto_rates', { p_as_of: FROM }),
+    sb.from('customers').select('id, name').order('name'),
+  ]);
+  if (ys.error || off.error) { $('yard-card').hidden = $('pto-card').hidden = true; return; }   // before 60
+  const yardDrivers = Object.values(DRIVERS).filter(d => d.driver_type === 'yard');
+  const cname = (id) => (custs.data || []).find(c => c.id === id)?.name || '';
+  $('yard-card').hidden = !(ys.data.length || yardDrivers.length);
+  $('yard').innerHTML = `${ys.data.length ? `<table style="width:100%"><thead><tr><th>Driver</th><th>Day</th><th>In</th><th>Out</th><th class="num">Hours</th><th>Customer</th><th></th></tr></thead><tbody>${ys.data.map(y => `
+      <tr><td>${esc(DRIVERS[y.driver_id]?.full_name || '')}</td><td>${label(y.work_date)}</td><td class="n">${tHM(y.clock_in)}</td><td class="n">${y.clock_out ? tHM(y.clock_out) : '<span class="chip">on the clock</span>'}</td>
+        <td class="num n">${y.hours ?? ''}</td><td>${esc(cname(y.customer_id))}</td>
+        <td>${ed && !y.pay_period_id ? `<button class="btn small" data-yedit="${y.id}">Change</button> <button class="btn small danger" data-ydel="${y.id}">Remove</button>` : ''}${y.source === 'office' ? ' <span class="mini">by office</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No yard shifts this week.</div>'}
+    ${ed && yardDrivers.length ? `<div class="bar" style="padding:10px 16px;gap:8px;display:flex;flex-wrap:wrap;align-items:end">
+      <label>Driver<select id="y-drv">${yardDrivers.map(d => `<option value="${d.id}">${esc(d.full_name)}</option>`).join('')}</select></label>
+      <label>In<input id="y-in" type="datetime-local"></label><label>Out<input id="y-out" type="datetime-local"></label>
+      <label>Customer<select id="y-cust"><option value="">—</option>${(custs.data || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+      <button class="btn small primary" id="y-add">Add shift</button></div>` : ''}`;
+  if ($('y-add')) $('y-add').onclick = async () => {
+    if (!$('y-in').value || !$('y-out').value) return fail('Enter the clock-in and clock-out times.');
+    const { error } = await sb.from('yard_shifts').insert({ driver_id: $('y-drv').value, customer_id: $('y-cust').value || DRIVERS[$('y-drv').value]?.home_customer_id || null,
+      clock_in: new Date($('y-in').value).toISOString(), clock_out: new Date($('y-out').value).toISOString() });
+    if (error) return fail(error); toast('Shift added'); load();
+  };
+  document.querySelectorAll('[data-ydel]').forEach(b => b.onclick = async () => { if (!confirm('Remove this shift?')) return; const { error } = await sb.from('yard_shifts').delete().eq('id', b.dataset.ydel); if (error) return fail(error); load(); });
+  document.querySelectorAll('[data-yedit]').forEach(b => b.onclick = async () => {
+    const y = ys.data.find(x => x.id === b.dataset.yedit);
+    const i = prompt('Clock in (YYYY-MM-DDTHH:MM)', localDT(y.clock_in)); if (i === null) return;
+    const o = prompt('Clock out (YYYY-MM-DDTHH:MM)', y.clock_out ? localDT(y.clock_out) : ''); if (o === null) return;
+    const { error } = await sb.from('yard_shifts').update({ clock_in: new Date(i).toISOString(), clock_out: o ? new Date(o).toISOString() : null, source: 'office' }).eq('id', y.id);
+    if (error) return fail(error); load();
+  });
+
+  // paid time off
+  $('pto-card').hidden = false;
+  const R = rates.error ? [] : (rates.data || []);
+  $('pto').innerHTML = `${off.data.length ? `<table style="width:100%"><thead><tr><th>Driver</th><th>Day</th><th class="num">Hours</th><th class="num">Rate</th><th class="num">Pay</th><th>How the rate was worked out</th><th></th></tr></thead><tbody>${off.data.map(o => `
+      <tr><td>${esc(DRIVERS[o.driver_id]?.full_name || '')}</td><td>${label(o.work_date)}</td><td class="num n">${o.hours}</td><td class="num n">${money(o.rate)}</td><td class="num n">${money(o.hours * o.rate)}</td>
+        <td class="mini">${esc(o.rate_basis || '')}${o.note ? ' · ' + esc(o.note) : ''}</td><td>${ed && !o.pay_period_id ? `<button class="btn small danger" data-odel="${o.id}">Remove</button>` : ''}</td></tr>`).join('')}</tbody></table>` : ''}
+    <table style="width:100%"><thead><tr><th>Driver</th><th class="num">Weeks</th><th class="num">Pay</th><th class="num">Hours</th><th class="num">Hours / week</th><th class="num">Time-off rate</th><th></th></tr></thead><tbody>${R.map(r => {
+      const perWk = r.weeks ? r.hours / r.weeks : 0, low = r.weeks && perWk < 20;
+      return `<tr><td>${esc(r.full_name)}</td><td class="num n">${r.weeks}</td><td class="num n">${money(r.pay || 0)}</td><td class="num n">${r.hours ?? 0}</td>
+        <td class="num n">${r.weeks ? perWk.toFixed(1) : '—'}${low ? ' <span class="chip" title="Trip times miss pre-trip, post-trip and driving to the first stop — check before paying, or enter the rate by hand">looks low</span>' : ''}</td>
+        <td class="num n"><b>${r.rate != null ? money(r.rate) + '/h' : '—'}</b></td>
+        <td>${ed ? `<button class="btn small" data-pto="${r.driver_id}" data-rate="${r.rate ?? ''}">Time off…</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">No drivers.</td></tr>'}</tbody></table>
+    <div class="mini" style="padding:8px 16px">Counted from the ${R[0]?.weeks != null ? 'last 13' : ''} approved pay weeks before this one. Hours are trips (first arrival to last departure each day) plus yard shifts.</div>`;
+  document.querySelectorAll('[data-odel]').forEach(b => b.onclick = async () => { if (!confirm('Remove this time off?')) return; const { error } = await sb.from('driver_time_off').delete().eq('id', b.dataset.odel); if (error) return fail(error); load(); });
+  document.querySelectorAll('[data-pto]').forEach(b => b.onclick = async () => {
+    const name = DRIVERS[b.dataset.pto]?.full_name || 'Driver';
+    const day = prompt(`${name}: day off (YYYY-MM-DD)`, FROM); if (!day) return;
+    const hrs = prompt('Hours', '8'); if (!hrs) return;
+    let rate = null;
+    if (!b.dataset.rate || !confirm(`Pay at ${money(+b.dataset.rate)}/h (the 13-week rate)? Cancel to type a rate.`)) { const r = prompt('Rate per hour'); if (!r) return; rate = +r; }
+    const note = prompt('Note (optional)', 'Paid time off') || null;
+    const { error } = await sb.rpc('add_time_off', { p_driver: b.dataset.pto, p_date: day, p_hours: +hrs, p_note: note, p_rate: rate });
+    if (error) return fail(error); toast('Time off added to this week'); load();
+  });
 }
 
 // Trips a driver ran: the loads on per-trip lines, plus the ones a day-rate line names

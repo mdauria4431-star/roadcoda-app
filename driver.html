@@ -275,6 +275,11 @@
       </div>
       <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn primary" id="a2hs-btn" hidden>Add to home screen</button><button class="btn primary" id="handoff-btn" hidden>I added it: get app code</button><button class="btn" id="a2hs-later">Later</button></div>
     </div>
+    <div id="yard-card" class="card" hidden style="border:2px solid var(--accent)">
+      <b style="font-size:19px">Yard shift</b>
+      <div id="yard-state" class="meta" style="font-size:16px;margin:6px 0 12px"></div>
+      <button class="btn primary" id="yard-btn" style="width:100%;min-height:60px;font-size:20px"></button>
+    </div>
     <div id="ci-card" class="card" hidden style="border:2px solid var(--accent)">
       <b style="font-size:18px" id="ci-title">Quick check-in</b>
       <div class="meta" style="font-size:15px;margin:4px 0 10px">One minute, a few taps. It goes to management, not dispatch.</div>
@@ -512,6 +517,7 @@ async function start() {
   loadStops();
   startMessages();
   checkCheckin();
+  checkShift();
 }
 $('login-btn').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
@@ -1135,6 +1141,36 @@ $('w-save').onclick = async () => {
     alert('Witness card saved. Thank them — and take their phone number if they didn\'t write one.');
   } catch (e) { alert('Not saved: ' + (e.message || e)); }
   $('w-save').disabled = false;
+};
+
+// ---------- Yard jockey: clock in / out (60) ----------
+let SHIFT = null, shiftTick = null;
+async function checkShift() {
+  const { data, error } = await sb.rpc('driver_shift');
+  if (error || !data || data.driver_type !== 'yard') { $('yard-card').hidden = true; return; }
+  SHIFT = data; $('yard-card').hidden = false; paintShift();
+  clearInterval(shiftTick); shiftTick = setInterval(paintShift, 30000);
+}
+function paintShift() {
+  const open = SHIFT && SHIFT.open, hm = (m) => `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m`;
+  if (open) {
+    const mins = (Date.now() - new Date(open.clock_in)) / 60000;
+    $('yard-state').innerHTML = `Clocked in at <b>${time(open.clock_in)}</b> — ${hm(mins)} so far${SHIFT.home_customer ? ` · ${esc(SHIFT.home_customer)}` : ''}`;
+    $('yard-btn').textContent = 'Clock out'; $('yard-btn').className = 'btn red';
+  } else {
+    $('yard-state').innerHTML = SHIFT.today_hours > 0 ? `Worked <b>${SHIFT.today_hours} h</b> today.` : 'Not clocked in.';
+    $('yard-btn').textContent = 'Clock in'; $('yard-btn').className = 'btn primary';
+  }
+  $('yard-btn').style.cssText = 'width:100%;min-height:60px;font-size:20px';
+}
+$('yard-btn').onclick = async () => {
+  const going = !!(SHIFT && SHIFT.open);
+  if (going && !confirm('Clock out now?')) return;
+  $('yard-btn').disabled = true;
+  const { data, error } = await sb.rpc('driver_clock', { p_in: !going });
+  $('yard-btn').disabled = false;
+  if (error) { alert(error.message); return; }
+  SHIFT = data; paintShift();
 };
 
 // ---------- Retention check-in (58) ----------

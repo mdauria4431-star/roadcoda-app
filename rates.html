@@ -473,7 +473,7 @@ $('doe-check').onclick = async () => {
 const SECTION = { fixed: 'Fixed components', variable: 'Variable components', extras: 'Extras on request (extra tractor, trailer, truck, driver)', pass_through: 'Pass-through expense' };
 const SECTION_ORDER = ['fixed', 'variable', 'extras', 'pass_through'];
 const slug = (t) => String(t || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const SOURCES = { fixed: 'Fixed quantity', manual: 'Entered each week', miles: 'Total miles (loads)', loads: 'Number of loads', stops: 'Number of stops (all)', deliveries: 'Number of deliveries', pickups: 'Number of pickups', tolls: 'Tolls on the loads ($)', extras: 'Scheduled extras',
+const SOURCES = { fixed: 'Fixed quantity', manual: 'Entered each week', miles: 'Total miles (loads)', loads: 'Number of loads', stops: 'Number of stops (all)', deliveries: 'Number of deliveries', pickups: 'Number of pickups', tolls: 'Tolls on the loads ($)', yard_hours: 'Yard jockey hours (clocked)', extras: 'Scheduled extras',
   'unit:pallets': 'Pallets delivered', 'unit:boxes': 'Boxes delivered', 'unit:cages': 'Cages delivered', 'unit:totes': 'Totes delivered', 'unit:parts': 'Parts delivered' };
 const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString() : '';
 let versions = [], custInfo = null;
