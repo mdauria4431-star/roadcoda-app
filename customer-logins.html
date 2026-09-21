@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer logins · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .form{display:flex;gap:12px;flex-wrap:wrap;align-items:end;padding:14px 16px}
+  .locs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px 14px;padding:0 16px 14px}
+  .locs label{flex-direction:row;align-items:center;gap:8px;font-weight:500}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+  .t td{padding:8px 10px;border-bottom:1px solid var(--line-soft)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid var(--line)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="customer-logins.html">Customer logins</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Customer logins</h1>
+    <p class="mini" style="margin:-4px 0 0">Give a customer their own login to <b>portal.html</b>. A <b>billing</b> login sees its loads (and its DCs'), stop times and counts, PODs, its invoices and its activity file. A <b>delivery</b> login — a store or site — sees only the deliveries to its locations: times, counts, issues, PODs. No prices, no other customers. Customer logins can't open any office screen.</p>
+
+    <div class="card" id="invite-card">
+      <header><h2>Invite a customer</h2></header>
+      <div class="form">
+        <label style="min-width:240px">Customer<select id="i-cust"></select></label>
+        <label>Kind<select id="i-kind"><option value="billing">Billing — loads, invoices, activity file</option><option value="delivery">Delivery — deliveries to chosen locations</option></select></label>
+        <label style="min-width:180px">Name<input id="i-name" autocomplete="off"></label>
+        <label style="min-width:220px">Email<input id="i-email" type="email" autocomplete="off"></label>
+        <button class="btn primary" id="i-send">Send invite</button>
+        <span class="mini" id="i-msg"></span>
+      </div>
+      <div id="i-locs-wrap" hidden><div class="mini" style="padding:0 16px 6px">Which locations can this login see?</div><div class="locs" id="i-locs"></div></div>
+    </div>
+
+    <div class="card">
+      <header><h2>Logins</h2></header>
+      <div id="list"><div class="empty">Loading…</div></div>
+    </div>
+  </section>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const when = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' }) : '—';
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit');
+let CUSTS = [], LOCS = [];
+
+async function call(body) {
+  const { data, error } = await sb.functions.invoke('portal-users', { body });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (data && data.ok === false) throw new Error(data.error);
+  return data;
+}
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('customers')) return;
+  $('app').hidden = false;
+  $('invite-card').hidden = !canEdit();
+  const [c, l] = await Promise.all([
+    sb.from('customers').select('id, name, parent_customer_id').order('name'),
+    sb.from('delivery_locations').select('id, name, code, customer_id, kind').eq('active', true).order('name'),
+  ]);
+  CUSTS = c.data || []; LOCS = (l.data || []).filter(x => x.kind !== 'pickup');
+  const mains = CUSTS.filter(x => !x.parent_customer_id);
+  $('i-cust').innerHTML = '<option value="">Pick…</option>' + mains.map(m => `<option value="${m.id}">${esc(m.name)}</option>` +
+    CUSTS.filter(k => k.parent_customer_id === m.id).map(k => `<option value="${k.id}">&nbsp;&nbsp;↳ ${esc(k.name)}</option>`).join('')).join('');
+  $('i-cust').onchange = $('i-kind').onchange = drawLocs;
+  loadList();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+function drawLocs() {
+  const c = $('i-cust').value, d = $('i-kind').value === 'delivery';
+  $('i-locs-wrap').hidden = !(c && d);
+  if (!(c && d)) return;
+  const ids = [c, ...CUSTS.filter(k => k.parent_customer_id === c).map(k => k.id)];
+  const list = LOCS.filter(x => ids.includes(x.customer_id));
+  $('i-locs').innerHTML = list.map(x => `<label><input type="checkbox" value="${x.id}">${esc(x.name)}${x.code ? ` <span class="mini">#${esc(x.code)}</span>` : ''}</label>`).join('') || '<span class="mini">This customer has no delivery locations yet.</span>';
+}
+
+$('i-send').onclick = async () => {
+  const body = { action: 'invite', customer_id: $('i-cust').value, kind: $('i-kind').value, full_name: $('i-name').value.trim(), email: $('i-email').value.trim(),
+    location_ids: [...document.querySelectorAll('#i-locs input:checked')].map(x => x.value) };
+  if (!body.customer_id) return ($('i-msg').innerHTML = '<span class="error">Pick the customer.</span>');
+  $('i-send').disabled = true; $('i-msg').textContent = 'Sending…';
+  try {
+    const r = await call(body);
+    $('i-msg').innerHTML = `<span class="ok">Invite sent to ${esc(r.sent_to)}${r.test_mode ? ' (test mode — it went to your test address)' : ''}.</span>`;
+    $('i-name').value = ''; $('i-email').value = ''; loadList();
+  } catch (e) { $('i-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('i-send').disabled = false;
+};
+
+async function loadList() {
+  let users;
+  try { users = (await call({ action: 'list' })).users; }
+  catch (e) { $('list').innerHTML = `<div class="empty error">${esc(e.message)}${/Failed to send|not found|404/i.test(e.message) ? ' — deploy the portal-users server function (see INSTALL).' : ''}</div>`; return; }
+  const cName = (id) => CUSTS.find(c => c.id === id)?.name || '';
+  const lName = (id) => LOCS.find(l => l.id === id)?.name || '';
+  $('list').innerHTML = users.length ? `<table class="t"><thead><tr><th>Name</th><th>Email</th><th>Customer</th><th>Kind</th><th>Sees</th><th>Last seen</th><th>Status</th><th></th></tr></thead><tbody>${users.map(u => `
+    <tr><td>${esc(u.full_name)}</td><td>${esc(u.email)}</td><td>${esc(cName(u.customer_id))}</td><td><span class="pill">${u.kind}</span></td>
+      <td class="mini">${u.kind === 'billing' ? 'All its loads and DCs, invoices, activity file' : (u.location_ids || []).map(lName).join(', ')}</td>
+      <td class="mini">${u.last_seen_at ? when(u.last_seen_at) : 'never signed in'}</td><td>${u.active ? '<span class="ok">Active</span>' : '<span class="error">Off</span>'}</td>
+      <td>${canEdit() ? `<button class="btn small" data-a="resend" data-u="${u.user_id}">Resend</button> <button class="btn small${u.active ? ' danger' : ''}" data-a="${u.active ? 'deactivate' : 'reactivate'}" data-u="${u.user_id}">${u.active ? 'Turn off' : 'Turn on'}</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">No customer logins yet.</div>';
+  document.querySelectorAll('[data-a]').forEach(b => b.onclick = async () => {
+    if (b.dataset.a === 'deactivate' && !confirm('Turn this login off? They won\'t be able to sign in.')) return;
+    try { const r = await call({ action: b.dataset.a, user_id: b.dataset.u }); if (b.dataset.a === 'resend') alert('Sent to ' + r.sent_to); loadList(); }
+    catch (e) { alert(e.message); }
+  });
+}
+
+start();
+</script>
+</body>
+</html>

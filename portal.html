@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deliveries</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+  :root{--brand:#0f5e63;--ink:#1c1f24;--muted:#5b6470;--line:#e2e5ea;--bg:#f5f6f8;--card:#fff;--ok:#1d7a46;--bad:#b3261e;--warn:#9a5b00}
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px}
+  button{font-family:inherit;cursor:pointer}
+  a{color:var(--brand)}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .top img{height:38px;max-width:180px;object-fit:contain}
+  .top .co{font-family:Archivo,sans-serif;font-weight:800;font-size:19px}
+  .top .who{margin-left:auto;font-size:13.5px;color:var(--muted);text-align:right}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .btn{height:38px;padding:0 16px;border-radius:9px;border:1px solid var(--line);background:#fff;font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .login{max-width:400px;margin:60px auto;padding:26px;display:flex;flex-direction:column;gap:14px}
+  label{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:13px}
+  input,select{height:40px;border:1px solid var(--line);border-radius:9px;padding:0 11px;font-family:inherit;font-size:15px}
+  .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .tabs button{height:38px;padding:0 16px;border-radius:9px;border:1px solid var(--line);background:#fff;font-weight:600;color:var(--muted)}
+  .tabs button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .sp{flex:1}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);background:#fafbfc;white-space:nowrap}
+  td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr.r{cursor:pointer} tr.r:hover{background:#f7f9fb}
+  .n{font-family:'IBM Plex Mono',monospace;font-size:13.5px;white-space:nowrap}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;background:#eef1f4;color:var(--muted);white-space:nowrap}
+  .pill.ok{background:#e4f4ea;color:var(--ok)} .pill.bad{background:#fdecea;color:var(--bad)} .pill.go{background:#e6f0f8;color:#1d5b8f}
+  .empty{padding:28px;text-align:center;color:var(--muted)}
+  .err{color:var(--bad)}
+  .hint{font-size:13px;color:var(--muted)}
+  .detail{margin-top:16px}
+  .detail h2{font-family:Archivo,sans-serif;margin:0;font-size:19px}
+  .stop{padding:14px 16px;border-top:1px solid var(--line);display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:12px}
+  @media (max-width:760px){.stop{grid-template-columns:1fr}}
+  .stop b{display:block}
+  .k{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:2px}
+  .pods{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .pods img{width:110px;height:110px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+  .inv{padding:26px;max-width:860px;margin:0 auto}
+  .inv h1{font-family:Archivo,sans-serif;margin:0 0 4px}
+  .inv table td,.inv table th{padding:8px 10px}
+  .num{text-align:right}
+  @media print{ .top,.tabs,.bar,.noprint,#list-card{display:none!important} body{background:#fff} .card{border:0} .wrap{padding:0} }
+</style>
+</head>
+<body>
+<div class="top" id="top" hidden>
+  <img id="logo" alt="" hidden><span class="co" id="co"></span>
+  <div class="who"><span id="who"></span><br><a href="#" id="out">Sign out</a></div>
+</div>
+
+<section class="card login" id="login" hidden>
+  <div class="co" style="font-family:Archivo,sans-serif;font-size:22px;font-weight:800">Your deliveries</div>
+  <div class="hint">Sign in with the email your carrier set up for you.</div>
+  <label>Email<input id="email" type="email" autocomplete="username"></label>
+  <label>Password<input id="pw" type="password" autocomplete="current-password"></label>
+  <button class="btn primary" id="in">Sign in</button>
+  <a href="#" id="forgot" class="hint">Forgot your password?</a>
+  <div id="login-msg" class="hint"></div>
+</section>
+
+<div class="wrap" id="app" hidden>
+  <div class="tabs" id="tabs"></div>
+  <div class="card" id="list-card">
+    <div class="bar" id="bar"></div>
+    <div id="list"><div class="empty">Loading…</div></div>
+  </div>
+  <div id="detail" class="detail"></div>
+</div>
+
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const day = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+const hm = (t) => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—';
+const money = (n) => n == null ? '' : '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const qty = (n) => n == null ? '—' : Number(n).toLocaleString();
+const ISSUE = { damaged: 'Damaged', short: 'Short', over: 'Over', refused: 'Refused', closed: 'Closed / no access', other: 'Issue' };
+const STATUS = (s) => ({ delivered: '<span class="pill ok">Delivered</span>', exception: '<span class="pill bad">Delivered with issue</span>', in_progress: '<span class="pill go">On the way</span>',
+  arrived: '<span class="pill go">At the dock</span>', dispatched: '<span class="pill">Scheduled</span>', planned: '<span class="pill">Scheduled</span>', pending: '<span class="pill">Scheduled</span>' }[s] || `<span class="pill">${esc(s)}</span>`);
+let ME = null, TAB = 'loads';
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login').hidden = false; return; }
+  const { data, error } = await sb.rpc('portal_me');
+  if (error || !data) {
+    // an office or driver login landed here: send it where it belongs
+    const { data: p } = await sb.from('profiles').select('role').eq('user_id', session.user.id).maybeSingle();
+    if (p) { location.replace(p.role === 'driver' ? 'driver.html' : 'index.html'); return; }
+    $('login').hidden = false; $('login-msg').innerHTML = '<span class="err">This login isn\'t set up for the delivery portal. Ask your carrier.</span>'; return;
+  }
+  ME = data;
+  if (/^#[0-9a-f]{6}$/i.test(ME.brand_color || '')) document.documentElement.style.setProperty('--brand', ME.brand_color);
+  $('co').textContent = ME.carrier; document.title = `Deliveries · ${ME.carrier}`;
+  if (ME.logo_path) { const u = sb.storage.from('brand-logos').getPublicUrl(ME.logo_path).data.publicUrl; $('logo').src = u; $('logo').hidden = false; $('logo').onerror = () => $('logo').hidden = true; }
+  $('who').innerHTML = `${esc(ME.name)} · <b>${esc(ME.kind === 'billing' ? ME.customer : (ME.locations || []).map(l => l.name).join(', '))}</b>${ME.carrier_phone ? ` · questions? ${esc(ME.carrier_phone)}` : ''}`;
+  $('top').hidden = false; $('app').hidden = false;
+  const tabs = ME.kind === 'billing' ? [['loads', 'Loads'], ['invoices', 'Invoices'], ['file', 'Activity file']] : [['loads', 'Deliveries']];
+  $('tabs').innerHTML = tabs.map(([k, t]) => `<button data-t="${k}">${t}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => go(b.dataset.t));
+  go(new URLSearchParams(location.search).get('tab') || 'loads');
+}
+$('in').onclick = async () => {
+  $('login-msg').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('pw').value });
+  if (error) { $('login-msg').innerHTML = `<span class="err">${esc(error.message)}</span>`; return; }
+  location.reload();
+};
+$('pw').onkeydown = (e) => { if (e.key === 'Enter') $('in').click(); };
+$('forgot').onclick = async (e) => {
+  e.preventDefault();
+  const email = $('email').value.trim(); if (!email) { $('login-msg').textContent = 'Type your email above first.'; return; }
+  const { data } = await sb.functions.invoke('portal-users', { body: { action: 'forgot', email } });
+  $('login-msg').textContent = data?.message || 'If that email has a login, a reset link is on its way.';
+};
+$('out').onclick = async (e) => { e.preventDefault(); await sb.auth.signOut(); location.reload(); };
+
+function go(t) {
+  TAB = t; $('detail').innerHTML = '';
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  history.replaceState(null, '', '?tab=' + t);
+  if (t === 'invoices') return invoices();
+  if (t === 'file') return fileTab();
+  loadsTab();
+}
+
+// ── Loads / deliveries ────────────────────────────────────────────────
+function loadsTab() {
+  const to = new Date(); to.setDate(to.getDate() + 2); const from = new Date(); from.setDate(from.getDate() - 13);
+  $('bar').innerHTML = `<label>From<input type="date" id="f"></label><label>To<input type="date" id="t"></label><span class="sp"></span>
+    <span class="hint">${ME.kind === 'billing' ? 'Every load for ' + esc(ME.customer) + ((ME.accounts || []).length > 1 ? ' and its DCs' : '') : 'Deliveries to your location' + ((ME.locations || []).length > 1 ? 's' : '')}. Click one for times, counts and proof of delivery.</span>`;
+  $('f').value = iso(from); $('t').value = iso(to);
+  $('f').onchange = $('t').onchange = loadList;
+  loadList();
+}
+async function loadList() {
+  $('list').innerHTML = '<div class="empty">Loading…</div>';
+  const { data, error } = await sb.rpc('portal_list', { p_from: $('f').value, p_to: $('t').value });
+  if (error) { $('list').innerHTML = `<div class="empty err">${esc(error.message)}</div>`; return; }
+  const rows = data || [];
+  if (!rows.length) { $('list').innerHTML = '<div class="empty">Nothing in these dates.</div>'; return; }
+  const multi = (ME.accounts || []).length > 1;
+  $('list').innerHTML = ME.kind === 'billing'
+    ? `<table><thead><tr><th>Date</th><th>Load</th>${multi ? '<th>DC</th>' : ''}<th>Status</th><th>Stops</th><th>Delivered</th><th>Issues</th><th>POD</th><th>Invoice</th></tr></thead><tbody>${rows.map(r => `
+        <tr class="r" data-l="${r.load_id}"><td>${day(r.service_date)}</td><td class="n">${esc(r.load_no)}</td>${multi ? `<td>${esc(r.account)}</td>` : ''}<td>${STATUS(r.status)}</td>
+          <td class="n">${r.stops_done}/${r.stops}</td><td class="n">${qty(r.delivered)} of ${qty(r.ordered)}</td>
+          <td>${r.issue ? `<span class="pill bad">${esc(r.issue.split(', ').map(x => ISSUE[x] || x).join(', '))}</span>` : ''}</td><td>${r.pod ? '✓' : ''}</td>
+          <td class="n">${esc(r.invoice_no || '')}${r.billed != null ? `<div class="hint">${money(r.billed)}</div>` : ''}</td></tr>`).join('')}</tbody></table>`
+    : `<table><thead><tr><th>Date</th><th>Location</th><th>Load</th><th>Window</th><th>Arrived</th><th>Departed</th><th>Delivered</th><th>Issue</th><th>POD</th></tr></thead><tbody>${rows.map(r => `
+        <tr class="r" data-l="${r.load_id}"><td>${day(r.service_date)}</td><td>${esc(r.location)}</td><td class="n">${esc(r.load_no)}</td>
+          <td class="n">${hm(r.window_start)}–${hm(r.window_end)}</td><td class="n">${r.arrived_at ? hm(r.arrived_at) : r.eta ? `<span class="hint">ETA ${hm(r.eta)}</span>` : '—'}</td><td class="n">${hm(r.departed_at)}</td>
+          <td class="n">${qty(r.delivered)} of ${qty(r.ordered)}</td><td>${r.issue ? `<span class="pill bad">${esc(ISSUE[r.issue] || r.issue)}</span>` : ''}</td><td>${r.pod ? '✓' : ''}</td></tr>`).join('')}</tbody></table>`;
+  document.querySelectorAll('tr[data-l]').forEach(tr => tr.onclick = () => showLoad(tr.dataset.l));
+}
+async function showLoad(id) {
+  const { data: l, error } = await sb.rpc('portal_load', { p_load: id });
+  if (error) { $('detail').innerHTML = `<div class="card empty err">${esc(error.message)}</div>`; return; }
+  const paths = l.stops.flatMap(s => s.photos || []);
+  const urls = {};
+  if (paths.length) { const r = await sb.storage.from('scan-photos').createSignedUrls(paths, 3600); (r.data || []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); }
+  $('detail').innerHTML = `<div class="card"><div class="bar"><h2>Load ${esc(l.load_no)} · ${day(l.service_date)}</h2>${STATUS(l.status)}${ME.kind === 'billing' && (ME.accounts || []).length > 1 ? `<span class="hint">${esc(l.account)}</span>` : ''}<span class="sp"></span><button class="btn noprint" onclick="window.print()">Print</button></div>
+    ${l.stops.map(s => `<div class="stop">
+      <div><div class="k">${s.type === 'pickup' ? 'Pickup' : 'Stop ' + s.seq}</div><b>${esc(s.name)}</b><div class="hint">${esc(s.address || '')}</div>
+        ${s.issue ? `<div style="margin-top:6px"><span class="pill bad">${esc(ISSUE[s.issue] || s.issue)}</span>${s.issue_resolution ? ` <span class="hint">${esc(s.issue_resolution)}</span>` : ''}</div>` : ''}
+        ${(s.delays || []).length ? `<div class="hint" style="margin-top:6px">Delay: ${s.delays.map(d => `${esc(d.code || '')} ${esc(d.reason || '')} · ${d.minutes} min`).join('; ')}</div>` : ''}</div>
+      <div><div class="k">Times</div>Window ${hm(s.window_start)}–${hm(s.window_end)}<br>Arrived <b style="display:inline">${hm(s.arrived_at)}</b>${!s.arrived_at && s.eta ? ` <span class="hint">(ETA ${hm(s.eta)})</span>` : ''}<br>Departed <b style="display:inline">${hm(s.departed_at)}</b></div>
+      <div><div class="k">Counts</div>${(s.items || []).map(i => `${esc(i.unit)}: <b style="display:inline">${qty(i.delivered)}</b> of ${qty(i.ordered)}`).join('<br>') || '—'}
+        ${(s.photos || []).length ? `<div class="pods">${s.photos.map(p => urls[p] ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="Proof of delivery"></a>` : '').join('')}</div>` : ''}</div>
+    </div>`).join('')}</div>`;
+  $('detail').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Invoices (billing logins) ────────────────────────────────────────
+async function invoices() {
+  $('bar').innerHTML = '<span class="hint">Invoices from ' + esc(ME.carrier) + '. Click one to view or print it.</span>';
+  const { data, error } = await sb.rpc('portal_invoices');
+  if (error) { $('list').innerHTML = `<div class="empty err">${esc(error.message)}</div>`; return; }
+  const rows = data || [];
+  const multi = (ME.accounts || []).length > 1;
+  $('list').innerHTML = rows.length ? `<table><thead><tr><th>Invoice</th><th>Date</th>${multi ? '<th>DC</th>' : ''}<th>Period</th><th>Due</th><th class="num">Amount</th><th>Status</th></tr></thead><tbody>${rows.map(r => `
+      <tr class="r" data-i="${r.id}"><td class="n">${esc(r.invoice_no)}</td><td>${day(r.invoice_date)}</td>${multi ? `<td>${esc(r.account)}</td>` : ''}<td>${r.period_from ? day(r.period_from) + ' – ' + day(r.period_to) : ''}</td>
+        <td>${day(r.due_date)}</td><td class="n num">${money(r.total)}</td><td>${r.status === 'paid' ? '<span class="pill ok">Paid</span>' : new Date(r.due_date) < new Date() ? '<span class="pill bad">Past due</span>' : '<span class="pill">Open</span>'}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">No invoices yet.</div>';
+  document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => showInvoice(tr.dataset.i));
+}
+async function showInvoice(id) {
+  const { data: v, error } = await sb.rpc('portal_invoice', { p_invoice: id });
+  if (error) { $('detail').innerHTML = `<div class="card empty err">${esc(error.message)}</div>`; return; }
+  $('detail').innerHTML = `<div class="card"><div class="inv">
+    <div style="display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap">
+      <div><h1>Invoice ${esc(v.invoice_no)}</h1><div class="hint">Dated ${day(v.invoice_date)} · due ${day(v.due_date)}${v.period_from ? ` · period ${day(v.period_from)} – ${day(v.period_to)}` : ''}${v.po_number ? ` · PO ${esc(v.po_number)}` : ''}</div></div>
+      <button class="btn noprint" onclick="window.print()">Print / save as PDF</button></div>
+    <div style="display:flex;gap:40px;margin:18px 0;flex-wrap:wrap">
+      <div><div class="k">From</div><b>${esc(v.from.name)}</b><div class="hint" style="white-space:pre-line">${esc(v.from.address || '')}${v.from.phone ? '\n' + esc(v.from.phone) : ''}</div></div>
+      <div><div class="k">Bill to</div><b>${esc(v.bill_to.name)}</b><div class="hint" style="white-space:pre-line">${esc(v.bill_to.address || '')}</div></div></div>
+    <table><thead><tr><th>Description</th><th class="num">Rate</th><th>Basis</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead><tbody>${(v.lines || []).map(l => `
+      <tr><td>${esc(l.description)}${l.load_no ? ` <span class="hint">· load ${esc(l.load_no)}</span>` : ''}</td><td class="n num">${l.rate != null ? money(l.rate) : ''}</td><td>${esc(l.basis || '')}</td><td class="n num">${l.volume ?? ''}</td><td class="n num">${money(l.amount)}</td></tr>`).join('')}
+      <tr><td colspan="4" class="num"><b>Total</b></td><td class="n num"><b>${money(v.total)}</b></td></tr></tbody></table>
+    ${v.notes ? `<p class="hint">${esc(v.notes)}</p>` : ''}
+    <p class="hint">${v.status === 'paid' ? 'Paid — thank you.' : 'Questions about this invoice? Contact ' + esc(v.from.name) + (v.from.phone ? ' at ' + esc(v.from.phone) : '') + '.'}</p>
+  </div></div>`;
+  $('detail').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Activity file (billing logins) ───────────────────────────────────
+function fileTab() {
+  const to = new Date(); to.setDate(to.getDate() - to.getDay() - 1); const from = new Date(to); from.setDate(from.getDate() - 6);
+  $('bar').innerHTML = `<label>From<input type="date" id="f"></label><label>To<input type="date" id="t"></label><button class="btn primary" id="dl">Download</button><span class="sp"></span>
+    <span class="hint">Every stop on every delivered load, in the layout agreed with ${esc(ME.carrier)}.</span>`;
+  $('f').value = iso(from); $('t').value = iso(to);
+  $('list').innerHTML = '<div class="empty">Pick the dates and download. Last week is filled in.</div>';
+  $('dl').onclick = async () => {
+    const { data, error } = await sb.rpc('portal_activity_csv', { p_from: $('f').value, p_to: $('t').value });
+    if (error) { $('list').innerHTML = `<div class="empty err">${esc(error.message)}</div>`; return; }
+    const f = (data || [])[0]; if (!f) return;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([f.csv], { type: 'text/csv' })); a.download = f.file_name; document.body.appendChild(a); a.click(); a.remove();
+    $('list').innerHTML = `<div class="empty">Downloaded ${esc(f.file_name)} — ${f.rows_count} lines.</div>`;
+  };
+}
+
+start();
+</script>
+</body>
+</html>

@@ -35,7 +35,7 @@
     { name: 'Daily', items: ['index.html', 'dispatch.html', 'messages.html', 'templates.html', 'loads.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'profit.html', 'tolls.html'] },
     { name: 'Safety', items: ['incidents.html'] },
-    { name: 'Setup', items: ['customers.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
+    { name: 'Setup', items: ['customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
   ];
   var ICON = {
     'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'incidents.html': '⚠', 'templates.html': '↻', 'loads.html': '▸',
@@ -48,7 +48,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'customer-logins.html': 'Customer logins' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -130,6 +130,12 @@
       al.href = 'activity.html'; al.textContent = 'Activity file';
       if (here === 'activity.html') al.className = 'on';
       nav.appendChild(al); links['activity.html'] = al;
+    }
+    if (!links['customer-logins.html'] && (!acc || (acc.can && acc.can('customers')))) {
+      var cl = document.createElement('a');
+      cl.href = 'customer-logins.html'; cl.textContent = 'Customer logins';
+      if (here === 'customer-logins.html') cl.className = 'on';
+      nav.appendChild(cl); links['customer-logins.html'] = cl;
     }
     if (!links['incidents.html'] && (!acc || (acc.can && acc.can('safety')))) {
       var il = document.createElement('a');
