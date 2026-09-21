@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profit · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .dim{color:var(--muted)}
+  .error{color:var(--late)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .s{font-size:12px;color:var(--muted);margin-top:3px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px;min-width:1000px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:right;
+    padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
+  .t th:first-child{text-align:left}
+  .t th.sorted{color:var(--accent-hi)}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft);text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;white-space:nowrap}
+  .t td:first-child{text-align:left;font-family:inherit;font-size:13px}
+  .t tr.grp{cursor:pointer}
+  .t tr.grp:hover{background:var(--row-hover)}
+  .t tr.sub td:first-child{padding-left:30px;color:var(--muted)}
+  .t tr.tot td{font-weight:600;background:var(--panel-2)}
+  .t tr.lds > td{padding:0;background:var(--panel-2)}
+  .t tr.lds table{min-width:0}
+  .neg{color:var(--late)}
+  .pct{display:inline-block;min-width:52px}
+  .est{color:var(--warn);font-size:11px;margin-left:6px}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a class="on" href="profit.html">Profit</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>Profit</h1>
+      <span class="sp"></span>
+      <label>Period<select id="preset"><option value="mtd">This month</option><option value="lm">Last month</option><option value="4w" selected>Last 4 weeks</option><option value="13w">Last 13 weeks</option><option value="custom">Pick dates…</option></select></label>
+      <label>From<input id="from" type="date"></label>
+      <label>To<input id="to" type="date"></label>
+      <button class="btn small" id="csv">Download (CSV)</button>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <header>
+        <div class="tabs" id="tabs">
+          <button data-by="customer" class="on">Customers</button>
+          <button data-by="driver">Drivers</button>
+          <button data-by="truck">Trucks</button>
+          <button data-by="unit">By unit</button>
+        </div>
+        <span class="sp"></span><span class="mini" id="hint">Click a line for its loads; click a load for its trip.</span>
+      </header>
+      <div class="wrap" id="table"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="mini" id="foot"></div>
+  </section>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const $$ = (n) => (Number(n) < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const $$2 = (n) => n == null ? '' : (Number(n) < 0 ? '−$' : '$') + Math.abs(Number(n)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pct = (m, b) => b ? Math.round(m / b * 1000) / 10 : null;
+const num = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+let ROWS = [], UNITS = [], BY = 'customer', OPEN = new Set(), SORT = { k: 'margin', d: -1 };
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.money) return;       // access.js shows the note
+  $('app').hidden = false;
+  const q = new URLSearchParams(location.search);
+  if (q.get('by')) BY = q.get('by');
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.by === BY));
+  if (q.get('from') && q.get('to')) { $('preset').value = 'custom'; $('from').value = q.get('from'); $('to').value = q.get('to'); } else setPreset();
+  load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+function setPreset() {
+  const t = new Date(), p = $('preset').value;
+  let f, e = new Date(t);
+  if (p === 'mtd') f = new Date(t.getFullYear(), t.getMonth(), 1);
+  else if (p === 'lm') { f = new Date(t.getFullYear(), t.getMonth() - 1, 1); e = new Date(t.getFullYear(), t.getMonth(), 0); }
+  else if (p === '13w') { f = new Date(t); f.setDate(f.getDate() - 90); }
+  else if (p === '4w') { f = new Date(t); f.setDate(f.getDate() - 27); }
+  else return;
+  $('from').value = iso(f); $('to').value = iso(e);
+}
+$('preset').onchange = () => { setPreset(); load(); };
+$('from').onchange = $('to').onchange = () => { $('preset').value = 'custom'; load(); };
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  BY = b.dataset.by; OPEN.clear();
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b)); draw();
+});
+
+async function load() {
+  history.replaceState(null, '', `?by=${BY}&from=${$('from').value}&to=${$('to').value}`);
+  $('table').innerHTML = '<div class="empty">Working it out…</div>';
+  const [r, u] = await Promise.all([
+    sb.rpc('profit_rows', { p_from: $('from').value, p_to: $('to').value }),
+    sb.rpc('profit_units', { p_from: $('from').value, p_to: $('to').value }),
+  ]);
+  if (r.error) { $('table').innerHTML = `<div class="empty error">${esc(r.error.message)}${/function|schema cache/.test(r.error.message) ? ' — run 53_profit.sql in the SQL Editor.' : ''}</div>`; return; }
+  ROWS = r.data || []; UNITS = u.error ? [] : (u.data || []);
+  draw();
+}
+
+// ── add up ────────────────────────────────────────────────────────────
+const KEYS = ['billed', 'driver_pay', 'fuel', 'tolls', 'other_costs', 'equipment', 'cost', 'margin', 'miles'];
+function sum(rows) {
+  const s = { loads: rows.length, est: 0 }; KEYS.forEach(k => s[k] = 0);
+  rows.forEach(r => { KEYS.forEach(k => s[k] += Number(r[k] || 0)); if (!/^payroll/.test(r.pay_basis || '')) s.est++; });
+  s.pct = pct(s.margin, s.billed); s.per_mile = s.miles ? s.margin / s.miles : null;
+  return s;
+}
+function groupBy(rows, key, label) {
+  const m = new Map();
+  rows.forEach(r => { const k = r[key] || '—'; if (!m.has(k)) m.set(k, { key: k, label: r[label] || '(none)', rows: [] }); m.get(k).rows.push(r); });
+  return [...m.values()].map(g => ({ ...g, ...sum(g.rows) }));
+}
+const sorter = (a, b) => { const x = a[SORT.k] ?? -Infinity, y = b[SORT.k] ?? -Infinity; return typeof x === 'string' ? SORT.d * x.localeCompare(y) : SORT.d * (x - y); };
+
+// ── draw ──────────────────────────────────────────────────────────────
+const COLS = [['label', 'Name'], ['loads', 'Loads'], ['miles', 'Miles'], ['billed', 'Billed'], ['driver_pay', 'Driver pay'], ['fuel', 'Fuel'], ['tolls', 'Tolls'],
+  ['other_costs', 'Other'], ['equipment', 'Equip. & overhead'], ['cost', 'Cost'], ['margin', 'Margin'], ['pct', 'Margin %'], ['per_mile', 'Per mile']];
+function cells(g) {
+  return `<td class="${g.margin < 0 ? 'neg' : ''}">${num(g.loads)}</td><td>${num(g.miles)}</td><td>${$$(g.billed)}</td><td>${$$(g.driver_pay)}</td><td>${$$(g.fuel)}</td><td>${$$(g.tolls)}</td>
+    <td>${$$(g.other_costs)}</td><td>${$$(g.equipment)}</td><td>${$$(g.cost)}</td><td class="${g.margin < 0 ? 'neg' : ''}"><b>${$$(g.margin)}</b></td>
+    <td class="${g.pct < 0 ? 'neg' : ''}"><span class="pct">${g.pct == null ? '—' : g.pct + '%'}</span></td><td>${g.per_mile == null ? '—' : $$2(g.per_mile)}</td>`;
+}
+function loadsTable(rows) {
+  return `<tr class="lds"><td colspan="${COLS.length}"><table class="t" style="min-width:0"><tbody>${rows.slice().sort((a, b) => a.service_date.localeCompare(b.service_date) || String(a.load_no).localeCompare(String(b.load_no), undefined, { numeric: true })).map(r => `
+    <tr class="grp" data-trip="${r.load_id}"><td style="padding-left:30px"><a href="trip.html?load=${r.load_id}">${esc(r.load_no)}</a> <span class="mini">${esc(r.service_date)} · ${esc(BY === 'customer' ? (r.driver || '') : r.customer || '')}${BY === 'customer' ? '' : ''}</span>${/^payroll/.test(r.pay_basis || '') ? '' : `<span class="est" title="${esc(r.pay_basis)}">pay estimated</span>`}</td>
+      ${cells({ ...r, loads: 1, pct: r.margin_pct, per_mile: r.miles ? r.margin / r.miles : null })}</tr>`).join('')}</tbody></table></td></tr>`;
+}
+function tiles(t) {
+  $('tiles').innerHTML = [
+    ['Loads', num(t.loads), `${num(t.miles)} miles`],
+    ['Billed', $$(t.billed), `${t.miles ? $$2(t.billed / t.miles) : '—'} a mile`],
+    ['Cost', $$(t.cost), `driver pay ${$$(t.driver_pay)} · tolls ${$$(t.tolls)}`],
+    ['Margin', $$(t.margin), `${t.pct == null ? '—' : t.pct + '%'} · ${t.per_mile == null ? '—' : $$2(t.per_mile)} a mile`],
+  ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Margin' && t.margin < 0 ? 'neg' : ''}">${v}</div><div class="s">${s}</div></div>`).join('');
+}
+function draw() {
+  history.replaceState(null, '', `?by=${BY}&from=${$('from').value}&to=${$('to').value}`);
+  const tot = sum(ROWS); tiles(tot);
+  $('foot').textContent = tot.est ? `${tot.est} of ${tot.loads} loads use estimated driver pay (no pay rates set, or the trip is still running) — marked "pay estimated". Everything else is from payroll.` : 'Driver pay on every load comes from payroll.';
+  if (BY === 'unit') return drawUnits();
+  const head = `<thead><tr>${COLS.map(([k, t]) => `<th data-k="${k}" class="${SORT.k === k ? 'sorted' : ''}">${t}${SORT.k === k ? (SORT.d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>`;
+  let body = '';
+  if (BY === 'customer') {
+    // main customers, each with a line per DC when it has more than one account
+    const mains = groupBy(ROWS, 'main_customer_id', 'main_customer').sort(sorter);
+    for (const g of mains) {
+      const dcs = groupBy(g.rows, 'customer_id', 'customer').sort(sorter);
+      const multi = dcs.length > 1 || dcs[0].key !== g.key;
+      body += `<tr class="grp" data-g="${g.key}"><td><b>${esc(g.label)}</b>${multi ? ` <span class="mini">${dcs.length} account${dcs.length > 1 ? 's' : ''}</span>` : ''}</td>${cells(g)}</tr>`;
+      if (OPEN.has(g.key)) {
+        if (multi) for (const d of dcs) {
+          body += `<tr class="grp sub" data-g="${g.key}|${d.key}"><td>↳ ${esc(d.label)}</td>${cells(d)}</tr>`;
+          if (OPEN.has(g.key + '|' + d.key)) body += loadsTable(d.rows);
+        } else body += loadsTable(g.rows);
+      }
+    }
+  } else {
+    const key = BY === 'driver' ? ['driver_id', 'driver'] : ['truck_id', 'truck'];
+    for (const g of groupBy(ROWS, ...key).sort(sorter)) {
+      body += `<tr class="grp" data-g="${g.key}"><td><b>${esc(g.label)}</b></td>${cells(g)}</tr>`;
+      if (OPEN.has(g.key)) body += loadsTable(g.rows);
+    }
+  }
+  body += `<tr class="tot"><td>Total</td>${cells(tot)}</tr>`;
+  $('table').innerHTML = ROWS.length ? `<table class="t">${head}<tbody>${body}</tbody></table>` : '<div class="empty">No loads in this period.</div>';
+  wire();
+}
+function drawUnits() {
+  const head = '<thead><tr><th>Customer / unit</th><th>Loads</th><th>Units</th><th>Billed</th><th>Cost</th><th>Margin</th><th>Billed / unit</th><th>Cost / unit</th><th>Margin / unit</th></tr></thead>';
+  let last = null, body = '';
+  for (const u of UNITS) {
+    const who = u.main_customer === u.customer ? u.customer : `${u.main_customer} › ${u.customer}`;
+    if (who !== last) { body += `<tr class="tot"><td colspan="9" style="text-align:left">${esc(who)}</td></tr>`; last = who; }
+    body += `<tr><td style="padding-left:24px">${esc(u.unit_type)}</td><td>${num(u.loads)}</td><td>${num(u.qty)}</td><td>${$$(u.billed)}</td><td>${$$(u.cost)}</td>
+      <td class="${u.margin < 0 ? 'neg' : ''}">${$$(u.margin)}</td><td>${$$2(u.billed_per_unit)}</td><td>${$$2(u.cost_per_unit)}</td><td class="${u.margin_per_unit < 0 ? 'neg' : ''}"><b>${$$2(u.margin_per_unit)}</b></td></tr>`;
+  }
+  $('table').innerHTML = UNITS.length ? `<table class="t">${head}<tbody>${body}</tbody></table><div class="mini" style="padding:8px 16px">Each load's billing and cost are spread over its delivered units by what each line billed — the same rule as the trip screen, so the units add back up to the loads.</div>` : '<div class="empty">No delivered units in this period.</div>';
+}
+function wire() {
+  document.querySelectorAll('#table th[data-k]').forEach(th => th.onclick = () => {
+    SORT = { k: th.dataset.k, d: SORT.k === th.dataset.k ? -SORT.d : (th.dataset.k === 'label' ? 1 : -1) }; draw();
+  });
+  document.querySelectorAll('#table tr[data-g]').forEach(tr => tr.onclick = () => { const k = tr.dataset.g; OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k); draw(); });
+  document.querySelectorAll('#table tr[data-trip]').forEach(tr => tr.onclick = (e) => { if (e.target.tagName !== 'A') location.href = 'trip.html?load=' + tr.dataset.trip; });
+}
+
+// ── CSV of every load in the period (open it in Excel and pivot any way) ──
+$('csv').onclick = () => {
+  const cols = ['load_no', 'service_date', 'status', 'main_customer', 'customer', 'customer_code', 'driver', 'truck', 'miles', 'linehaul', 'fuel_surcharge', 'extras', 'billed',
+    'driver_pay', 'pay_basis', 'fuel', 'tolls', 'other_costs', 'equipment', 'cost', 'margin', 'margin_pct'];
+  const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const text = [cols.join(','), ...ROWS.map(r => cols.map(c => q(r[c])).join(','))].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  a.download = `profit-${$('from').value}-to-${$('to').value}.csv`; document.body.appendChild(a); a.click(); a.remove();
+};
+
+start();
+</script>
+</body>
+</html>

@@ -174,7 +174,8 @@ async function load() {
   const [L, T, P, I, D, AE, EQ] = await Promise.all([
     sb.from('loads').select(sel).eq('service_date', day).neq('status', 'cancelled').order('load_no'),
     sb.from('loads').select('id, load_no, driver_id, status, customers(name), stops(id)').eq('service_date', tomorrow).neq('status', 'cancelled'),
-    sb.from('load_profit').select('billed, cost').eq('service_date', day),
+    // the day's margin from payroll (53); users without the money switch get none
+    (window.RC_ACCESS && !window.RC_ACCESS.money) ? Promise.resolve({ data: [] }) : sb.rpc('load_margin', { p_from: day, p_to: day }),
     sb.from('invoices').select('id, invoice_no, status, due_date, total, customers(name)').in('status', ['draft', 'approved', 'sent']),
     sb.from('drivers').select('id, full_name, cdl_expires, med_card_expires').eq('active', true)
       .or(`cdl_expires.lte.${addDays(today, 30)},med_card_expires.lte.${addDays(today, 30)}`),
