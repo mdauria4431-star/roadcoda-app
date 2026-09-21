@@ -120,6 +120,7 @@
         <label for="f-no">Load number<input id="f-no"></label>
         <label for="f-date">Service date<input id="f-date" type="date"></label>
         <label for="f-customer">Customer (bill to)<select id="f-customer"></select></label>
+        <label for="f-trip" id="f-trip-wrap" hidden>Trip type<select id="f-trip"><option value="">Regular (rate sheet)</option></select></label>
         <label for="f-miles">Miles<input id="f-miles" type="number" min="0" step="1"></label>
         <label for="f-driver">Driver<select id="f-driver"></select></label>
         <label for="f-truck">Truck<select id="f-truck"></select></label>
@@ -400,12 +401,22 @@ function renumber() { document.querySelectorAll('#stops .stop .n').forEach((el, 
 $('f-customer').onchange = () => {
   if ($('f-customer').value === '__new') return addCustomer('f-customer');
   loadLocs($('f-customer').value);
+  loadTripTypes($('f-customer').value);
   const c = lists.customers.find(x => x.id === $('f-customer').value);
   if ($('f-origin').dataset.auto === '1' || !$('f-origin').value) {
     $('f-origin').value = c?.start_address || yard; $('f-origin').dataset.auto = '1';
   }
 };
 $('f-origin').oninput = () => { $('f-origin').dataset.auto = ''; };
+// Trip types (61): the customer's own and its main customer's
+async function loadTripTypes(cust) {
+  $('f-trip').innerHTML = '<option value="">Regular (rate sheet)</option>'; $('f-trip-wrap').hidden = true;
+  if (!cust || cust === '__new') return;
+  const { data, error } = await sb.rpc('customer_trip_types', { p_customer: cust });
+  if (error || !(data || []).length) return;
+  $('f-trip').innerHTML += data.filter(t => t.active).map(t => `<option value="${t.id}">${esc(t.name)}${t.rate ? ` — ${Number(t.rate.flat_amount) ? '$' + Number(t.rate.flat_amount) + ' flat' : 'own rates'}${t.rate.fuel ? '' : ', no fuel'}` : ''}</option>`).join('');
+  $('f-trip-wrap').hidden = false;
+}
 $('add-stop').onclick = () => { $('stops').appendChild(stopRow($('stops').children.length + 1)); };
 
 $('new-btn').onclick = async () => {
@@ -442,10 +453,11 @@ async function getMiles(origin, roundTrip, stopAddresses, customerId) {
   return data;   // { miles, legs, drive_minutes, source?, tolls_truck?, state_miles?, version? }
 }
 // items: [{unit, qty}] across all stops; stopCount: number of stops
-async function getPrice(customerId, date, miles, stopCount, items) {
+async function getPrice(customerId, date, miles, stopCount, items, tripType) {
   const units = {};
   items.forEach(s => { if (s.qty) units[s.unit] = (units[s.unit] || 0) + s.qty; });
-  const { data, error } = await sb.rpc('price_load', { p_customer_id: customerId, p_date: date, p_miles: miles, p_stops: stopCount, p_units: units });
+  const { data, error } = await sb.rpc('price_load', { p_customer_id: customerId, p_date: date, p_miles: miles, p_stops: stopCount, p_units: units,
+    ...(tripType ? { p_trip_type: tripType } : {}) });
   if (error) throw new Error('Price: ' + error.message);
   return data;   // { linehaul, fuel_surcharge, note, customer_rate_id, fsc_rule_id, doe_price, doe_week }
 }
@@ -478,7 +490,7 @@ $('calc').onclick = async () => {
       lines.push(`<span class="error">${esc(e.message)}</span> Using the miles typed in.`);
     }
     if (!hasMoney()) { lines.push('The price is worked out from the rate sheet when you save.'); return; }
-    const p = await getPrice($('f-customer').value, $('f-date').value, parseFloat($('f-miles').value || '0'), stops.length, stops);
+    const p = await getPrice($('f-customer').value, $('f-date').value, parseFloat($('f-miles').value || '0'), stops.length, stops, $('f-trip').value || null);
     if (p.linehaul != null) $('f-linehaul').value = p.linehaul;
     if (p.fuel_surcharge != null) $('f-fsc').value = p.fuel_surcharge;
     Object.assign(priced, p);
@@ -522,6 +534,7 @@ $('save').onclick = async () => {
     const { data: load, error: e1 } = await sb.from('loads').insert({
       load_no: $('f-no').value.trim(), service_date: date,
       customer_id: $('f-customer').value, driver_id: $('f-driver').value || null,
+      ...($('f-trip').value ? { trip_type_id: $('f-trip').value } : {}),
       truck_id: $('f-truck').value || null, miles: parseFloat($('f-miles').value || '0'),
       status: $('f-driver').value ? 'dispatched' : 'planned',
       origin_address: $('f-origin').value.trim() || null, round_trip: $('f-round').checked,
@@ -603,7 +616,7 @@ function noticeSection(l) {
 }
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, pcm_state_miles, pcm_version, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), notify_muted, notification_queue(id, stop_id, event, status, to_email, sent_at, created_at, detail), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, trip_type_id, trip_types(name), hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, pcm_state_miles, pcm_version, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), notify_muted, notification_queue(id, stop_id, event, status, to_email, sent_at, created_at, detail), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
@@ -766,7 +779,7 @@ async function showDetail(id) {
       }
       const r = await getMiles(origin, l.round_trip, sorted.map(s => s.addr), l.customer_id);
       const items = sorted.flatMap(s => s.stop_items.map(i => ({ unit: i.unit_type, qty: Number(i.qty_ordered) || 0 })));
-      const p2 = await getPrice(l.customer_id, l.service_date, Math.round(r.miles), sorted.length, items);
+      const p2 = await getPrice(l.customer_id, l.service_date, Math.round(r.miles), sorted.length, items, l.trip_type_id || null);
       const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: r.source || 'google', origin_address: origin, toll_estimate: tollEst(r), toll_car_price: r.tolls_car ?? null,
         ...(r.source === 'pcmiler' ? { pcm_state_miles: r.state_miles || null, pcm_version: r.version || null, pcm_at: new Date().toISOString() } : {}) }).eq('id', id)).error;
       if (e1) throw e1;

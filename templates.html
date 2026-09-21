@@ -216,7 +216,7 @@ async function load() {
   const end = addDays(WEEK, 6);
   $('wk').textContent = `${label(WEEK)} – ${label(end)}`;
   const [t, s] = await Promise.all([
-    sb.from('load_templates').select('id, name, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, run_days, starts_on, ends_on, active, notes, updated_at, customers(name), load_template_stops(id, seq, stop_type, consignee, address, window_start, window_end, day_offset, load_template_items(id, unit_type, qty_ordered)), load_template_dates(run_date, kind, note)').order('name'),
+    sb.from('load_templates').select('id, name, customer_id, trip_type_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, run_days, starts_on, ends_on, active, notes, updated_at, customers(name), load_template_stops(id, seq, stop_type, consignee, address, window_start, window_end, day_offset, load_template_items(id, unit_type, qty_ordered)), load_template_dates(run_date, kind, note)').order('name'),
     sb.rpc('template_schedule', { p_from: WEEK, p_to: end }),
   ]);
   if (t.error || s.error) {
@@ -333,6 +333,7 @@ function editorHtml(t, edit) {
   return `<div class="edit" id="ed">
     <div class="grid">
       <label>Name<input id="e-name" value="${esc(t.name)}"${dis}></label>
+      <label id="e-trip-wrap" hidden>Trip type<select id="e-trip"${dis}><option value="">Regular (rate sheet)</option></select></label>
       <label>Runs on<div class="pick" id="e-days">${DN.map((d, i) => `<label><input type="checkbox" value="${i + 1}"${t.run_days.includes(i + 1) ? ' checked' : ''}${dis}><span>${d}</span></label>`).join('')}</div></label>
     </div>
     <div class="grid">
@@ -356,11 +357,19 @@ function editorHtml(t, edit) {
 }
 
 function wireEditor(t) {
+  // trip types for this template's customer (61)
+  if (t && $('e-trip')) sb.rpc('customer_trip_types', { p_customer: t.customer_id }).then(({ data, error }) => {
+    if (error || !(data || []).length) return;
+    $('e-trip').innerHTML = '<option value="">Regular (rate sheet)</option>' + data.filter(x => x.active || x.id === t.trip_type_id)
+      .map(x => `<option value="${x.id}"${x.id === t.trip_type_id ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+    $('e-trip-wrap').hidden = false;
+  });
   if (!t || !$('e-save')) return;
   $('e-save').onclick = async () => {
     const days = [...document.querySelectorAll('#e-days input:checked')].map(i => +i.value);
     if (!days.length) return fail('Pick at least one day it runs.');
     const upd = { name: $('e-name').value.trim(), run_days: days, driver_id: $('e-driver').value || null, truck_id: $('e-truck').value || null,
+      ...($('e-trip-wrap').hidden ? {} : { trip_type_id: $('e-trip').value || null }),
       trailer_id: $('e-bobtail').checked ? null : ($('e-trailer').value || null),
       trailer2_id: $('e-bobtail').checked || !$('e-trailer').value ? null : ($('e-trailer2').value || null),
       bobtail: $('e-bobtail').checked, starts_on: $('e-start').value, ends_on: $('e-end').value || null };

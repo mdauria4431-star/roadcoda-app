@@ -97,6 +97,7 @@
           <button data-by="customer" class="on">Customers</button>
           <button data-by="driver">Drivers</button>
           <button data-by="truck">Trucks</button>
+          <button data-by="trip">Trip types</button>
           <button data-by="unit">By unit</button>
         </div>
         <span class="sp"></span><span class="mini" id="hint">Click a line for its loads; click a load for its trip.</span>
@@ -230,7 +231,8 @@ function draw() {
       }
     }
   } else {
-    const key = BY === 'driver' ? ['driver_id', 'driver'] : ['truck_id', 'truck'];
+    const key = BY === 'driver' ? ['driver_id', 'driver'] : BY === 'trip' ? ['tt_key', 'tt_label'] : ['truck_id', 'truck'];
+    if (BY === 'trip') ROWS.forEach(r => { r.tt_key = (r.trip_type_id || 'regular') + '|' + r.main_customer_id; r.tt_label = `${r.trip_type || 'Regular (rate sheet)'} — ${r.main_customer}`; });
     for (const g of groupBy(ROWS, ...key).sort(sorter)) {
       body += `<tr class="grp" data-g="${g.key}"><td><b>${esc(g.label)}</b></td>${cells(g)}</tr>`;
       if (OPEN.has(g.key)) body += loadsTable(g.rows);

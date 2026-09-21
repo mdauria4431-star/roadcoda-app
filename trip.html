@@ -214,7 +214,7 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 // ── Read everything the trip needs ───────────────────────────────────
 async function load() {
   const L = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, driver2_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
+    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, driver2_id, trip_type_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
     .eq('id', LOAD).maybeSingle();
   if (L.error || !L.data) { $('trip').innerHTML = `<div class="card empty error">${esc(L.error?.message || 'That load was not found, or it belongs to another carrier.')}</div>`; return; }
   const l = L.data;
@@ -267,6 +267,7 @@ async function load() {
     acts: acts?.error ? null : (acts?.data || []), actTypes: actTypes?.data || [],
     margin, unitMargin,
     msgs: msgs?.error ? null : (msgs?.data || []),
+    tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
   };
   T.finished = l.stops.length > 0 && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
@@ -340,6 +341,7 @@ function draw() {
         ${tractor && !l.trailer_id ? `<label class="mini" style="flex-direction:row;align-items:center;gap:6px;margin-top:4px;font-weight:500"><input type="checkbox" id="bobtail" style="height:auto"${l.bobtail ? ' checked' : ''}${dis}> Bobtail (no trailer)</label>` : ''}</div>
       ${l.trailer_id ? `<div class="f"><b>Second trailer</b><select class="ed" data-load="trailer2_id"${dis}>${opt(trlList.filter(x => x.id !== l.trailer_id), l.trailer2_id, '— none —')}</select></div>` : ''}
       <div class="f"><b>Service date</b><span class="n">${esc(l.service_date)}</span></div>
+      ${T.tripTypes && T.tripTypes.length ? `<div class="f"><b>Trip type</b><select class="ed" data-load="trip_type_id"${dis}>${opt(T.tripTypes.map(t => ({ id: t.id, label: t.name })), l.trip_type_id, 'Regular (rate sheet)')}</select></div>` : ''}
       <div class="f"><b>Miles</b><span class="n">${planned ? Math.round(planned) + ' planned' : '—'}${eld && eld.eld_miles > 0 ? ` · ${Math.round(eld.eld_miles)} ELD` : ''}${eld && eld.driver_miles > 0 ? ` · ${Math.round(eld.driver_miles)} driver` : ''}</span></div>
       ${needSheet ? `<div class="f"><b>Trip sheet</b><label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="sheet" style="height:auto"${l.trip_sheet_at ? ' checked' : ''}${dis}> ${l.trip_sheet_at ? 'Turned in ' + when(l.trip_sheet_at) : 'Not turned in'}</label></div>` : ''}
     </div>
@@ -541,13 +543,14 @@ function payItemsHtml(edit) {
 // ── Audit ────────────────────────────────────────────────────────────
 const FIELD = { arrived_at: 'arrival', departed_at: 'departure', seal_no: 'seal', issue_type: 'OS&D type', issue_resolution: 'OS&D resolution',
   status: 'status', window_start: 'window start', window_end: 'window end', qty_ordered: 'ordered', qty_delivered: 'delivered count',
-  driver_id: 'driver', driver2_id: 'co-driver', truck_id: 'truck', trailer_id: 'trailer', trailer2_id: 'second trailer', bobtail: 'bobtail', service_date: 'service date', miles: 'miles', trip_sheet_at: 'trip sheet' };
+  driver_id: 'driver', driver2_id: 'co-driver', trip_type_id: 'trip type', truck_id: 'truck', trailer_id: 'trailer', trailer2_id: 'second trailer', bobtail: 'bobtail', service_date: 'service date', miles: 'miles', trip_sheet_at: 'trip sheet' };
 function showVal(field, v) {
   if (v == null || v === '') return '—';
   if (/_at$/.test(field)) return when(v);
   if (field === 'driver_id') return T.drivers.find(d => d.id === v)?.full_name || 'another driver';
   if (field === 'bobtail') return v === 'true' ? 'yes' : 'no';
   if (field === 'driver2_id') return v ? (T.drivers.find(d => d.id === v)?.full_name || 'a driver') : 'none';
+  if (field === 'trip_type_id') return v ? ((T.tripTypes || []).find(t => t.id === v)?.name || 'a trip type') : 'regular';
   if (field === 'truck_id' || field === 'trailer_id' || field === 'trailer2_id') return T.units.find(u => u.id === v)?.unit_no || 'another unit';
   return String(v);
 }

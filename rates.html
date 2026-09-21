@@ -237,6 +237,11 @@
         <div class="row" style="margin-top:12px"><button class="btn primary" id="r-save">Add version</button><span id="r-msg"></span></div>
       </details>
 
+      <h3>Trip types</h3>
+      <p class="hint">Kinds of trip this customer is billed differently for — e.g. a shuttle DC ↔ warehouse at a flat rate. A load or template marked
+        with a trip type is priced by it instead of the rate sheet above. Trip types on a main customer are there for its DCs too.</p>
+      <div id="tt-box"></div>
+
       <h3>Fuel surcharge rule versions</h3>
       <div class="tablewrap"><table>
         <thead><tr><th>Starts</th><th>Method</th><th>Details</th><th>DOE price region</th><th>Note</th></tr></thead>
@@ -263,6 +268,7 @@
       <h3>Try it</h3>
       <div class="row">
         <label for="t-date">Load date<input id="t-date" type="date"></label>
+        <label for="t-trip" id="t-trip-wrap" hidden>Trip type<select id="t-trip"><option value="">Regular (rate sheet)</option></select></label>
         <label for="t-miles">Miles<input id="t-miles" type="number" value="220" style="width:100px"></label>
         <label for="t-stops">Stops<input id="t-stops" type="number" value="3" style="width:80px"></label>
         <label for="t-pallets">Pallets<input id="t-pallets" type="number" value="12" style="width:90px"></label>
@@ -364,7 +370,64 @@ $('yard-save').onclick = async () => {
 };
 
 // ---------- Rate sheets and fuel rules ----------
-$('cust').onchange = () => { loadCustomer(); loadContract(); };
+$('cust').onchange = () => { loadCustomer(); loadContract(); loadTripTypes(); };
+
+// ---------- Trip types (61) ----------
+async function loadTripTypes() {
+  const cust = $('cust').value, box = $('tt-box'); if (!cust || !box) return;
+  const [tt, rr, cs] = await Promise.all([
+    sb.rpc('customer_trip_types', { p_customer: cust }),
+    sb.from('trip_type_rates').select('*').order('effective_from', { ascending: false }),
+    sb.from('customers').select('id, name, parent_customer_id'),
+  ]);
+  if (tt.error) { box.innerHTML = `<p class="hint">${/customer_trip_types|schema cache/.test(tt.error.message) ? 'Run 61_trip_types.sql to use trip types.' : esc(tt.error.message)}</p>`; return; }
+  const me = (cs.data || []).find(c => c.id === cust), owner = (id) => (cs.data || []).find(c => c.id === id)?.name || '';
+  const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  const desc = (r) => r ? [Number(r.flat_amount) && `flat ${money(r.flat_amount)}`, Number(r.per_mile) && `${money(r.per_mile)}/mi`, Number(r.per_stop) && `${money(r.per_stop)}/stop`,
+    Object.keys(r.unit_rates || {}).length && Object.entries(r.unit_rates).map(([k, v]) => `${money(v)}/${k.replace(/s$/, '')}`).join(', '),
+    Number(r.min_charge) && `min ${money(r.min_charge)}`].filter(Boolean).join(' + ') + (r.fuel ? ' + fuel surcharge' : ', no fuel surcharge') : '<span class="error">no rate yet</span>';
+  const act = (tt.data || []).filter(t => t.active);
+  $('t-trip').innerHTML = '<option value="">Regular (rate sheet)</option>' + act.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  $('t-trip-wrap').hidden = !act.length;
+  box.innerHTML = `<div class="tablewrap"><table><thead><tr><th>Trip type</th><th>Rate now</th><th>Since</th><th>History</th><th></th></tr></thead><tbody>${(tt.data || []).map(t => {
+      const hist = (rr.data || []).filter(r => r.trip_type_id === t.id), cur = t.rate;
+      return `<tr><td><b>${esc(t.name)}</b>${t.customer_id !== cust ? ` <span class="hint">from ${esc(owner(t.customer_id))}</span>` : ''}${t.active ? '' : ' <span class="hint">(retired)</span>'}</td>
+        <td>${desc(cur)}</td><td>${cur ? fmtDate(cur.effective_from) : ''}</td>
+        <td class="hint">${hist.filter(h => !cur || h.id !== cur.id).map(h => `${fmtDate(h.effective_from)}: ${desc(h)}`).join('<br>')}</td>
+        <td>${t.customer_id === cust ? `<button class="btn small" data-ttrate="${t.id}" data-ttname="${esc(t.name)}">New rate</button> <button class="btn small" data-ttact="${t.id}" data-on="${t.active ? 0 : 1}">${t.active ? 'Retire' : 'Use again'}</button>` : ''}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="hint">No trip types — every load bills on the rate sheet.</td></tr>'}</tbody></table></div>
+    <div class="row" style="margin-top:8px"><label>New trip type<input id="tt-name" placeholder="e.g. Shuttle DC ↔ warehouse" style="width:260px"></label><button class="btn" id="tt-add" type="button">Add</button></div>
+    <div id="tt-form" hidden class="row" style="margin-top:8px;align-items:end;flex-wrap:wrap;gap:10px">
+      <b id="tt-for"></b>
+      <label>Starts<input id="tr-from" type="date"></label><label>Flat $<input id="tr-flat" type="number" step="0.01" style="width:100px"></label>
+      <label>Per mile $<input id="tr-mile" type="number" step="0.0001" style="width:100px"></label><label>Per stop $<input id="tr-stop" type="number" step="0.01" style="width:100px"></label>
+      <label>Minimum $<input id="tr-min" type="number" step="0.01" style="width:100px"></label>
+      <label style="flex-direction:row;align-items:center;gap:6px"><input id="tr-fuel" type="checkbox" style="height:auto"> Add fuel surcharge</label>
+      <label style="flex:1 1 180px">Note<input id="tr-note"></label><button class="btn primary" id="tr-save" type="button">Save rate</button></div>
+    <div id="tt-msg" class="hint"></div>`;
+  let forType = null;
+  $('tt-add').onclick = async () => {
+    const name = $('tt-name').value.trim(); if (!name) return;
+    const { data, error } = await sb.from('trip_types').insert({ customer_id: cust, name }).select('id, name').single();
+    if (error) return ($('tt-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`);
+    await loadTripTypes(); document.querySelector(`[data-ttrate="${data.id}"]`)?.click();
+  };
+  document.querySelectorAll('[data-ttrate]').forEach(b => b.onclick = () => {
+    forType = b.dataset.ttrate; $('tt-form').hidden = false; $('tt-for').textContent = b.dataset.ttname + ':';
+    $('tr-from').value = new Date().toISOString().slice(0, 10); ['tr-flat', 'tr-mile', 'tr-stop', 'tr-min', 'tr-note'].forEach(id => $(id).value = ''); $('tr-fuel').checked = false; $('tr-flat').focus();
+  });
+  document.querySelectorAll('[data-ttact]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.from('trip_types').update({ active: b.dataset.on === '1' }).eq('id', b.dataset.ttact);
+    if (error) return ($('tt-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`); loadTripTypes();
+  });
+  $('tr-save').onclick = async () => {
+    const n = (id) => +($(id).value || 0);
+    const { error } = await sb.from('trip_type_rates').upsert({ trip_type_id: forType, effective_from: $('tr-from').value, flat_amount: n('tr-flat'), per_mile: n('tr-mile'),
+      per_stop: n('tr-stop'), min_charge: n('tr-min'), fuel: $('tr-fuel').checked, note: $('tr-note').value.trim() || null }, { onConflict: 'trip_type_id,effective_from' });
+    if (error) return ($('tt-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`);
+    $('tt-msg').innerHTML = '<span class="ok">Saved. New loads of this type price at it; loads already priced keep theirs until repriced.</span>'; loadTripTypes();
+  };
+}
 async function loadCustList() {
   const { data: cs } = await sb.from('customers').select('id, name').order('name');
   $('cust').innerHTML = (cs || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -440,7 +503,8 @@ $('f-save').onclick = async () => {
 $('t-go').onclick = async () => {
   const pallets = parseInt($('t-pallets').value || '0', 10);
   const { data, error } = await sb.rpc('price_load', { p_customer_id: $('cust').value, p_date: $('t-date').value,
-    p_miles: num('t-miles'), p_stops: parseInt($('t-stops').value || '0', 10), p_units: pallets ? { pallets } : {} });
+    p_miles: num('t-miles'), p_stops: parseInt($('t-stops').value || '0', 10), p_units: pallets ? { pallets } : {},
+    ...($('t-trip').value ? { p_trip_type: $('t-trip').value } : {}) });
   $('t-out').hidden = false;
   $('t-out').innerHTML = error ? `<span class="error">${esc(error.message)}</span>`
     : `<b>Linehaul ${data.linehaul == null ? '–' : money(data.linehaul)} · Fuel ${data.fuel_surcharge == null ? '–' : money(data.fuel_surcharge)}</b><br>${esc(data.note)}`;
