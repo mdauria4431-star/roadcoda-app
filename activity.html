@@ -121,6 +121,34 @@
       </div>
     </div>
 
+    <div class="card" id="send-card" hidden>
+      <header><h2>Sending the file</h2><span class="sp"></span><span class="mini" id="s-state"></span></header>
+      <div class="opts" style="border-top:0">
+        <label class="ck" style="font-weight:600"><input type="checkbox" id="s-on"> Auto-send</label>
+        <label>When<select id="s-when"><option value="approval">After approval — once every invoice in the window is approved</option><option value="schedule">On a set day and time</option></select></label>
+        <label id="s-dayw">Day<select id="s-dow"><option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></label>
+        <label id="s-timew">Time<input type="time" id="s-time"></label>
+        <label>How<select id="s-method"><option value="email">Email</option><option value="sftp">SFTP (customer's server)</option></select></label>
+      </div>
+      <div class="opts" id="s-email">
+        <label style="flex:1;min-width:260px">Send to<input id="s-to" placeholder="edi@customer.com, billing@customer.com"></label>
+        <label style="flex:1;min-width:220px">Copy to (optional)<input id="s-cc"></label>
+      </div>
+      <div class="opts" id="s-sftp">
+        <label style="flex:1;min-width:220px">Server<input id="s-host" placeholder="sftp.customer.com"></label>
+        <label style="width:90px">Port<input id="s-port" type="number" min="1" max="65535"></label>
+        <label style="min-width:160px">User name<input id="s-user"></label>
+        <label style="min-width:180px">Password<input id="s-pw" type="password" autocomplete="new-password" placeholder="unchanged"></label>
+        <label style="flex:1;min-width:160px">Folder<input id="s-folder" placeholder="/inbound"></label>
+      </div>
+      <div class="opts">
+        <button class="btn primary small" id="s-save">Save sending</button>
+        <button class="btn small" id="s-now">Send now (the dates above)</button>
+        <span class="mini" id="s-msg"></span>
+      </div>
+      <div class="wrap" style="max-height:280px;border-top:1px solid var(--line-soft)"><table class="pv"><thead><tr><th>When</th><th>Window</th><th>Why</th><th>How</th><th>Status</th><th>File</th><th>Lines</th><th>Sent to</th><th></th></tr></thead><tbody id="s-log"></tbody></table></div>
+    </div>
+
     <div class="card" id="hub-card" hidden>
       <header><h2>Start / end hubs</h2><span class="sp"></span><span class="mini">The customer's own DC or yard. A stop at a hub carries no billing in this file; its share goes to the real stops.</span></header>
       <div class="hubs" id="hubs"></div>
@@ -193,7 +221,7 @@ async function pickCustomer() {
   LAY = JSON.parse(JSON.stringify(eff.data));
   const parent = CUSTS.find(x => x.id === id)?.parent_customer_id;
   $('laysrc').textContent = OWN ? 'Saved for this customer' : parent && eff.data && !own.data ? 'Using its main customer\'s layout (or standard)' : 'Standard layout — change anything and save to give this customer its own';
-  drawLayout(); await drawHubs(); refresh();
+  drawLayout(); await drawHubs(); await loadSending(); refresh();
 }
 $('cust').onchange = pickCustomer;
 async function lastWindow() {
@@ -282,6 +310,73 @@ async function drawHubs() {
     refresh();
   });
 }
+
+// ── Sending ──────────────────────────────────────────────────────────
+let SEND = null;
+const REASON = { approval: 'After approval', schedule: 'Scheduled', manual: 'Send now', resend: 'Resend' };
+const fmtDT = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+const fmtD = (t) => t ? new Date(t).toLocaleDateString([], { month: 'numeric', day: 'numeric' }) : '';
+function sendingUi() {
+  const m = $('s-method').value, w = $('s-when').value;
+  $('s-email').hidden = m !== 'email'; $('s-sftp').hidden = m !== 'sftp';
+  $('s-dayw').hidden = $('s-timew').hidden = w !== 'schedule';
+  const on = $('s-on').checked;
+  $('s-state').textContent = !SEND ? 'Not set up yet' : on ? (w === 'approval' ? 'On — sends when the window\'s invoices are approved' : `On — every ${$('s-dow').selectedOptions[0].text} at ${$('s-time').value}`) : 'Off — nothing goes out by itself';
+}
+['s-method', 's-when', 's-on', 's-dow', 's-time'].forEach(id => $(id).onchange = sendingUi);
+async function loadSending() {
+  $('send-card').hidden = false;
+  const [st, lg] = await Promise.all([
+    sb.from('activity_send_settings').select('*').eq('customer_id', custId()).maybeSingle(),
+    sb.from('activity_deliveries').select('*').eq('customer_id', custId()).order('created_at', { ascending: false }).limit(50),
+  ]);
+  if (st.error) { $('send-card').hidden = true; return; }            // before 49
+  SEND = st.data;
+  const v = SEND || { enabled: false, send_when: 'approval', send_dow: 1, send_time: '06:00', method: 'email', sftp_port: 22, sftp_folder: '/' };
+  $('s-on').checked = !!v.enabled; $('s-when').value = v.send_when; $('s-dow').value = String(v.send_dow); $('s-time').value = String(v.send_time).slice(0, 5);
+  $('s-method').value = v.method; $('s-to').value = v.email_to || ''; $('s-cc').value = v.email_cc || '';
+  $('s-host').value = v.sftp_host || ''; $('s-port').value = v.sftp_port || 22; $('s-user').value = v.sftp_user || ''; $('s-folder').value = v.sftp_folder || '/';
+  $('s-pw').value = ''; $('s-pw').placeholder = v.sftp_secret_id ? 'saved — type to change' : 'required';
+  ['s-save', 's-now'].forEach(id => $(id).hidden = !canEdit());
+  sendingUi();
+  const rows = lg.data || [];
+  $('s-log').innerHTML = rows.map(d => `<tr><td>${fmtDT(d.created_at)}</td><td>${fmtD(d.window_from)}–${fmtD(new Date(new Date(d.window_to) - 1000))}</td>
+    <td>${esc(REASON[d.reason] || d.reason)}</td><td>${d.method === 'sftp' ? 'SFTP' : 'Email'}</td>
+    <td class="${d.status === 'failed' ? 'error' : d.status === 'sent' ? 'ok' : ''}" title="${esc(d.error || '')}">${esc(d.status)}${d.status === 'failed' && d.attempts < 3 ? ' · retrying' : ''}${d.error ? ' — ' + esc(d.error) : ''}</td>
+    <td>${esc(d.file_name || '')}</td><td>${d.rows_count ?? ''}</td><td>${esc(d.sent_to || '')}</td>
+    <td>${canEdit() && ['sent', 'failed'].includes(d.status) ? `<button class="btn small" data-resend="${d.id}">Resend</button>` : ''}</td></tr>`).join('')
+    || '<tr><td colspan="9" class="mini" style="font-family:inherit">Nothing sent yet.</td></tr>';
+  document.querySelectorAll('[data-resend]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.rpc('activity_resend', { p_delivery: b.dataset.resend });
+    if (error) return fail(error);
+    await kick(); toast('Queued to send again'); loadSending();
+  });
+}
+// email goes straight away; SFTP waits for the worker's next minute
+async function kick() { try { await sb.functions.invoke('send-activity'); } catch (_) {} }
+$('s-save').onclick = async () => {
+  const m = $('s-method').value;
+  const row = { customer_id: custId(), enabled: $('s-on').checked, send_when: $('s-when').value, send_dow: +$('s-dow').value,
+    send_time: $('s-time').value || '06:00', method: m, email_to: $('s-to').value.trim() || null, email_cc: $('s-cc').value.trim() || null,
+    sftp_host: $('s-host').value.trim() || null, sftp_port: +$('s-port').value || 22, sftp_user: $('s-user').value.trim() || null,
+    sftp_folder: $('s-folder').value.trim() || '/' };
+  if (row.enabled && m === 'email' && !row.email_to) return fail('Add who the email goes to.');
+  if (row.enabled && m === 'sftp' && (!row.sftp_host || !row.sftp_user)) return fail('Add the SFTP server and user name.');
+  const { error } = await sb.from('activity_send_settings').upsert(row, { onConflict: 'customer_id' });
+  if (error) return fail(error);
+  if ($('s-pw').value) {
+    const r = await sb.rpc('activity_set_sftp_password', { p_customer: custId(), p_password: $('s-pw').value });
+    if (r.error) return fail(r.error);
+  }
+  if (row.enabled && m === 'sftp' && !SEND?.sftp_secret_id && !$('s-pw').value) { await loadSending(); return fail('Saved — now add the SFTP password.'); }
+  $('s-msg').innerHTML = '<span class="ok">Saved.</span>'; loadSending();
+};
+$('s-now').onclick = async () => {
+  if (!confirm(`Send ${CUSTS.find(x => x.id === custId())?.name}'s file for ${$('from').value.replace('T', ' ')} – ${$('to').value.replace('T', ' ')} now?`)) return;
+  const { error } = await sb.rpc('activity_send_now', { p_customer: custId(), p_from: $('from').value, p_to: $('to').value });
+  if (error) return fail(error);
+  await kick(); toast($('s-method').value === 'sftp' ? 'Queued — the SFTP sender picks it up within a minute' : 'Sending…'); setTimeout(loadSending, 1500);
+};
 
 // ── Preview and download: the database builds the file ──────────────
 function parseCsv(text, delim) {
