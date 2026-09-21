@@ -222,7 +222,7 @@ async function load() {
   l.stops.forEach(s => (s.stop_items || []).sort((a, b) => a.unit_type.localeCompare(b.unit_type)));
   const stopIds = l.stops.map(s => s.id);
 
-  const [checks, delays, dwell, close, pods, drivers, units, eld, changes, closeLog, delayLog, codes, ourCodes, carrier] = await Promise.all([
+  const [checks, delays, dwell, close, pods, drivers, units, eld, changes, closeLog, delayLog, codes, ourCodes, carrier, acts, actTypes] = await Promise.all([
     sb.from('load_checks').select('code, label, blocks, severity, detail, rank, sort, stop_id').eq('load_id', LOAD),
     sb.from('stop_delays').select('stop_id, kind, free_min, over_min, delay_code_id, customer_code_id, billed_min, billable, waived, settled_at, note').eq('load_id', LOAD),
     sb.from('live_stop_dwell').select('stop_id, on_site_min, free_min, over_min').eq('load_id', LOAD),
@@ -237,6 +237,8 @@ async function load() {
     l.customer_id ? sb.rpc('delay_codes_for_customer', { p_customer: l.customer_id }) : { data: [] },
     sb.from('delay_codes').select('id, code, name, billable').eq('active', true).order('sort'),
     sb.from('carriers').select('require_trip_sheet, require_seal, close_pod_days').maybeSingle(),
+    sb.from('load_activities').select('id, stop_id, activity_type_id, qty, amount, note, created_by, created_at').eq('load_id', LOAD).order('created_at'),
+    sb.from('activity_types').select('id, name, unit, is_deduction, pay_source, pays_driver, bills_customer, active, sort').eq('pay_source', 'recorded').eq('active', true).order('sort'),
   ]);
   const firstErr = [checks, delays, dwell, close, changes, closeLog].find(r => r.error);
   if (firstErr) { $('trip').innerHTML = `<div class="card empty error">${esc(firstErr.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql first.</div>`; return; }
@@ -250,6 +252,7 @@ async function load() {
     drivers: drivers.data || [], units: units.data || [], eld: eld?.data || null,
     changes: changes.data || [], closeLog: closeLog.data || [], delayLog: delayLog.data || [],
     theirCodes: codes?.data || [], ourCodes: ourCodes?.data || [], carrier: carrier?.data || {},
+    acts: acts?.error ? null : (acts?.data || []), actTypes: actTypes?.data || [],
   };
   T.finished = l.stops.length > 0 && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
   T.locked = !!T.close?.locked_at;
@@ -257,6 +260,7 @@ async function load() {
   // Names for everyone who touched it
   const ids = new Set();
   [T.changes, T.closeLog, T.delayLog].forEach(a => a.forEach(r => r.who && ids.add(r.who)));
+  (T.acts || []).forEach(r => r.created_by && ids.add(r.created_by));
   ['dispatch_by', 'billing_by', 'reopened_by'].forEach(k => T.close?.[k] && ids.add(T.close[k]));
   const unknown = [...ids].filter(i => !names[i]);
   if (unknown.length) {
@@ -315,6 +319,7 @@ function draw() {
 
   html += closeoutHtml(edit);
   html += stopsHtml(edit);
+  html += payItemsHtml(edit);
   html += logHtml();
   $('trip').innerHTML = html;
   wire(edit);
@@ -439,6 +444,32 @@ function stopsHtml(edit) {
   return `<div class="card"><header><h2>Stops</h2><span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th><th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="10" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>`;
+}
+
+// ── Pay items: what dispatch records for payroll (and billing) ─────
+function payItemsHtml(edit) {
+  if (T.acts === null) return '';                     // before 44_payroll.sql
+  const typeOf = (id) => T.actTypes.find(t => t.id === id) || { name: 'Item' };
+  const stopName = (id) => { const s = T.l.stops.find(x => x.id === id); return s ? `Stop ${s.seq} · ${s.consignee}` : ''; };
+  const rows = T.acts.map(a => {
+    const t = typeOf(a.activity_type_id);
+    return `<tr><td>${esc(t.name)}${t.is_deduction ? ' <span class="flag warn">DED</span>' : ''}${t.bills_customer ? ' <span class="mini">· also billed</span>' : ''}</td>
+      <td class="dim">${esc(stopName(a.stop_id))}</td>
+      <td class="n">${t.is_deduction ? '−$' + Number(a.amount).toFixed(2) : Number(a.qty).toLocaleString() + (t.unit === 'hour' ? ' h' : '')}</td>
+      <td class="dim">${esc(a.note || '')}</td><td class="mini">${esc(nameOf(a.created_by))} · ${when(a.created_at)}</td>
+      <td>${edit && !T.l.invoice_id ? `<button class="btn small" data-act-del="${a.id}">Remove</button>` : ''}</td></tr>`;
+  }).join('');
+  const opts = T.actTypes.map(t => `<option value="${t.id}" data-ded="${t.is_deduction ? 1 : 0}" data-unit="${t.unit}">${esc(t.name)}${t.is_deduction ? ' (deduction)' : ''}</option>`).join('');
+  const stopOpts = '<option value="">Whole trip</option>' + T.l.stops.map(x => `<option value="${x.id}">Stop ${x.seq} · ${esc(x.consignee)}</option>`).join('');
+  const form = edit ? `<div class="acts" style="padding-top:12px">
+      <select id="pi-type" style="max-width:230px"><option value="">Add a pay item or deduction…</option>${opts}</select>
+      <select id="pi-stop" style="max-width:230px">${stopOpts}</select>
+      <input id="pi-qty" type="number" min="0" step="0.25" placeholder="How many" style="width:110px">
+      <input id="pi-note" placeholder="Note (optional)" maxlength="200" style="max-width:260px">
+      <button class="btn small primary" id="pi-add">Add</button></div>` : '';
+  return `<div class="card"><header><h2>Pay items &amp; deductions</h2><span class="sp"></span><span class="mini">Miles, stops, days, hours and coded detention pay by themselves. Add what the driver did that doesn't — straps, fueling, layover — and any deduction.</span></header>
+    ${rows ? `<div class="boardwrap"><table class="stops" style="min-width:760px"><tbody>${rows}</tbody></table></div>` : '<div class="empty">Nothing added. Miles, stops, days and hours are paid from the trip itself.</div>'}
+    ${form}</div>`;
 }
 
 // ── Audit ────────────────────────────────────────────────────────────
@@ -567,6 +598,40 @@ function wire(edit) {
     const { data, error } = await sb.storage.from('scan-photos').createSignedUrl(a.dataset.view, 300);
     if (error) return fail(error);
     window.open(data.signedUrl, '_blank', 'noopener');
+  });
+
+  // Pay items
+  if ($('pi-type')) {
+    const syncQty = () => {
+      const o = $('pi-type').selectedOptions[0];
+      const ded = o?.dataset.ded === '1';
+      $('pi-qty').placeholder = ded ? 'Amount $' : o?.dataset.unit === 'hour' ? 'Hours' : 'How many';
+      $('pi-qty').step = ded ? '0.01' : '0.25';
+      if (!ded && !$('pi-qty').value && o?.value) $('pi-qty').value = '1';
+    };
+    $('pi-type').onchange = syncQty;
+    $('pi-add').onclick = async () => {
+      const o = $('pi-type').selectedOptions[0];
+      if (!o?.value) return fail('Pick what to add.');
+      const v = parseFloat($('pi-qty').value);
+      if (!(v > 0)) return fail(o.dataset.ded === '1' ? 'Enter the amount to deduct.' : 'Enter how many.');
+      const row = { load_id: T.l.id, activity_type_id: o.value, stop_id: $('pi-stop').value || null, note: $('pi-note').value.trim() || null,
+                    qty: o.dataset.ded === '1' ? 1 : v, amount: o.dataset.ded === '1' ? v : null };
+      const { data, error } = await sb.from('load_activities').insert(row).select('id').single();
+      if (error) return fail(error);
+      toast(`${esc(o.textContent)} added`, async () => { const r = await sb.from('load_activities').delete().eq('id', data.id); if (r.error) fail(r.error); else { toast('Undone'); load(); } });
+      load();
+    };
+  }
+  document.querySelectorAll('[data-act-del]').forEach(b => b.onclick = async () => {
+    const a = T.acts.find(x => x.id === b.dataset.actDel);
+    const { error } = await sb.from('load_activities').delete().eq('id', a.id);
+    if (error) return fail(error);
+    toast('Removed', async () => {
+      const { id, created_by, created_at, ...back } = a;
+      const r = await sb.from('load_activities').insert({ ...back, load_id: T.l.id }); if (r.error) fail(r.error); else { toast('Undone'); load(); }
+    });
+    load();
   });
 
   // Save as a recurring template (days are set on the Templates page)

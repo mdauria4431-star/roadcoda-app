@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payroll · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .bar h1{margin:0;font-size:19px}
+  .wk{font-family:var(--mono);font-size:13px;min-width:170px;text-align:center}
+  .n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .r{text-align:right}
+  .dim{color:var(--muted)}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:600;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+  .chip.vio{color:var(--accent-hi);background:var(--accent-deep);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+  .chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:24px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile.warn .v{color:var(--warn)}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);text-align:left;
+    padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft)}
+  .t tr.drv{cursor:pointer}
+  .t tr.drv:hover{background:var(--row-hover)}
+  .t tr.lines > td{padding:0;background:var(--panel-2)}
+  .t tr.lines table{min-width:0}
+  .t tr.lines td{border-bottom:1px solid var(--line-soft);font-size:12.5px;padding:5px 10px}
+  .neg{color:var(--late)}
+  .carried{color:var(--warn);font-size:11px;margin-left:6px}
+  .prob{display:flex;gap:10px;padding:7px 16px;border-bottom:1px solid var(--line-soft);font-size:13px}
+  .prob:last-child{border-bottom:0}
+  .prob b{font-family:var(--mono);font-weight:600;min-width:52px}
+  .acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line-soft)}
+  .settings{display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:12px 16px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;
+    padding:10px 14px;border-radius:10px;background:var(--raise);border:1px solid var(--line);box-shadow:var(--card-sh);font-size:13px;max-width:92vw}
+  .toast.err{border-color:color-mix(in srgb,var(--late) 55%,var(--line))}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="rates.html">Rates</a><a href="invoices.html">Invoices</a><a class="on" href="payroll.html">Payroll</a><a href="tolls.html">Tolls</a><a href="integrations.html">Integrations</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>Payroll</h1>
+      <span id="state"></span>
+      <span class="sp"></span>
+      <button class="btn small" id="prev" aria-label="Previous pay week">‹</button>
+      <span class="wk" id="wk"></span>
+      <button class="btn small" id="next" aria-label="Next pay week">›</button>
+      <button class="btn small" id="thisweek">Last full week</button>
+      <button class="btn small" id="set-btn">Pay week settings</button>
+    </div>
+
+    <div class="card" id="settings" hidden>
+      <header><h2>Pay week</h2></header>
+      <div class="settings">
+        <label>Week starts on<select id="s-start"></select></label>
+        <label>A trip counts on<select id="s-basis"><option value="service">its service date</option><option value="finished">the day its last stop finished</option></select></label>
+        <button class="btn primary small" id="s-save">Save</button>
+        <span class="mini" style="max-width:420px">Changing this later is safe — each trip is paid once, in the first open week it falls in.</span>
+      </div>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><div class="k">Drivers paid</div><div class="v" id="k-drv">–</div></div>
+      <div class="tile"><div class="k">Gross pay</div><div class="v" id="k-gross">–</div></div>
+      <div class="tile"><div class="k">Deductions</div><div class="v" id="k-ded">–</div></div>
+      <div class="tile"><div class="k">Net pay</div><div class="v" id="k-net">–</div></div>
+      <div class="tile warn"><div class="k">Held / to check</div><div class="v" id="k-held">–</div></div>
+    </div>
+
+    <div class="card" id="probs-card" hidden>
+      <header><h2>Held or paying nothing</h2><span class="sp"></span><span class="mini">A held trip pays in the first open week after dispatch verifies it.</span></header>
+      <div id="probs"></div>
+    </div>
+
+    <div class="card">
+      <header><h2>Drivers</h2><span class="sp"></span><span class="mini">Click a driver for every line.</span></header>
+      <div class="wrap"><table class="t"><thead><tr><th>Driver</th><th class="r">Trips</th><th class="r">Gross</th><th class="r">Deductions</th><th class="r">Net</th><th></th></tr></thead><tbody id="drivers"></tbody></table></div>
+      <div class="acts">
+        <button class="btn primary" id="approve" hidden>Approve &amp; lock this week</button>
+        <button class="btn" id="qb">QuickBooks entry sheet (CSV)</button>
+        <button class="btn" id="detail">Every line (CSV)</button>
+        <button class="btn" id="print">Print pay statements</button>
+        <span class="sp"></span>
+        <button class="btn small danger" id="reopen" hidden>Reopen…</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d); };
+const DN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const label = (s) => { const d = new Date(s + 'T12:00:00'); return `${DN[(d.getDay() + 6) % 7]} ${d.getMonth() + 1}/${d.getDate()}`; };
+const money = (n) => (n < 0 ? '−' : '') + '$' + Math.abs(Number(n || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const num = (n) => n == null ? '' : Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const TODAY = iso(new Date());
+const ACC = () => window.RC_ACCESS;
+const canEdit = () => !ACC() || ACC().can('payroll', 'edit');
+
+let CAR = null, FROM = null, PERIOD = null, LINES = [], PROBS = [], DRIVERS = {}, OPEN = new Set(), NAMES = {};
+
+let tt = null;
+function toast(html, isErr) { const t = $('toast'); t.className = 'toast' + (isErr ? ' err' : ''); t.innerHTML = html; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, isErr ? 9000 : 6000); }
+const fail = (e) => toast(esc(e.message || e), true);
+
+// The week a date falls in, from the carrier's start day (1 = Mon … 7 = Sun)
+function weekOf(day) {
+  const d = new Date(day + 'T12:00:00'), dow = ((d.getDay() + 6) % 7) + 1;
+  return addDays(day, -(((dow - CAR.pay_week_start) + 7) % 7));
+}
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (ACC() && !ACC().can('payroll')) return;   // access.js shows the no-access note
+  $('app').hidden = false;
+  const { data: car, error } = await sb.from('carriers').select('pay_week_start, pay_week_basis').maybeSingle();
+  if (error || !car) { $('drivers').innerHTML = `<tr><td colspan="6" class="empty error">${esc(error?.message || 'No carrier')}${/pay_week/.test(error?.message || '') ? ' — run 44_payroll.sql in the SQL Editor.' : ''}</td></tr>`; return; }
+  CAR = car;
+  $('s-start').innerHTML = DN.map((d, i) => `<option value="${i + 1}"${car.pay_week_start === i + 1 ? ' selected' : ''}>${d}</option>`).join('');
+  $('s-basis').value = car.pay_week_basis;
+  $('set-btn').hidden = !canEdit();
+  const { data: dr } = await sb.from('drivers').select('id, full_name, payroll_name, employee_no');
+  (dr || []).forEach(d => DRIVERS[d.id] = d);
+  const q = new URLSearchParams(location.search).get('week');
+  FROM = weekOf(/^\d{4}-\d{2}-\d{2}$/.test(q || '') ? q : addDays(TODAY, -7));
+  await load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('prev').onclick = () => { FROM = addDays(FROM, -7); load(); };
+$('next').onclick = () => { FROM = addDays(FROM, 7); load(); };
+$('thisweek').onclick = () => { FROM = weekOf(addDays(TODAY, -7)); load(); };
+$('set-btn').onclick = () => { $('settings').hidden = !$('settings').hidden; };
+$('s-save').onclick = async () => {
+  const { error } = await sb.rpc('set_pay_week', { p_start: +$('s-start').value, p_basis: $('s-basis').value });
+  if (error) return fail(error);
+  CAR.pay_week_start = +$('s-start').value; CAR.pay_week_basis = $('s-basis').value;
+  FROM = weekOf(FROM); $('settings').hidden = true; toast('Pay week saved'); load();
+};
+
+async function load() {
+  const to = addDays(FROM, 6);
+  history.replaceState(null, '', '?week=' + FROM);
+  $('wk').textContent = `${label(FROM)} – ${label(to)}`;
+  const { data: p } = await sb.from('pay_periods').select('*').eq('starts_on', FROM).maybeSingle();
+  PERIOD = p || null;
+  if (PERIOD?.approved_at) {
+    const { data, error } = await sb.from('pay_statement_lines').select('*').eq('period_id', PERIOD.id).order('work_date');
+    if (error) return fail(error);
+    LINES = data || []; PROBS = [];
+  } else {
+    const [l, pr] = await Promise.all([sb.rpc('pay_lines', { p_from: FROM, p_to: to }), sb.rpc('pay_problems', { p_from: FROM, p_to: to })]);
+    if (l.error) { $('drivers').innerHTML = `<tr><td colspan="6" class="empty error">${esc(l.error.message)}</td></tr>`; return; }
+    LINES = l.data || []; PROBS = pr.data || [];
+  }
+  const who = [PERIOD?.approved_by, PERIOD?.reopened_by].filter(Boolean);
+  if (who.length) { const { data } = await sb.rpc('carrier_user_names', { p_ids: who }); (data || []).forEach(r => NAMES[r.user_id] = r.full_name); }
+  draw();
+}
+
+// Trips a driver ran: the loads on per-trip lines, plus the ones a day-rate line names
+function tripsOf(ls) {
+  const s = new Set(ls.filter(x => x.load_no).map(x => x.load_no));
+  ls.forEach(x => { const m = /day worked — load (.+)$/.exec(x.detail || ''); if (m) m[1].split(', ').forEach(n => s.add(n)); });
+  return s.size;
+}
+
+function draw() {
+  const ended = addDays(FROM, 6) < TODAY;
+  const approved = !!PERIOD?.approved_at;
+  $('state').innerHTML = approved
+    ? `<span class="chip vio">Approved &amp; locked · ${esc(NAMES[PERIOD.approved_by] || 'office')} · ${new Date(PERIOD.approved_at).toLocaleDateString()}</span>${PERIOD.exported_at ? ' <span class="chip ok">Sheet downloaded</span>' : ''}`
+    : ended ? '<span class="chip warn">Open — review, then approve</span>' : '<span class="chip">Week in progress — preview</span>';
+
+  // group by driver
+  const by = {};
+  for (const x of LINES) (by[x.driver_id] ||= []).push(x);
+  const rows = Object.entries(by).map(([id, ls]) => {
+    const gross = ls.filter(x => !x.is_deduction).reduce((a, x) => a + +x.amount, 0);
+    const ded = ls.filter(x => x.is_deduction).reduce((a, x) => a + +x.amount, 0);
+    return { id, name: DRIVERS[id]?.full_name || 'Driver', ls, gross, ded, net: gross + ded, trips: tripsOf(ls) };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  const tot = rows.reduce((a, r) => ({ g: a.g + r.gross, d: a.d + r.ded }), { g: 0, d: 0 });
+  $('k-drv').textContent = rows.length; $('k-gross').textContent = money(tot.g); $('k-ded').textContent = money(tot.d);
+  $('k-net').textContent = money(tot.g + tot.d); $('k-held').textContent = approved ? '–' : PROBS.length;
+
+  $('drivers').innerHTML = rows.map(r => `
+    <tr class="drv" data-d="${r.id}"><td><b>${esc(r.name)}</b>${r.ls.some(x => x.carried) ? '<span class="carried">includes earlier trips</span>' : ''}</td>
+      <td class="r n">${r.trips}</td><td class="r n">${money(r.gross)}</td><td class="r n ${r.ded ? 'neg' : ''}">${r.ded ? money(r.ded) : '—'}</td>
+      <td class="r n"><b>${money(r.net)}</b></td><td class="dim">${OPEN.has(r.id) ? '▾' : '▸'}</td></tr>
+    ${OPEN.has(r.id) ? `<tr class="lines"><td colspan="6"><table class="t" style="min-width:0"><tbody>${r.ls.slice().sort((a, b) => a.work_date.localeCompare(b.work_date) || String(a.load_no || '').localeCompare(String(b.load_no || ''))).map(x => `
+      <tr><td class="n">${label(x.work_date)}${x.carried ? '<span class="carried">earlier week</span>' : ''}</td>
+        <td class="n">${x.load_id ? `<a href="trip.html?load=${x.load_id}">${esc(x.load_no)}</a>` : '<span class="dim">—</span>'}</td>
+        <td>${esc(x.pay_type)}</td><td class="dim">${esc(x.detail || '')}</td>
+        <td class="r n">${x.is_deduction ? '' : num(x.qty)}</td><td class="r n dim">${x.rate != null && !x.is_deduction ? (x.detail === '% of the load' ? num(x.rate) + '%' : '× ' + num(x.rate)) : ''}</td>
+        <td class="r n ${x.amount < 0 ? 'neg' : ''}">${money(x.amount)}</td></tr>`).join('')}</tbody></table></td></tr>` : ''}`).join('')
+    || `<tr><td colspan="6" class="empty">${approved ? 'Nobody was paid in this week.' : 'No finished, verified trips with a pay rate in this week yet.'}</td></tr>`;
+  document.querySelectorAll('tr.drv').forEach(tr => tr.onclick = () => { OPEN.has(tr.dataset.d) ? OPEN.delete(tr.dataset.d) : OPEN.add(tr.dataset.d); draw(); });
+
+  $('probs-card').hidden = approved || !PROBS.length;
+  $('probs').innerHTML = PROBS.map(p => `<div class="prob"><b>${esc(p.load_no || '')}</b><span class="dim" style="min-width:70px">${label(p.work_date)}</span><span style="min-width:120px">${esc(DRIVERS[p.driver_id]?.full_name || '')}</span><span>${esc(p.problem)}</span><span class="sp"></span>${p.load_id ? `<a href="trip.html?load=${p.load_id}">Open trip</a>` : ''}</div>`).join('');
+
+  $('approve').hidden = approved || !ended || !canEdit();
+  $('approve').disabled = !rows.length;
+  $('reopen').hidden = !approved || !(ACC()?.super_user ?? true);
+  ['qb', 'detail', 'print'].forEach(id => $(id).disabled = !rows.length);
+  $('qb').title = approved ? '' : 'Draft until the week is approved';
+}
+
+$('approve').onclick = async () => {
+  const held = PROBS.filter(p => /^Held/.test(p.problem)).length;
+  if (!confirm(`Approve and lock ${label(FROM)} – ${label(addDays(FROM, 6))}?` + (held ? `\n\n${held} held trip(s) will pay in a later week once verified.` : '') + '\n\nOnly a super user can reopen it.')) return;
+  const { error } = await sb.rpc('approve_pay_period', { p_from: FROM });
+  if (error) return fail(error);
+  toast('Week approved and locked'); load();
+};
+$('reopen').onclick = async () => {
+  const why = prompt('Reopen this pay week? The frozen lines come off and every trip in it becomes payable again. Why? (goes on the record)');
+  if (!why) return;
+  const { error } = await sb.rpc('reopen_pay_period', { p_period: PERIOD.id, p_reason: why });
+  if (error) return fail(error);
+  toast('Week reopened'); load();
+};
+
+// ── Downloads ────────────────────────────────────────────────────────
+function csv(rows) { return rows.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n'); }
+function save(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' })); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+const draft = () => PERIOD?.approved_at ? '' : '-DRAFT';
+const qbName = (id) => DRIVERS[id]?.payroll_name || DRIVERS[id]?.full_name || '';
+
+// One row per driver, one column per QuickBooks pay item — the order you
+// type them into Run Payroll. Deductions are shown as positive amounts in
+// their own columns, the way QuickBooks asks for them.
+$('qb').onclick = async () => {
+  const items = [...new Set(LINES.filter(x => !x.is_deduction).map(x => x.qb_pay_item || x.pay_type))].sort();
+  const deds = [...new Set(LINES.filter(x => x.is_deduction).map(x => x.qb_pay_item || x.pay_type))].sort();
+  const hoursItems = new Set(LINES.filter(x => /hour/i.test(x.detail || '') || x.source === 'detention').map(x => x.qb_pay_item || x.pay_type));
+  const head = ['Employee', 'Employee #', 'Pay period start', 'Pay period end',
+    ...items.flatMap(i => hoursItems.has(i) ? [i + ' (hours)', i] : [i]), ...deds.map(d => d + ' (deduction)'), 'Gross', 'Net'];
+  const ids = [...new Set(LINES.map(x => x.driver_id))].sort((a, b) => qbName(a).localeCompare(qbName(b)));
+  const rows = ids.map(id => {
+    const ls = LINES.filter(x => x.driver_id === id);
+    const sum = (k, f) => ls.filter(x => (x.qb_pay_item || x.pay_type) === k && f(x)).reduce((a, x) => a + +x.amount, 0);
+    const hrs = (k) => ls.filter(x => (x.qb_pay_item || x.pay_type) === k && !x.is_deduction).reduce((a, x) => a + +(x.qty || 0), 0);
+    const gross = ls.filter(x => !x.is_deduction).reduce((a, x) => a + +x.amount, 0);
+    const ded = ls.filter(x => x.is_deduction).reduce((a, x) => a + +x.amount, 0);
+    return [qbName(id), DRIVERS[id]?.employee_no || '', FROM, addDays(FROM, 6),
+      ...items.flatMap(i => hoursItems.has(i) ? [hrs(i).toFixed(2), sum(i, x => !x.is_deduction).toFixed(2)] : [sum(i, x => !x.is_deduction).toFixed(2)]),
+      ...deds.map(d => (-sum(d, x => x.is_deduction)).toFixed(2)), gross.toFixed(2), (gross + ded).toFixed(2)];
+  });
+  save(`quickbooks-payroll-${FROM}${draft()}.csv`, csv([head, ...rows]));
+  if (PERIOD?.approved_at && !PERIOD.exported_at) { await sb.rpc('mark_pay_exported', { p_period: PERIOD.id }); load(); }
+};
+$('detail').onclick = () => {
+  const head = ['Driver', 'Employee #', 'Work date', 'Load', 'Pay type', 'QuickBooks pay item', 'Source', 'Detail', 'Qty', 'Rate', 'Amount', 'From an earlier week'];
+  const rows = LINES.slice().sort((a, b) => qbName(a.driver_id).localeCompare(qbName(b.driver_id)) || a.work_date.localeCompare(b.work_date))
+    .map(x => [qbName(x.driver_id), DRIVERS[x.driver_id]?.employee_no || '', x.work_date, x.load_no || '', x.pay_type, x.qb_pay_item || '', x.source,
+               x.detail || '', x.is_deduction ? '' : x.qty, x.is_deduction ? '' : x.rate, (+x.amount).toFixed(2), x.carried ? 'yes' : '']);
+  save(`pay-detail-${FROM}${draft()}.csv`, csv([head, ...rows]));
+};
+$('print').onclick = () => {
+  const ids = [...new Set(LINES.map(x => x.driver_id))].sort((a, b) => qbName(a).localeCompare(qbName(b)));
+  const w = window.open('', '_blank');
+  const pages = ids.map(id => {
+    const ls = LINES.filter(x => x.driver_id === id).sort((a, b) => a.work_date.localeCompare(b.work_date));
+    const gross = ls.filter(x => !x.is_deduction).reduce((a, x) => a + +x.amount, 0), ded = ls.filter(x => x.is_deduction).reduce((a, x) => a + +x.amount, 0);
+    return `<section><h1>Pay statement</h1><p><b>${esc(DRIVERS[id]?.full_name)}</b>${DRIVERS[id]?.employee_no ? ' · #' + esc(DRIVERS[id].employee_no) : ''}<br>
+      Week ${label(FROM)} – ${label(addDays(FROM, 6))}${PERIOD?.approved_at ? '' : ' · <b>DRAFT — not yet approved</b>'}</p>
+      <table><tr><th>Date</th><th>Load</th><th>Pay</th><th>Detail</th><th class="r">Qty</th><th class="r">Amount</th></tr>
+      ${ls.map(x => `<tr><td>${label(x.work_date)}</td><td>${esc(x.load_no || '')}</td><td>${esc(x.pay_type)}</td><td>${esc(x.detail || '')}</td><td class="r">${x.is_deduction ? '' : num(x.qty)}</td><td class="r">${money(x.amount)}</td></tr>`).join('')}
+      <tr class="tot"><td colspan="5">Gross</td><td class="r">${money(gross)}</td></tr>
+      ${ded ? `<tr class="tot"><td colspan="5">Deductions</td><td class="r">${money(ded)}</td></tr>` : ''}
+      <tr class="tot"><td colspan="5"><b>Net before taxes</b></td><td class="r"><b>${money(gross + ded)}</b></td></tr></table>
+      <p class="note">Taxes and withholding are calculated in QuickBooks Payroll.</p></section>`;
+  }).join('');
+  w.document.write(`<!doctype html><title>Pay statements ${FROM}</title><style>
+    body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:24px}section{page-break-after:always}h1{font-size:18px;color:#4c2a91;margin:0 0 6px}
+    table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:4px 6px;border-bottom:1px solid #ddd}th{font-size:10px;text-transform:uppercase;color:#555}
+    .r{text-align:right}.tot td{border-bottom:0}.note{color:#666;font-size:11px;margin-top:10px}</style>${pages}<script>print()<\/script>`);
+  w.document.close();
+};
+
+start();
+</script>
+</body>
+</html>
