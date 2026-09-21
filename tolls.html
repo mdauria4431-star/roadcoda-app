@@ -150,8 +150,21 @@
       <div id="est"></div>
     </section>
 
+    <section class="card" id="recon-card" hidden>
+      <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Monthly toll reconciliation</h2><span class="hint" id="recon-month"></span></div>
+      <p class="hint" style="margin-top:4px">Customers billed tolls at the <b>estimate</b> on each invoice. Once the month's statement is in, compare what was invoiced for that month's loads with the actual tolls. <b>Create</b> puts the difference — plus or minus — on the customer's next invoice as its own line, with the load-by-load backup.</p>
+      <div id="recon"></div>
+      <details style="margin-top:10px"><summary class="hint" style="cursor:pointer">How each customer is billed for tolls</summary><div id="recon-mode" style="margin-top:8px"></div></details>
+    </section>
+
+    <section class="card" id="vt-card" hidden>
+      <h2>Estimate factor by vehicle type</h2>
+      <p class="hint" style="margin-top:-6px">Each vehicle carries its own factor (Equipment). Setting one here fills in every vehicle of that type — tractor or straight truck + body + axles — except vehicles marked "only this vehicle". Suggested from the last 3 months of correctly charged tolls (3 loads or more).</p>
+      <div id="vt"></div>
+    </section>
+
     <section class="card" id="fac-card" hidden>
-      <h2>Estimate factor by axles</h2>
+      <h2>Fallback: estimate factor by axles</h2>
       <p class="hint" style="margin-top:-6px">Google prices tolls for a car. Each axle count gets its own multiplier, so a straight truck and a 5-axle rig are estimated differently. Suggested from the last 3 months of correctly charged, matched tolls (needs 3 loads or more).</p>
       <div id="fac"></div>
     </section>
@@ -183,7 +196,7 @@ const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.g
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
 const STATUS = { matched: 'Matched', unmatched: 'Needs a decision', non_billable: 'Not billable', disputed: 'Disputed' };
 const when = (t) => new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-const money2 = (n) => money(n, 2).replace(/(\.\d\d)\d+$/, "$1");
+const money2 = (n) => (Number(n) < 0 ? '−' : '') + money(Math.abs(Number(n || 0)), 2).replace(/(\.\d\d)\d+$/, "$1");
 let me = null, rec = null, txs = [], loadsList = [], eqList = [], filter = 'all';
 
 async function start() {
@@ -230,7 +243,73 @@ async function loadMonth() {
     .gte('service_date', iso(from)).lte('service_date', iso(to)).neq('status', 'cancelled').order('service_date').limit(5000);
   loadsList = ls || [];
   drawKpis(); drawCustomers(); drawTx(); drawEst();
-  await Promise.all([drawClasses(m), drawFactors()]);
+  await Promise.all([drawClasses(m), drawFactors(), drawVehicleTypes(), drawRecon(m)]);
+}
+
+// ---------- Factor by vehicle type (59) ----------
+async function drawVehicleTypes() {
+  const to = new Date(monthStart() + 'T12:00:00'); to.setMonth(to.getMonth() + 1); to.setDate(0);
+  const from = new Date(to); from.setMonth(from.getMonth() - 3); from.setDate(1);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const { data, error } = await sb.rpc('toll_type_factor_suggest', { p_from: iso(from), p_to: iso(to) });
+  if (error) { $('vt-card').hidden = true; return; }
+  $('vt-card').hidden = false;
+  const ed = !window.RC_ACCESS || window.RC_ACCESS.can('tolls', 'edit') || window.RC_ACCESS.can('equipment', 'edit');
+  const nm = (r) => [r.unit_type === 'straight_truck' ? 'Straight truck' : 'Tractor', r.body || 'no body', r.axles + ' axles'].join(' · ');
+  $('vt').innerHTML = (data || []).length ? `<div class="tablewrap"><table style="min-width:620px"><thead><tr><th>Vehicle type</th><th class="num">Vehicles</th><th class="num">Loads</th><th class="num">Google (car)</th><th class="num">Actual</th><th class="num">Suggested</th><th class="num">Factor</th><th></th></tr></thead><tbody>${data.map((r, i) => `
+    <tr><td>${esc(nm(r))}</td><td class="num">${r.vehicles}</td><td class="num">${r.loads || ''}</td><td class="num mono">${r.car_total ? money2(r.car_total) : ''}</td><td class="num mono">${r.actual_total ? money2(r.actual_total) : ''}</td>
+      <td class="num">${r.suggested != null ? `<b>${r.suggested}</b>` : '<span class="hint">not enough yet</span>'}</td>
+      <td class="num">${ed ? `<input type="number" min="0.5" max="20" step="0.05" data-vt="${i}" value="${r.factor_now ?? ''}" placeholder="none" style="width:90px;text-align:right">` : (r.factor_now ?? '—')}</td>
+      <td>${ed ? `${r.suggested != null ? `<button class="btn small" data-vtuse="${i}" data-v="${r.suggested}">Use</button> ` : ''}<button class="btn small" data-vtsave="${i}">Set</button>` : ''}</td></tr>`).join('')}</tbody></table></div><div class="hint" id="vt-msg"></div>`
+    : '<p class="hint">No trucks yet.</p>';
+  document.querySelectorAll('[data-vtuse]').forEach(b => b.onclick = () => { document.querySelector(`[data-vt="${b.dataset.vtuse}"]`).value = b.dataset.v; });
+  document.querySelectorAll('[data-vtsave]').forEach(b => b.onclick = async () => {
+    const r = data[+b.dataset.vtsave], v = document.querySelector(`[data-vt="${b.dataset.vtsave}"]`).value;
+    const { data: n, error } = await sb.rpc('set_type_toll_factor', { p_unit_type: r.unit_type, p_body: r.body, p_axles: r.axles, p_factor: v === '' ? null : +v });
+    $('vt-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : `<span class="ok">${esc(nm(r))}: ${v === '' ? 'cleared' : 'factor ' + v} on ${n} vehicle${n === 1 ? '' : 's'}. New estimates use it.</span>`;
+  });
+}
+
+// ---------- Monthly toll reconciliation (59) ----------
+async function drawRecon(m) {
+  const { data, error } = await sb.rpc('toll_recon_preview', { p_month: m });
+  if (error) { $('recon-card').hidden = true; return; }
+  $('recon-card').hidden = false;
+  const month = new Date(m + 'T12:00:00'), over = new Date(month.getFullYear(), month.getMonth() + 1, 1) <= new Date();
+  $('recon-month').textContent = `Loads delivered in ${month.toLocaleDateString([], { month: 'long', year: 'numeric' })}`;
+  const ed = !window.RC_ACCESS || window.RC_ACCESS.can('tolls', 'edit') || window.RC_ACCESS.can('invoices', 'edit');
+  const rows = data || [];
+  const stat = (r) => r.recon_status === 'on_invoice' ? `on invoice <b>${esc(r.recon_invoice || '')}</b>` : r.recon_status === 'waiting' ? 'waiting for the next invoice' : '';
+  $('recon').innerHTML = rows.length ? `<div class="tablewrap"><table style="min-width:720px"><thead><tr><th>Customer</th><th class="num">Loads</th><th class="num">Invoiced</th><th class="num">Actual</th><th class="num">Difference</th><th>Status</th><th></th></tr></thead><tbody>${rows.map(r => `
+    <tr><td>${esc(r.customer)}${r.not_invoiced ? `<div class="hint">${r.not_invoiced} load${r.not_invoiced === 1 ? '' : 's'} this month not on an approved invoice yet</div>` : ''}</td>
+      <td class="num">${r.loads}</td><td class="num mono">${money2(r.invoiced)}</td><td class="num mono">${money2(r.actual)}</td>
+      <td class="num mono"><b class="${+r.difference < 0 ? 'ok' : +r.difference > 0 ? 'error' : ''}">${+r.difference > 0 ? '+' : ''}${money2(r.recon_id ? r.recon_difference : r.difference)}</b><div class="hint">${+r.difference < 0 ? 'credit to customer' : +r.difference > 0 ? 'bill customer' : ''}</div></td>
+      <td>${stat(r)}</td>
+      <td>${ed && !r.recon_id && r.loads ? `<button class="btn small primary" data-rc="${r.customer_id}" ${over ? '' : 'disabled title="Once the month is over and its statement is in"'}>Create</button>` : ''}
+          ${ed && r.recon_id && r.recon_status === 'waiting' ? `<button class="btn small" data-rv="${r.recon_id}">Void</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint">A reconciliation on a draft invoice goes back to waiting if its line (or the draft) is deleted; once that invoice is approved, the month is settled.</p>
+      ${!over ? '<p class="hint">This month isn\'t over yet — reconcile it once its toll statement is in.</p>' : ''}<div class="hint" id="recon-msg"></div>`
+    : '<p class="hint">No customers billed estimated tolls had invoiced loads this month.</p>';
+  document.querySelectorAll('[data-rc]').forEach(b => b.onclick = async () => {
+    const r = rows.find(x => x.customer_id === b.dataset.rc);
+    if (!confirm(`Create ${r.customer}'s toll reconciliation for ${$('recon-month').textContent.replace('Loads delivered in ', '')}: ${+r.difference >= 0 ? 'bill' : 'credit'} ${money2(Math.abs(r.difference))}? It goes on their next invoice as its own line.`)) return;
+    const { data: out, error } = await sb.rpc('create_toll_reconciliation', { p_customer: r.customer_id, p_month: m });
+    if (error) return ($('recon-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`);
+    $('recon-msg').innerHTML = `<span class="ok">${out.invoice_id ? 'Added to their open draft invoice.' : 'Waiting — it goes on their next invoice.'}</span>`; drawRecon(m);
+  });
+  document.querySelectorAll('[data-rv]').forEach(b => b.onclick = async () => {
+    if (!confirm('Void this reconciliation? Its line comes off the draft invoice.')) return;
+    const { error } = await sb.rpc('void_toll_reconciliation', { p_recon: b.dataset.rv });
+    if (error) return ($('recon-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`); drawRecon(m);
+  });
+  // how each customer is billed
+  const { data: cs } = await sb.from('customers').select('id, name, toll_billing').order('name');
+  $('recon-mode').innerHTML = (cs || []).map(c => `<label style="flex-direction:row;align-items:center;gap:8px;font-weight:500;margin:3px 0">${esc(c.name)}
+    <select data-tb="${c.id}" ${ed ? '' : 'disabled'} style="width:auto"><option value="reconcile"${c.toll_billing === 'reconcile' ? ' selected' : ''}>Estimate, reconciled monthly</option><option value="actual"${c.toll_billing === 'actual' ? ' selected' : ''}>Actual tolls as they come in</option></select></label>`).join('');
+  document.querySelectorAll('[data-tb]').forEach(sel => sel.onchange = async () => {
+    const { error } = await sb.from('customers').update({ toll_billing: sel.value }).eq('id', sel.dataset.tb);
+    if (error) { alert(error.message); } else drawRecon(m);
+  });
 }
 
 // ---------- Class check (51) ----------

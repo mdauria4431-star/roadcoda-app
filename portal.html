@@ -221,6 +221,11 @@ async function showInvoice(id) {
     <table><thead><tr><th>Description</th><th class="num">Rate</th><th>Basis</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead><tbody>${(v.lines || []).map(l => `
       <tr><td>${esc(l.description)}${l.load_no ? ` <span class="hint">· load ${esc(l.load_no)}</span>` : ''}</td><td class="n num">${l.rate != null ? money(l.rate) : ''}</td><td>${esc(l.basis || '')}</td><td class="n num">${l.volume ?? ''}</td><td class="n num">${money(l.amount)}</td></tr>`).join('')}
       <tr><td colspan="4" class="num"><b>Total</b></td><td class="n num"><b>${money(v.total)}</b></td></tr></tbody></table>
+    ${(v.lines || []).filter(l => l.backup && l.backup.loads).map(l => `<h3 style="margin:22px 0 6px">Toll reconciliation — ${esc(new Date(l.backup.month + 'T12:00:00').toLocaleDateString([], { month: 'long', year: 'numeric' }))}</h3>
+      <div class="hint" style="margin-bottom:6px">Tolls were billed at an estimate on each load's invoice; this compares them with the actual toll statement.</div>
+      <table><thead><tr><th>Load</th><th>Date</th><th>Invoice</th><th class="num">Invoiced</th><th class="num">Actual</th><th class="num">Difference</th></tr></thead><tbody>${l.backup.loads.map(r => `
+        <tr><td class="n">${esc(r.load_no)}</td><td>${day(r.date)}</td><td class="n">${esc(r.invoice_no)}</td><td class="n num">${money(r.invoiced)}</td><td class="n num">${money(r.actual)}</td><td class="n num">${money(r.difference)}</td></tr>`).join('')}
+        <tr><td colspan="5" class="num"><b>Reconciliation</b></td><td class="n num"><b>${money(l.amount)}</b></td></tr></tbody></table>`).join('')}
     ${v.notes ? `<p class="hint">${esc(v.notes)}</p>` : ''}
     <p class="hint">${v.status === 'paid' ? 'Paid — thank you.' : 'Questions about this invoice? Contact ' + esc(v.from.name) + (v.from.phone ? ' at ' + esc(v.from.phone) : '') + '.'}</p>
   </div></div>`;

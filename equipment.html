@@ -128,9 +128,12 @@
         <label class="span2">Toll tag (transponder #)<input id="f-toll_tag" autocomplete="off" class="mono"></label>
         <label>Axles<input id="f-axles" type="number" min="2" max="14" title="Axles on this unit alone. A tractor's trailer adds its own axles on each load."></label>
         <label>Toll class<input id="f-toll_class" autocomplete="off" placeholder="as on the statement"></label>
+        <label id="tf-wrap">Toll factor<input id="f-tf" type="number" min="0.5" max="20" step="0.05" placeholder="× Google's car price"></label>
+        <label id="tf-own-wrap" style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="f-tf-own" style="height:auto"> Only this vehicle</label>
         <label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="f-height_low" style="height:auto"> Under 7'6" (low profile)</label>
         <label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="f-dual_rear" style="height:auto" checked> Dual rear wheels</label>
       </div>
+      <p class="hint" style="margin-top:4px" id="tf-hint"></p>
       <p class="hint" style="margin-top:4px">Tolls: the class check uses <b>axles</b> (truck + trailer on each load) and height — not the class label, which every road writes its own way.</p>
 
       <h3>Registration and inspection</h3>
@@ -336,6 +339,7 @@ function edit(u, quiet) {
   cur = u;
   FIELDS.forEach(f => { $('f-' + f).value = u && u[f] != null ? u[f] : ''; });
   $('f-height_low').checked = !!(u && u.height_low); $('f-dual_rear').checked = !u || u.dual_rear !== false;
+  paintTf(u);
   if (!u) $('f-unit_type').value = 'tractor';
   $('ed-title').textContent = u ? `${u.unit_no}` : 'New unit';
   $('ed-status').innerHTML = u ? (u.active ? '<span class="pill p-ok">In service</span>' : '<span class="pill p-none">Retired</span>') : '';
@@ -417,6 +421,22 @@ function niceError(e) {
   if (/equipment_year_chk/.test(m)) return 'Check the year.';
   return m;
 }
+// Toll factor (59): set on one vehicle, it fills in every vehicle of the same type
+const typeName = (u) => [u.unit_type === 'straight_truck' ? 'straight truck' : u.unit_type, u.body_type || 'no body', (u.axles || '?') + ' axles'].join(' · ');
+function paintTf(u) {
+  const trailer = !u || u.unit_type === 'trailer', has = u && 'toll_factor' in u;
+  $('tf-wrap').hidden = $('tf-own-wrap').hidden = trailer || !has;
+  $('f-tf').value = u && u.toll_factor != null ? u.toll_factor : ''; $('f-tf-own').checked = !!(u && u.toll_factor_own);
+  $('tf-hint').textContent = trailer || !has ? '' : `Toll factor: a number set here fills in every ${typeName(u)} (a new one too), unless "Only this vehicle" is ticked. Empty = the axle-count factor on the Tolls page.`;
+}
+async function saveTf(u) {
+  if (!u || u.unit_type === 'trailer' || !('toll_factor' in u)) return;
+  const f = $('f-tf').value === '' ? null : +$('f-tf').value, own = $('f-tf-own').checked;
+  if (f === (u.toll_factor == null ? null : +u.toll_factor) && own === !!u.toll_factor_own) return;
+  const { data, error } = await sb.rpc('set_toll_factor', { p_equipment: u.id, p_factor: f, p_only_this: own });
+  if (error) throw error;
+  if (!own && f != null && data > 1) $('ed-msg').innerHTML = `<span class="ok">Saved — toll factor ${f} now on ${data} vehicles (${esc(typeName(u))}).</span>`;
+}
 $('save-btn').onclick = async () => {
   const v = readForm();
   if (!v.unit_no) { $('ed-msg').innerHTML = '<span class="error">Enter the unit number.</span>'; return; }
@@ -425,8 +445,11 @@ $('save-btn').onclick = async () => {
   const { data, error } = cur ? await sb.from('equipment').update(v).eq('id', cur.id).select().single() : await sb.from('equipment').insert(v).select().single();
   $('save-btn').disabled = false;
   if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(niceError(error))}</span>`; return; }
+  let note = '<span class="ok">Saved.</span>';
+  try { $('ed-msg').innerHTML = ''; await saveTf({ ...(cur || data), ...data }); if ($('ed-msg').innerHTML) note = $('ed-msg').innerHTML; }
+  catch (e) { note = `<span class="error">Saved, but the toll factor wasn't: ${esc(e.message)}</span>`; }
   await load(); edit(units.find(u => u.id === data.id) || data, true);
-  $('ed-msg').innerHTML = '<span class="ok">Saved.</span>';
+  $('ed-msg').innerHTML = note;
 };
 $('pm-btn').onclick = async () => {
   if (!cur) return;

@@ -162,8 +162,8 @@ if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY |
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const usd = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const val3 = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 4 });
+const usd = (n) => (Number(n) < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const val3 = (n) => (Number(n) < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 4 });
 const dt = (s) => s ? new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US') : '';
 const localISO = (d) => { d = new Date(d); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return localISO(d); };
@@ -397,6 +397,7 @@ async function showInvoice(id) {
       ${canReopen ? '<button class="btn danger" id="d-reopen">Reopen…</button>' : ''}
     </div>
     <div id="d-msg" style="margin-top:8px"></div>
+    ${reconHtml(inv)}
     <h2 style="margin-top:22px">Breakdown report</h2>
     <div class="tablewrap"><table>
       <thead><tr><th>Date</th><th>Load</th><th>Driver</th><th>Truck</th><th class="num">Miles</th><th>Stops</th></tr></thead>
@@ -404,6 +405,13 @@ async function showInvoice(id) {
     ${histHtml}`;
 
   const msg = (t, cls = 'error') => $('d-msg').innerHTML = `<span class="${cls}">${esc(t)}</span>`;
+  document.querySelectorAll('[data-recon-csv]').forEach(b => b.onclick = () => {
+    const ln = inv.invoice_lines.find(x => x.id === b.dataset.reconCsv); const rows = ln?.detail?.loads || [];
+    const q = (v) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const text = ['Load,Date,Invoice,Tolls invoiced,Tolls actual,Difference', ...rows.map(r => [r.load_no, r.date, r.invoice_no, r.invoiced, r.actual, r.difference].map(q).join(','))].join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    a.download = `${inv.invoice_no}-toll-reconciliation-${ln.detail.month || ''}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  });
   const saveEdits = async () => {
     const bill = $('d-bill').value.trim() || null;
     if (bill !== (inv.customers?.bill_address || null)) {
@@ -483,6 +491,19 @@ async function showInvoice(id) {
     } catch (e) { msg(e.message); }
   };
   box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- Toll reconciliation backup (59) ----------
+function reconHtml(inv) {
+  return (inv.invoice_lines || []).filter(l => l.line_type === 'toll_reconcile' && l.detail?.loads).map(l => {
+    const rows = l.detail.loads, sum = (k) => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
+    return `<h2 style="margin-top:22px">Toll reconciliation backup — ${esc(new Date(l.detail.month + 'T12:00:00').toLocaleDateString([], { month: 'long', year: 'numeric' }))}</h2>
+      <p class="hint">Tolls billed at the estimate on each load's invoice, against the actual tolls on the toll statement. The difference is the line above.</p>
+      <div class="tablewrap"><table><thead><tr><th>Load</th><th>Date</th><th>Invoice</th><th class="num">Invoiced</th><th class="num">Actual</th><th class="num">Difference</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="mono">${esc(r.load_no)}</td><td class="mono">${dt(r.date)}</td><td class="mono">${esc(r.invoice_no)}</td><td class="num mono">${usd(r.invoiced)}</td><td class="num mono">${usd(r.actual)}</td><td class="num mono">${usd(r.difference)}</td></tr>`).join('')}
+      <tr><td colspan="3" class="num"><b>Total</b></td><td class="num mono"><b>${usd(sum('invoiced'))}</b></td><td class="num mono"><b>${usd(sum('actual'))}</b></td><td class="num mono"><b>${usd(sum('difference'))}</b></td></tr></tbody></table></div>
+      <div class="row" style="margin-top:6px"><button class="btn small" data-recon-csv="${l.id}">Download backup (CSV)</button></div>`;
+  }).join('');
 }
 
 // ---------- Rebill backup (Excel) ----------
@@ -672,8 +693,8 @@ function buildInvoicePdf(jsPDF, inv) {
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 44;
   const hex = (inv.carrier?.brand_color || '#0f5e63').replace('#', '');
   const teal = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) || 0), ink = [28, 31, 36], muted = [91, 87, 80], red = [143, 35, 24];
-  const usd = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const val = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const usd = (n) => (Number(n) < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const val = (n) => (Number(n) < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   const vol = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const d = (s) => s ? new Date(String(s).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US') : '';
   const C = inv.carrier || {};
