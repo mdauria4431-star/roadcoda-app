@@ -472,6 +472,7 @@ $('calc').onclick = async () => {
       if (r.state_miles?.length) lines.push('Miles by state: ' + r.state_miles.map(x => `${esc(x.state)} ${x.miles}`).join(' · '));
       if (r.warning) lines.push(`<span class="error">${esc(r.warning)}</span>`);
       priced.toll_estimate = tollEst(r);
+      priced.toll_car_price = r && r.tolls_car != null ? r.tolls_car : null;   // 51: the database re-prices it by the truck's axles
       if (tollLine(r) && hasMoney()) lines.push(tollLine(r));
     } catch (e) {
       lines.push(`<span class="error">${esc(e.message)}</span> Using the miles typed in.`);
@@ -524,7 +525,7 @@ $('save').onclick = async () => {
       truck_id: $('f-truck').value || null, miles: parseFloat($('f-miles').value || '0'),
       status: $('f-driver').value ? 'dispatched' : 'planned',
       origin_address: $('f-origin').value.trim() || null, round_trip: $('f-round').checked,
-      miles_source: priced?.miles_source || 'manual', toll_estimate: priced?.toll_estimate ?? null,
+      miles_source: priced?.miles_source || 'manual', toll_estimate: priced?.toll_estimate ?? null, toll_car_price: priced?.toll_car_price ?? null,
       ...(priced?.miles_source === 'pcmiler' ? { pcm_state_miles: priced.pcm_state_miles, pcm_version: priced.pcm_version, pcm_at: new Date().toISOString() } : {})
     }).select('id').single();
     if (e1) throw e1;
@@ -766,7 +767,7 @@ async function showDetail(id) {
       const r = await getMiles(origin, l.round_trip, sorted.map(s => s.addr), l.customer_id);
       const items = sorted.flatMap(s => s.stop_items.map(i => ({ unit: i.unit_type, qty: Number(i.qty_ordered) || 0 })));
       const p2 = await getPrice(l.customer_id, l.service_date, Math.round(r.miles), sorted.length, items);
-      const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: r.source || 'google', origin_address: origin, toll_estimate: tollEst(r),
+      const e1 = (await sb.from('loads').update({ miles: Math.round(r.miles), miles_source: r.source || 'google', origin_address: origin, toll_estimate: tollEst(r), toll_car_price: r.tolls_car ?? null,
         ...(r.source === 'pcmiler' ? { pcm_state_miles: r.state_miles || null, pcm_version: r.version || null, pcm_at: new Date().toISOString() } : {}) }).eq('id', id)).error;
       if (e1) throw e1;
       const upd = { pricing_note: p2.note, customer_rate_id: p2.customer_rate_id, fsc_rule_id: p2.fsc_rule_id, doe_price: p2.doe_price, doe_week: p2.doe_week };

@@ -139,9 +139,21 @@
       <p class="hint" id="tx-more"></p>
     </section>
 
+    <section class="card" id="cls-card" hidden>
+      <div class="row" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Class check</h2><span id="cls-actions"></span></div>
+      <p class="hint" style="margin-top:4px">Each line's class read the way that road writes it (NJ Turnpike and Port Authority: 1 = car, 2 = 2-axle truck, 3–6 = axles; PA Turnpike / NYS Thruway: axles plus H or L for over or under 7'6") against the truck and trailer that ran the load. <b>Over</b> = charged for more than the truck is: dispute it with the toll agency.</p>
+      <div id="cls"></div>
+    </section>
+
     <section class="card">
       <h2>Estimate vs actual</h2>
       <div id="est"></div>
+    </section>
+
+    <section class="card" id="fac-card" hidden>
+      <h2>Estimate factor by axles</h2>
+      <p class="hint" style="margin-top:-6px">Google prices tolls for a car. Each axle count gets its own multiplier, so a straight truck and a 5-axle rig are estimated differently. Suggested from the last 3 months of correctly charged, matched tolls (needs 3 loads or more).</p>
+      <div id="fac"></div>
     </section>
 
     <section class="card">
@@ -171,6 +183,7 @@ const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.g
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
 const STATUS = { matched: 'Matched', unmatched: 'Needs a decision', non_billable: 'Not billable', disputed: 'Disputed' };
 const when = (t) => new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const money2 = (n) => money(n, 2).replace(/(\.\d\d)\d+$/, "$1");
 let me = null, rec = null, txs = [], loadsList = [], eqList = [], filter = 'all';
 
 async function start() {
@@ -217,6 +230,70 @@ async function loadMonth() {
     .gte('service_date', iso(from)).lte('service_date', iso(to)).neq('status', 'cancelled').order('service_date').limit(5000);
   loadsList = ls || [];
   drawKpis(); drawCustomers(); drawTx(); drawEst();
+  await Promise.all([drawClasses(m), drawFactors()]);
+}
+
+// ---------- Class check (51) ----------
+async function drawClasses(m) {
+  const { data, error } = await sb.from('toll_class_checks')
+    .select('txn_id, txn_at, agency, entry_plaza, exit_plaza, amount, status, note, unit_no, class_system, charged_class, expected_class, truck_axles, class_check, why_unknown')
+    .eq('statement_month', m).order('txn_at');
+  if (error) { $('cls-card').hidden = true; return; }          // before 51
+  $('cls-card').hidden = !(data || []).length;
+  const n = (k) => data.filter(x => x.class_check === k).length;
+  const over = data.filter(x => x.class_check === 'over'), overOpen = over.filter(x => x.status !== 'disputed');
+  const SYS = { nj: 'NJ / Port Authority classes', axle_height: 'axles + height', axles: 'class = axles' };
+  const canEdit = !window.RC_ACCESS || window.RC_ACCESS.can('tolls', 'edit');
+  $('cls-actions').innerHTML = overOpen.length && canEdit ? `<button class="btn small primary" id="cls-dispute">Mark ${overOpen.length} overcharge${overOpen.length > 1 ? 's' : ''} disputed</button>` : '';
+  const shown = data.filter(x => x.class_check !== 'ok');
+  $('cls').innerHTML = `<p style="margin:6px 0 10px"><b>${n('ok')}</b> charged right · <b class="${n('over') ? 'error' : ''}">${n('over')}</b> over (${money2(over.reduce((a, x) => a + +x.amount, 0))} on those lines) · <b>${n('under')}</b> under · <b>${n('unknown')}</b> can't tell</p>` +
+    (shown.length ? `<div class="tablewrap"><table style="min-width:760px"><thead><tr><th>When</th><th>Truck</th><th>Road</th><th>Charged</th><th>Should be</th><th class="num">Amount</th><th>Check</th><th>Status</th></tr></thead><tbody>${shown.map(x => `
+      <tr><td class="mono">${esc(new Date(x.txn_at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</td>
+        <td>${esc(x.unit_no || '—')}${x.truck_axles ? ` <span class="hint">${x.truck_axles} axles</span>` : ''}</td>
+        <td>${esc([x.agency, x.exit_plaza || x.entry_plaza].filter(Boolean).join(' · '))}<div class="hint">${esc(SYS[x.class_system] || '')}</div></td>
+        <td class="mono">${esc(x.charged_class || '—')}</td><td class="mono">${esc(x.expected_class || '—')}</td>
+        <td class="num mono">${money2(x.amount)}</td>
+        <td>${x.class_check === 'over' ? '<b class="error">Over</b>' : x.class_check === 'under' ? '<b>Under</b>' : `<span class="hint">${esc(x.why_unknown || "can't tell")}</span>`}</td>
+        <td>${esc(x.status)}${x.note ? `<div class="hint">${esc(x.note)}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">Every line was charged at the right class.</p>');
+  if ($('cls-dispute')) $('cls-dispute').onclick = async () => {
+    const { data: k, error } = await sb.rpc('dispute_toll_overcharges', { p_month: m });
+    if (error) { alert(error.message); return; }
+    alert(`${k} line${k === 1 ? '' : 's'} marked disputed, each with a note of the class charged and the class it should be. Send them to the toll agency (or your toll provider) for a refund.`);
+    loadMonth();
+  };
+}
+
+// ---------- Estimate factor by axles (51) ----------
+async function drawFactors() {
+  const to = new Date(monthStart() + 'T12:00:00'); to.setMonth(to.getMonth() + 1); to.setDate(0);
+  const from = new Date(to); from.setMonth(from.getMonth() - 3); from.setDate(1);
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const [sg, fs] = await Promise.all([
+    sb.rpc('toll_class_factor_suggest', { p_from: iso(from), p_to: iso(to) }),
+    sb.from('toll_class_factors').select('axles, factor'),
+  ]);
+  if (sg.error || fs.error) { $('fac-card').hidden = true; return; }
+  $('fac-card').hidden = false;
+  const saved = new Map((fs.data || []).map(x => [x.axles, +x.factor]));
+  const sug = new Map((sg.data || []).map(x => [x.axles, x]));
+  const rows = [...new Set([2, 3, 4, 5, 6, ...saved.keys(), ...sug.keys()])].sort((a, b) => a - b);
+  const owner = me.role === 'owner' || (window.RC_ACCESS && window.RC_ACCESS.can('tolls', 'edit'));
+  const base = Number(me.carriers?.toll_estimate_factor) || 1;
+  $('fac').innerHTML = `<div class="tablewrap"><table style="min-width:560px"><thead><tr><th>Axles</th><th class="num">Factor now</th><th class="num">Loads</th><th class="num">Google (car)</th><th class="num">Actual</th><th class="num">Suggested</th><th></th></tr></thead><tbody>${rows.map(a => {
+      const g = sug.get(a), now = saved.has(a) ? saved.get(a) : base;
+      return `<tr><td><b>${a}</b></td>
+        <td class="num">${owner ? `<input type="number" min="0.5" max="20" step="0.05" data-ax="${a}" value="${now}" style="width:90px;text-align:right">` : now}${saved.has(a) ? '' : ' <span class="hint">(general)</span>'}</td>
+        <td class="num">${g ? g.loads : ''}</td><td class="num mono">${g ? money2(g.car_total) : ''}</td><td class="num mono">${g ? money2(g.actual_total) : ''}</td>
+        <td class="num">${g && g.suggested != null ? `<b>${g.suggested}</b>${owner ? ` <button class="btn small" data-use="${a}" data-v="${g.suggested}">Use</button>` : ''}` : '<span class="hint">not enough yet</span>'}</td>
+        <td></td></tr>`; }).join('')}</tbody></table></div>
+    ${owner ? '<div class="row" style="margin-top:8px"><button class="btn primary" id="fac-save" type="button">Save factors</button><span class="hint" id="fac-msg">New estimates use them; loads already priced keep theirs until miles are recalculated or the truck changes.</span></div>' : ''}`;
+  document.querySelectorAll('[data-use]').forEach(b => b.onclick = () => { document.querySelector(`input[data-ax="${b.dataset.use}"]`).value = b.dataset.v; });
+  if ($('fac-save')) $('fac-save').onclick = async () => {
+    const rowsUp = [...document.querySelectorAll('input[data-ax]')].map(i => ({ axles: +i.dataset.ax, factor: +i.value }))
+      .filter(r => r.factor >= 0.5 && r.factor <= 20 && (saved.has(r.axles) || r.factor !== base));
+    const { error } = await sb.from('toll_class_factors').upsert(rowsUp.map(r => ({ ...r, updated_at: new Date().toISOString() })), { onConflict: 'carrier_id,axles' });
+    $('fac-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved.</span>';
+  };
 }
 async function fetchAllTx(m) {
   const out = [];

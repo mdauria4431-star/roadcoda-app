@@ -126,9 +126,12 @@
       <h3>Tolls</h3>
       <div class="grid">
         <label class="span2">Toll tag (transponder #)<input id="f-toll_tag" autocomplete="off" class="mono"></label>
-        <label>Axles<input id="f-axles" type="number" min="2" max="14"></label>
+        <label>Axles<input id="f-axles" type="number" min="2" max="14" title="Axles on this unit alone. A tractor's trailer adds its own axles on each load."></label>
         <label>Toll class<input id="f-toll_class" autocomplete="off" placeholder="as on the statement"></label>
+        <label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="f-height_low" style="height:auto"> Under 7'6" (low profile)</label>
+        <label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="f-dual_rear" style="height:auto" checked> Dual rear wheels</label>
       </div>
+      <p class="hint" style="margin-top:4px">Tolls: the class check uses <b>axles</b> (truck + trailer on each load) and height — not the class label, which every road writes its own way.</p>
 
       <h3>Registration and inspection</h3>
       <div class="grid">
@@ -332,6 +335,7 @@ $('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history
 function edit(u, quiet) {
   cur = u;
   FIELDS.forEach(f => { $('f-' + f).value = u && u[f] != null ? u[f] : ''; });
+  $('f-height_low').checked = !!(u && u.height_low); $('f-dual_rear').checked = !u || u.dual_rear !== false;
   if (!u) $('f-unit_type').value = 'tractor';
   $('ed-title').textContent = u ? `${u.unit_no}` : 'New unit';
   $('ed-status').innerHTML = u ? (u.active ? '<span class="pill p-ok">In service</span>' : '<span class="pill p-none">Retired</span>') : '';
@@ -403,6 +407,7 @@ function readForm() {
   const v = {};
   FIELDS.forEach(f => { const x = $('f-' + f).value.trim(); v[f] = x === '' ? null : NUMS.includes(f) ? Number(x) : x; });
   if (cur && cur.active) delete v.out_of_service_date;
+  if ('height_low' in (cur || { height_low: 1 })) { v.height_low = $('f-height_low').checked; v.dual_rear = $('f-dual_rear').checked; }
   return v;
 }
 function niceError(e) {
