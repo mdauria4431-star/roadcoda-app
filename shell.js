@@ -32,13 +32,13 @@
   // Six visible groups instead of eleven flat links. Setup is weekly work, so
   // it folds away — that's what buys the dispatch board its width.
   var GROUPS = [
-    { name: 'Daily', items: ['index.html', 'dispatch.html', 'messages.html', 'templates.html', 'loads.html'] },
+    { name: 'Daily', items: ['index.html', 'dispatch.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'profit.html', 'tolls.html'] },
     { name: 'Safety', items: ['incidents.html'] },
     { name: 'Setup', items: ['customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'incidents.html': '⚠', 'templates.html': '↻', 'loads.html': '▸',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'templates.html': '↻', 'loads.html': '▸',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
@@ -48,7 +48,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'customer-logins.html': 'Customer logins' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -148,6 +148,12 @@
       ml.href = 'messages.html'; ml.textContent = 'Messages';
       if (here === 'messages.html') ml.className = 'on';
       nav.appendChild(ml); links['messages.html'] = ml;
+    }
+    if (links['dispatch.html'] && !links['ratings.html']) {
+      var rl = document.createElement('a');
+      rl.href = 'ratings.html'; rl.textContent = 'Ratings';
+      if (here === 'ratings.html') rl.className = 'on';
+      nav.appendChild(rl); links['ratings.html'] = rl;
     }
     if (links['dispatch.html'] && !links['templates.html']) {
       var tl = document.createElement('a');
