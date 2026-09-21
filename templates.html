@@ -216,7 +216,7 @@ async function load() {
   const end = addDays(WEEK, 6);
   $('wk').textContent = `${label(WEEK)} – ${label(end)}`;
   const [t, s] = await Promise.all([
-    sb.from('load_templates').select('id, name, customer_id, driver_id, truck_id, trailer_id, run_days, starts_on, ends_on, active, notes, updated_at, customers(name), load_template_stops(id, seq, stop_type, consignee, address, window_start, window_end, day_offset, load_template_items(id, unit_type, qty_ordered)), load_template_dates(run_date, kind, note)').order('name'),
+    sb.from('load_templates').select('id, name, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, run_days, starts_on, ends_on, active, notes, updated_at, customers(name), load_template_stops(id, seq, stop_type, consignee, address, window_start, window_end, day_offset, load_template_items(id, unit_type, qty_ordered)), load_template_dates(run_date, kind, note)').order('name'),
     sb.rpc('template_schedule', { p_from: WEEK, p_to: end }),
   ]);
   if (t.error || s.error) {
@@ -303,7 +303,7 @@ function unitName(id) { return units.find(u => u.id === id)?.unit_no; }
 function drawList() {
   const edit = canEdit();
   $('list').innerHTML = TPL.map(t => {
-    const who = [drivers.find(d => d.id === t.driver_id)?.full_name, unitName(t.truck_id), unitName(t.trailer_id)].filter(Boolean).join(' · ') || 'no crew set';
+    const who = [drivers.find(d => d.id === t.driver_id)?.full_name, unitName(t.truck_id), t.bobtail ? 'bobtail' : [unitName(t.trailer_id), unitName(t.trailer2_id)].filter(Boolean).join(' + ')].filter(Boolean).join(' · ') || 'no crew set';
     const dates = (t.load_template_dates || []).filter(x => x.run_date >= TODAY).length;
     return `<div class="tl" data-open="${t.id}">
         <div class="t"><b>${esc(t.name)}</b><span>${esc(t.customers?.name || '')} · ${t.load_template_stops.length} stops · ${esc(who)}${t.ends_on ? ' · until ' + esc(t.ends_on) : ''}${dates ? ` · ${dates} upcoming skip/add` : ''}</span></div>
@@ -339,6 +339,8 @@ function editorHtml(t, edit) {
       <label>Driver<select id="e-driver"${dis}>${opt(drv, t.driver_id, '— none —')}</select></label>
       <label>Truck<select id="e-truck"${dis}>${opt(trk, t.truck_id, '— none —')}</select></label>
       <label>Trailer<select id="e-trailer"${dis}>${opt(trl, t.trailer_id, '— none —')}</select></label>
+      <label>Second trailer<select id="e-trailer2"${dis}>${opt(trl, t.trailer2_id, '— none —')}</select></label>
+      <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="e-bobtail"${t.bobtail ? ' checked' : ''}${dis}> Bobtail (tractor, no trailer)</label>
       <label>First day<input type="date" id="e-start" value="${t.starts_on}"${dis}></label>
       <label>Last day (optional)<input type="date" id="e-end" value="${t.ends_on || ''}"${dis}></label>
     </div>
@@ -359,7 +361,9 @@ function wireEditor(t) {
     const days = [...document.querySelectorAll('#e-days input:checked')].map(i => +i.value);
     if (!days.length) return fail('Pick at least one day it runs.');
     const upd = { name: $('e-name').value.trim(), run_days: days, driver_id: $('e-driver').value || null, truck_id: $('e-truck').value || null,
-      trailer_id: $('e-trailer').value || null, starts_on: $('e-start').value, ends_on: $('e-end').value || null };
+      trailer_id: $('e-bobtail').checked ? null : ($('e-trailer').value || null),
+      trailer2_id: $('e-bobtail').checked || !$('e-trailer').value ? null : ($('e-trailer2').value || null),
+      bobtail: $('e-bobtail').checked, starts_on: $('e-start').value, ends_on: $('e-end').value || null };
     if (!upd.name) return fail('Give it a name.');
     let { error } = await sb.from('load_templates').update(upd).eq('id', t.id);
     if (error) return fail(/load_templates_name/.test(error.message) ? 'Another template already has that name.' : error);

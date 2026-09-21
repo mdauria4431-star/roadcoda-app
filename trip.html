@@ -214,7 +214,7 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 // ── Read everything the trip needs ───────────────────────────────────
 async function load() {
   const L = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
+    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
     .eq('id', LOAD).maybeSingle();
   if (L.error || !L.data) { $('trip').innerHTML = `<div class="card empty error">${esc(L.error?.message || 'That load was not found, or it belongs to another carrier.')}</div>`; return; }
   const l = L.data;
@@ -331,9 +331,11 @@ function draw() {
     <div class="facts">
       <div class="f"><b>Driver</b><select class="ed" data-load="driver_id"${dis}>${opt(drvList, l.driver_id, '— none —')}</select>${hosLine}</div>
       <div class="f"><b>Truck</b><select class="ed" data-load="truck_id"${dis}>${opt(trkList, l.truck_id, '— none —')}</select></div>
-      <div class="f"><b>Trailer</b>${tractor
-        ? `<select class="ed" data-load="trailer_id"${dis}>${opt(trlList, l.trailer_id, trlList.length ? '— none —' : 'No trailers on Equipment')}</select>`
-        : '<span class="dim">Straight truck — no trailer</span>'}</div>
+      <div class="f"><b>Trailer</b>${l.bobtail
+        ? `<span>Bobtail — no trailer</span>`
+        : `<select class="ed" data-load="trailer_id"${dis}>${opt(trlList, l.trailer_id, !trlList.length ? 'No trailers on Equipment' : tractor ? '— not recorded (usual trailer counted) —' : '— none —')}</select>`}
+        ${tractor && !l.trailer_id ? `<label class="mini" style="flex-direction:row;align-items:center;gap:6px;margin-top:4px;font-weight:500"><input type="checkbox" id="bobtail" style="height:auto"${l.bobtail ? ' checked' : ''}${dis}> Bobtail (no trailer)</label>` : ''}</div>
+      ${l.trailer_id ? `<div class="f"><b>Second trailer</b><select class="ed" data-load="trailer2_id"${dis}>${opt(trlList.filter(x => x.id !== l.trailer_id), l.trailer2_id, '— none —')}</select></div>` : ''}
       <div class="f"><b>Service date</b><span class="n">${esc(l.service_date)}</span></div>
       <div class="f"><b>Miles</b><span class="n">${planned ? Math.round(planned) + ' planned' : '—'}${eld && eld.eld_miles > 0 ? ` · ${Math.round(eld.eld_miles)} ELD` : ''}${eld && eld.driver_miles > 0 ? ` · ${Math.round(eld.driver_miles)} driver` : ''}</span></div>
       ${needSheet ? `<div class="f"><b>Trip sheet</b><label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="sheet" style="height:auto"${l.trip_sheet_at ? ' checked' : ''}${dis}> ${l.trip_sheet_at ? 'Turned in ' + when(l.trip_sheet_at) : 'Not turned in'}</label></div>` : ''}
@@ -522,12 +524,13 @@ function payItemsHtml(edit) {
 // ── Audit ────────────────────────────────────────────────────────────
 const FIELD = { arrived_at: 'arrival', departed_at: 'departure', seal_no: 'seal', issue_type: 'OS&D type', issue_resolution: 'OS&D resolution',
   status: 'status', window_start: 'window start', window_end: 'window end', qty_ordered: 'ordered', qty_delivered: 'delivered count',
-  driver_id: 'driver', truck_id: 'truck', trailer_id: 'trailer', service_date: 'service date', miles: 'miles', trip_sheet_at: 'trip sheet' };
+  driver_id: 'driver', truck_id: 'truck', trailer_id: 'trailer', trailer2_id: 'second trailer', bobtail: 'bobtail', service_date: 'service date', miles: 'miles', trip_sheet_at: 'trip sheet' };
 function showVal(field, v) {
   if (v == null || v === '') return '—';
   if (/_at$/.test(field)) return when(v);
   if (field === 'driver_id') return T.drivers.find(d => d.id === v)?.full_name || 'another driver';
-  if (field === 'truck_id' || field === 'trailer_id') return T.units.find(u => u.id === v)?.unit_no || 'another unit';
+  if (field === 'bobtail') return v === 'true' ? 'yes' : 'no';
+  if (field === 'truck_id' || field === 'trailer_id' || field === 'trailer2_id') return T.units.find(u => u.id === v)?.unit_no || 'another unit';
   return String(v);
 }
 function logHtml() {
@@ -548,12 +551,16 @@ function wire(edit) {
   document.querySelectorAll('select[data-load]').forEach(el => el.onchange = async () => {
     const f = el.dataset.load, was = T.l[f], now = el.value || null;
     const upd = { [f]: now };
-    // A straight truck pulls nothing; don't leave a stale trailer on the load.
-    if (f === 'truck_id') { const u = T.units.find(x => x.id === now); if (u && u.unit_type !== 'tractor' && T.l.trailer_id) upd.trailer_id = null; }
+    // Any truck can pull a trailer (52). Only a tractor runs bobtail; taking off
+    // the first trailer takes off the second.
+    if (f === 'truck_id') { const u = T.units.find(x => x.id === now); if (u && u.unit_type !== 'tractor' && T.l.bobtail) upd.bobtail = false; }
+    if (f === 'trailer_id' && !now && T.l.trailer2_id) upd.trailer2_id = null;
     const { error } = await sb.from('loads').update(upd).eq('id', T.l.id);
     if (error) { fail(error); return draw(); }
     toast(`${FIELD[f]} changed to ${esc(showVal(f, now))}`, async () => {
-      const back = { [f]: was }; if ('trailer_id' in upd && f !== 'trailer_id') back.trailer_id = T.l.trailer_id;
+      const back = { [f]: was };
+      if ('bobtail' in upd && f !== 'bobtail') back.bobtail = T.l.bobtail;
+      if ('trailer2_id' in upd && f !== 'trailer2_id') back.trailer2_id = T.l.trailer2_id;
       const r = await sb.from('loads').update(back).eq('id', T.l.id); if (r.error) fail(r.error); else { toast('Undone'); load(); }
     });
     load();
@@ -567,6 +574,13 @@ function wire(edit) {
     load();
   };
   if (sheet) sheet.onchange = () => setSheet(sheet.checked);
+  if ($('bobtail')) $('bobtail').onchange = async () => {
+    const on = $('bobtail').checked;
+    const { error } = await sb.from('loads').update({ bobtail: on }).eq('id', T.l.id);
+    if (error) { fail(error); return draw(); }
+    toast(on ? 'Marked bobtail — tolls counted on the tractor alone' : 'Bobtail off', async () => { await sb.from('loads').update({ bobtail: !on }).eq('id', T.l.id); load(); });
+    load();
+  };
   if (sheetIn) sheetIn.onclick = () => setSheet(true);
 
   // Stop times and seal

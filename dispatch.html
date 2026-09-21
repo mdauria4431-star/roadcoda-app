@@ -298,7 +298,7 @@ function describe(l, ctx) {
 
 function rowHtml(r, day) {
   const l = r.l, tractor = l.equipment?.unit_type === 'tractor';
-  const trailer = tractor ? (r.trailer || '<span class="none">—</span>') : '';
+  const trailer = l.bobtail ? '<span class="dim">bobtail</span>' : r.trailer || (tractor ? '<span class="none">—</span>' : '');
   const old = l.service_date !== day ? `<span class="old" title="Service date ${esc(l.service_date)}">${md(l.service_date)}</span>` : '';
   const pu = r.first ? hm(r.first.window_start || r.first.window_end || r.first.eta) : '';
   const del = r.shown ? hm(r.shown.window_end || r.shown.window_start || r.shown.eta) : '';
@@ -328,7 +328,7 @@ async function loadBoard(quiet) {
 
     const [loadsR, flagsR, delaysR, dwellR, closeR, trailersR, hosR] = await Promise.all([
       sb.from('loads')
-        .select('id, load_no, status, service_date, miles, driver_id, truck_id, trailer_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, stop_type, window_start, window_end, eta, arrived_at, departed_at, status)')
+        .select('id, load_no, status, service_date, miles, driver_id, truck_id, trailer_id, trailer2_id, bobtail, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, stop_type, window_start, window_end, eta, arrived_at, departed_at, status)')
         .gte('service_date', from).lte('service_date', day).neq('status', 'cancelled').order('load_no'),
       sb.from('load_check_flags').select('load_id, rank, blocking, codes'),
       sb.from('load_open_delays').select('load_id, open_delays'),
@@ -357,7 +357,7 @@ async function loadBoard(quiet) {
       const verified = !!ctx.closed[l.id]?.dispatch_at;
       if (verified) { if (l.service_date === day) closed.push(l); continue; }
       const r = describe(l, ctx);
-      r.trailer = l.trailer_id ? esc(trailers[l.trailer_id] || '') : '';
+      r.trailer = [l.trailer_id, l.trailer2_id].filter(Boolean).map(id => esc(trailers[id] || '')).join(' + ');
       // Older days only come back if they're finished and still unchecked,
       // or still running (a trip that never got its last stop tapped).
       if (l.service_date !== day && !(r.finished || l.status === 'in_progress')) continue;
@@ -407,7 +407,7 @@ async function loadBoard(quiet) {
     $('closed').hidden = !(showClosed && closed.length);
     $('closed-body').innerHTML = closed.map(l => {
       const c = ctx.closed[l.id];
-      const r = describe(l, ctx); r.trailer = l.trailer_id ? esc(trailers[l.trailer_id] || '') : '';
+      const r = describe(l, ctx); r.trailer = [l.trailer_id, l.trailer2_id].filter(Boolean).map(id => esc(trailers[id] || '')).join(' + ');
       r.codes = []; r.s = 'done'; r.label = c.locked_at ? 'Locked · approved' : 'Verified · with billing';
       return rowHtml(r, day);
     }).join('');
