@@ -102,7 +102,7 @@ const qty = (n) => n == null ? '—' : Number(n).toLocaleString();
 const ISSUE = { damaged: 'Damaged', short: 'Short', over: 'Over', refused: 'Refused', closed: 'Closed / no access', other: 'Issue' };
 const STATUS = (s) => ({ delivered: '<span class="pill ok">Delivered</span>', exception: '<span class="pill bad">Delivered with issue</span>', in_progress: '<span class="pill go">On the way</span>',
   arrived: '<span class="pill go">At the dock</span>', dispatched: '<span class="pill">Scheduled</span>', planned: '<span class="pill">Scheduled</span>', pending: '<span class="pill">Scheduled</span>' }[s] || `<span class="pill">${esc(s)}</span>`);
-let ME = null, TAB = 'loads';
+let ME = null, TAB = 'loads', BOXES = [];
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -121,6 +121,10 @@ async function start() {
   $('who').innerHTML = `${esc(ME.name)} · <b>${esc(ME.kind === 'billing' ? ME.customer : (ME.locations || []).map(l => l.name).join(', '))}</b>${ME.carrier_phone ? ` · questions? ${esc(ME.carrier_phone)}` : ''}`;
   $('top').hidden = false; $('app').hidden = false;
   const tabs = ME.kind === 'billing' ? [['loads', 'Loads'], ['invoices', 'Invoices'], ['file', 'Activity file']] : [['loads', 'Deliveries']];
+  // Returnable containers (cages, totes…): the tab shows only when their stores are holding some
+  const bx = await sb.rpc('portal_containers');
+  BOXES = bx.error ? [] : (bx.data || []);
+  if (BOXES.length) tabs.push(['boxes', 'Containers']);
   $('tabs').innerHTML = tabs.map(([k, t]) => `<button data-t="${k}">${t}</button>`).join('');
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => go(b.dataset.t));
   go(new URLSearchParams(location.search).get('tab') || 'loads');
@@ -146,6 +150,7 @@ function go(t) {
   history.replaceState(null, '', '?tab=' + t);
   if (t === 'invoices') return invoices();
   if (t === 'file') return fileTab();
+  if (t === 'boxes') return boxesTab();
   loadsTab();
 }
 
@@ -162,17 +167,25 @@ async function loadList() {
   $('list').innerHTML = '<div class="empty">Loading…</div>';
   const { data, error } = await sb.rpc('portal_list', { p_from: $('f').value, p_to: $('t').value });
   if (error) { $('list').innerHTML = `<div class="empty err">${esc(error.message)}</div>`; return; }
-  const rows = data || [];
+  const all = data || [];
+  // Route # (auto-parts accounts): a column and a filter, only when routes are in use
+  const routes = [...new Set(all.map(r => r.route_no).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const hasRt = routes.length > 0;
+  if (hasRt && !$('rt')) { const l = document.createElement('label'); l.innerHTML = 'Route<select id="rt"><option value="">All</option></select>'; $('t').parentNode.after(l); $('rt').onchange = loadList; }
+  if ($('rt')) { const keep = $('rt').value; $('rt').innerHTML = '<option value="">All</option>' + routes.map(r => `<option ${r === keep ? 'selected' : ''}>${esc(r)}</option>`).join(''); }
+  const pick = $('rt') ? $('rt').value : '';
+  const rows = pick ? all.filter(r => r.route_no === pick) : all;
   if (!rows.length) { $('list').innerHTML = '<div class="empty">Nothing in these dates.</div>'; return; }
   const multi = (ME.accounts || []).length > 1;
+  const rtH = hasRt ? '<th>Route</th>' : '', rtC = (r) => hasRt ? `<td class="n">${esc(r.route_no || '')}</td>` : '';
   $('list').innerHTML = ME.kind === 'billing'
-    ? `<table><thead><tr><th>Date</th><th>Load</th>${multi ? '<th>DC</th>' : ''}<th>Status</th><th>Stops</th><th>Delivered</th><th>Issues</th><th>POD</th><th>Invoice</th></tr></thead><tbody>${rows.map(r => `
-        <tr class="r" data-l="${r.load_id}"><td>${day(r.service_date)}</td><td class="n">${esc(r.load_no)}</td>${multi ? `<td>${esc(r.account)}</td>` : ''}<td>${STATUS(r.status)}</td>
+    ? `<table><thead><tr><th>Date</th><th>Load</th>${multi ? '<th>DC</th>' : ''}${rtH}<th>Status</th><th>Stops</th><th>Delivered</th><th>Issues</th><th>POD</th><th>Invoice</th></tr></thead><tbody>${rows.map(r => `
+        <tr class="r" data-l="${r.load_id}"><td>${day(r.service_date)}</td><td class="n">${esc(r.load_no)}</td>${multi ? `<td>${esc(r.account)}</td>` : ''}${rtC(r)}<td>${STATUS(r.status)}</td>
           <td class="n">${r.stops_done}/${r.stops}</td><td class="n">${qty(r.delivered)} of ${qty(r.ordered)}</td>
           <td>${r.issue ? `<span class="pill bad">${esc(r.issue.split(', ').map(x => ISSUE[x] || x).join(', '))}</span>` : ''}</td><td>${r.pod ? '✓' : ''}</td>
           <td class="n">${esc(r.invoice_no || '')}${r.billed != null ? `<div class="hint">${money(r.billed)}</div>` : ''}</td></tr>`).join('')}</tbody></table>`
-    : `<table><thead><tr><th>Date</th><th>Location</th><th>Load</th><th>Window</th><th>Arrived</th><th>Departed</th><th>Delivered</th><th>Issue</th><th>POD</th></tr></thead><tbody>${rows.map(r => `
-        <tr class="r" data-l="${r.load_id}"><td>${day(r.service_date)}</td><td>${esc(r.location)}</td><td class="n">${esc(r.load_no)}</td>
+    : `<table><thead><tr><th>Date</th><th>Location</th>${rtH}<th>Load</th><th>Window</th><th>Arrived</th><th>Departed</th><th>Delivered</th><th>Issue</th><th>POD</th></tr></thead><tbody>${rows.map(r => `
+        <tr class="r" data-l="${r.load_id}"><td>${day(r.service_date)}</td><td>${esc(r.location)}</td>${rtC(r)}<td class="n">${esc(r.load_no)}</td>
           <td class="n">${hm(r.window_start)}–${hm(r.window_end)}</td><td class="n">${r.arrived_at ? hm(r.arrived_at) : r.eta ? `<span class="hint">ETA ${hm(r.eta)}</span>` : '—'}</td><td class="n">${hm(r.departed_at)}</td>
           <td class="n">${qty(r.delivered)} of ${qty(r.ordered)}</td><td>${r.issue ? `<span class="pill bad">${esc(ISSUE[r.issue] || r.issue)}</span>` : ''}</td><td>${r.pod ? '✓' : ''}</td></tr>`).join('')}</tbody></table>`;
   document.querySelectorAll('tr[data-l]').forEach(tr => tr.onclick = () => showLoad(tr.dataset.l));
@@ -193,6 +206,27 @@ async function showLoad(id) {
         ${(s.photos || []).length ? `<div class="pods">${s.photos.map(p => urls[p] ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="Proof of delivery"></a>` : '').join('')}</div>` : ''}</div>
     </div>`).join('')}</div>`;
   $('detail').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Containers held at your stores ────────────────────────────────────
+function boxesTab() {
+  $('bar').innerHTML = `<span class="hint">Returnable containers (cages, totes…) delivered to ${ME.kind === 'billing' ? 'your stores' : 'your location'} and not picked up yet, oldest first.
+    Red = held longer than ${esc(ME.carrier)} expects. Please have them ready for the driver.</span>`;
+  const byLoc = new Map();
+  BOXES.forEach(b => { if (!byLoc.has(b.location_id)) byLoc.set(b.location_id, { name: b.location, code: b.location_code, route: b.route_no, rows: [] }); byLoc.get(b.location_id).rows.push(b); });
+  const locs = [...byLoc.values()].sort((a, b) => Math.max(...b.rows.map(x => x.days)) - Math.max(...a.rows.map(x => x.days)));
+  const types = [...new Set(BOXES.map(b => b.type))].sort();
+  $('list').innerHTML = `<table><thead><tr><th>Store</th>${locs.some(l => l.route) ? '<th>Route</th>' : ''}${types.map(t => `<th class="num">${esc(t)}</th>`).join('')}<th class="num">Oldest</th></tr></thead><tbody>${locs.map((l, i) => {
+      const old = Math.max(...l.rows.map(x => x.days)), late = l.rows.some(x => x.overdue);
+      return `<tr class="r" data-bx="${i}"><td><b>${esc(l.name)}</b>${l.code ? ` <span class="hint">#${esc(l.code)}</span>` : ''}</td>${locs.some(x => x.route) ? `<td class="n">${esc(l.route || '')}</td>` : ''}
+        ${types.map(t => `<td class="n num">${l.rows.filter(x => x.type === t).length || ''}</td>`).join('')}<td class="n num">${late ? `<span class="pill bad">${Math.floor(old)} days</span>` : Math.floor(old) + ' days'}</td></tr>`; }).join('')}</tbody></table>`;
+  document.querySelectorAll('tr[data-bx]').forEach(tr => tr.onclick = () => {
+    const l = locs[+tr.dataset.bx];
+    $('detail').innerHTML = `<div class="card"><div class="bar"><h2>${esc(l.name)}</h2><span class="sp"></span><button class="btn noprint" onclick="window.print()">Print</button></div>
+      <table><thead><tr><th>Barcode</th><th>Type</th><th>Delivered</th><th class="num">Days</th><th>Load</th></tr></thead><tbody>${l.rows.map(x => `<tr><td class="n">${esc(x.barcode)}</td><td>${esc(x.type)}</td>
+        <td>${day(x.since)}</td><td class="n num">${x.overdue ? `<span class="pill bad">${Math.floor(x.days)}</span>` : Math.floor(x.days)}</td><td class="n">${esc(x.load_no || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    $('detail').scrollIntoView({ behavior: 'smooth' });
+  });
 }
 
 // ── Invoices (billing logins) ────────────────────────────────────────

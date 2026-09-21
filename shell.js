@@ -51,13 +51,13 @@
   // Six visible groups instead of eleven flat links. Setup is weekly work, so
   // it folds away — that's what buys the dispatch board its width.
   var GROUPS = [
-    { name: 'Daily', items: ['index.html', 'dispatch.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html'] },
+    { name: 'Daily', items: ['index.html', 'dispatch.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'profit.html', 'tolls.html'] },
     { name: 'Safety', items: ['incidents.html', 'retention.html'] },
     { name: 'Setup', items: ['getting-started.html', 'customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'retention.html': '♥', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'retention.html': '♥', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',

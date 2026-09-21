@@ -98,6 +98,7 @@
           <button data-by="driver">Drivers</button>
           <button data-by="truck">Trucks</button>
           <button data-by="trip">Trip types</button>
+          <button data-by="route">Routes</button>
           <button data-by="unit">By unit</button>
         </div>
         <span class="sp"></span><span class="mini" id="hint">Click a line for its loads; click a load for its trip.</span>
@@ -231,7 +232,9 @@ function draw() {
       }
     }
   } else {
-    const key = BY === 'driver' ? ['driver_id', 'driver'] : BY === 'trip' ? ['tt_key', 'tt_label'] : ['truck_id', 'truck'];
+    const key = BY === 'driver' ? ['driver_id', 'driver'] : BY === 'trip' ? ['tt_key', 'tt_label'] : BY === 'route' ? ['rt_key', 'rt_label'] : ['truck_id', 'truck'];
+    // Routes: per main customer; a load whose stores cross routes shows as e.g. "12 / 17"
+    if (BY === 'route') ROWS.forEach(r => { r.rt_key = (r.route_no || '-') + '|' + r.main_customer_id; r.rt_label = `${r.route_no ? 'Route ' + r.route_no : 'No route'} — ${r.main_customer}`; });
     if (BY === 'trip') ROWS.forEach(r => { r.tt_key = (r.trip_type_id || 'regular') + '|' + r.main_customer_id; r.tt_label = `${r.trip_type || 'Regular (rate sheet)'} — ${r.main_customer}`; });
     for (const g of groupBy(ROWS, ...key).sort(sorter)) {
       body += `<tr class="grp" data-g="${g.key}"><td><b>${esc(g.label)}</b></td>${cells(g)}</tr>`;
@@ -263,7 +266,7 @@ function wire() {
 
 // ── CSV of every load in the period (open it in Excel and pivot any way) ──
 $('csv').onclick = () => {
-  const cols = ['load_no', 'service_date', 'status', 'main_customer', 'customer', 'customer_code', 'driver', 'truck', 'miles', 'linehaul', 'fuel_surcharge', 'extras', 'billed',
+  const cols = ['load_no', 'service_date', 'status', 'main_customer', 'customer', 'customer_code', 'route_no', 'trip_type', 'driver', 'truck', 'miles', 'linehaul', 'fuel_surcharge', 'extras', 'billed',
     'driver_pay', 'pay_basis', 'fuel', 'tolls', 'other_costs', 'equipment', 'cost', 'margin', 'margin_pct'];
   const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const text = [cols.join(','), ...ROWS.map(r => cols.map(c => q(r[c])).join(','))].join('\r\n');

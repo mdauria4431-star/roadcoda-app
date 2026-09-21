@@ -171,15 +171,16 @@ const SCREENS = [
   ['rates', 'Rates', 'Rate sheets, fuel surcharge, contracts'],
   ['invoices', 'Invoices', 'Build, approve and send invoices'],
   ['tolls', 'Tolls', 'Toll statements and matching'],
-  ['payroll', 'Payroll', 'Driver pay rates (payroll screen coming soon)'],
-  ['safety', 'Safety', 'Coming soon'],
+  ['payroll', 'Payroll', 'Pay weeks, driver pay rates, QuickBooks sheet'],
+  ['safety', 'Safety', 'Incidents, driver retention'],
+  ['containers', 'Containers', 'Returnable cages and totes: receive empties at the PDC, store balances'],
   ['integrations', 'Integrations', 'PC*MILER and ELD connections'],
   ['users', 'Users', 'Invite people and set what they can open'],
   ['money', 'See prices, revenue & costs', 'Rates, load prices, costs, margins and invoice amounts on any screen'],
 ];
 const ROLE = { owner: 'Owner', dispatcher: 'Dispatcher', billing: 'Billing', safety: 'Safety', payroll: 'Payroll', accountant: 'Accountant' };
 const PRESETS = {
-  dispatcher: { dispatch: 'edit', loads: 'edit', customers: 'edit', drivers: 'edit', equipment: 'edit' },
+  dispatcher: { dispatch: 'edit', loads: 'edit', customers: 'edit', drivers: 'edit', equipment: 'edit', containers: 'edit' },
   billing: { dispatch: 'view', loads: 'edit', customers: 'edit', rates: 'edit', invoices: 'edit', tolls: 'edit', money: 'edit' },
   safety: { dispatch: 'view', drivers: 'edit', equipment: 'edit', safety: 'edit' },
   payroll: { drivers: 'view', loads: 'view', payroll: 'edit' },

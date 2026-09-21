@@ -191,6 +191,8 @@
         <div class="grid" style="margin-top:10px">
           <label for="dl-name" style="grid-column:span 2">Name<input id="dl-name" placeholder="e.g. XYZ Retail - Store 212"></label>
           <label for="dl-code">Store # / customer ID<input id="dl-code"></label>
+          <label for="dl-route">Route #<input id="dl-route" placeholder="auto parts: e.g. 12"></label>
+          <label for="dl-sort">Sort code<input id="dl-sort" placeholder="e.g. B3"></label>
           <label for="dl-kind">Type<select id="dl-kind"><option value="delivery">Delivery point</option><option value="pickup">Pickup point (supplier)</option><option value="both">Both</option></select></label>
           <label for="dl-addr" style="grid-column:span 2">Address<input id="dl-addr" placeholder="Street, Town, ST 00000"></label>
           <label for="dl-ws">Window opens<input id="dl-ws" type="time"></label>
@@ -230,7 +232,7 @@
       </details>
 
       <div class="tablewrap"><table style="min-width:960px">
-        <thead><tr><th>Name</th><th>Type</th><th>Store #</th><th>Address</th><th>Window</th><th>Access</th><th>Phone</th><th>After hours</th><th>Notices</th></tr></thead>
+        <thead><tr><th>Name</th><th>Type</th><th>Store #</th><th>Route · Sort</th><th>Address</th><th>Window</th><th>Access</th><th>Phone</th><th>After hours</th><th>Notices</th></tr></thead>
         <tbody id="dl-list"></tbody></table></div>
 
       <h3>Upload or download the whole list</h3>
@@ -479,18 +481,19 @@ function drawDl() {
   $('k-miss').textContent = act.filter(d => !d.address).length;
   document.querySelectorAll('.kpi').forEach(k => k.classList.toggle('on', k.dataset.f === dlFilter));
   const rows = act.filter(d => (dlFilter === 'all' || (dlFilter === 'missing' ? !d.address : dlFilter === 'pickup' ? d.kind !== 'delivery' : d.kind !== 'pickup'))
-    && (!q || [d.name, d.code, d.address].join(' ').toLowerCase().includes(q)));
+    && (!q || [d.name, d.code, d.address, d.route_no && 'route ' + d.route_no, d.sort_code].join(' ').toLowerCase().includes(q)));
   $('dl-list').innerHTML = rows.map(d => `<tr class="click" data-dl="${d.id}" style="${d.active ? '' : 'opacity:.5'}" title="Edit ${esc(d.name)}">
     <td><b>${esc(d.name)}</b>${d.notes ? `<br><span class="hint">${esc(d.notes)}</span>` : ''}</td>
     <td>${d.kind === 'pickup' || d.kind === 'both' ? `<span class="pill p-pu">${KIND[d.kind]}</span>` : 'Delivery'}</td>
     <td class="mono">${esc(d.code || '')}</td>
+    <td class="mono">${esc([d.route_no, d.sort_code].filter(Boolean).join(' · '))}</td>
     <td>${d.address ? esc(d.address) : `<div class="fix" data-nofollow><input data-fixaddr="${d.id}" placeholder="Type the address" aria-label="Address for ${esc(d.name)}"><button class="btn small primary" data-fixsave="${d.id}" type="button">Save</button></div>`}</td>
     <td class="mono">${d.window_start ? d.window_start.slice(0, 5) + '–' + (d.window_end || '').slice(0, 5) : ''}</td>
     <td>${[d.door_code && 'Door', d.gate_code && 'Gate', d.other_code && (d.other_code_name || 'Other')].filter(Boolean).map(t => `<span class="pill p-acc">${esc(t)}</span>`).join(' ')}${d.delivery_instructions ? ' <span class="pill p-acc" title="' + esc(d.delivery_instructions) + '">Instructions</span>' : ''}</td>
     <td class="mono">${esc(d.phone || '')}${d.email ? `<br><span class="hint">${esc(d.email)}</span>` : ''}</td>
     <td>${d.after_hours_phone ? `${esc(d.after_hours_contact || '')}<br><span class="mono">${esc(d.after_hours_phone)}</span>` : ''}</td>
     <td>${d.notify ? `<span class="current" title="${esc(d.notify_email || d.email || '')}">${esc((d.notify_events || []).map(e => EVS[e]).join(', ') || 'none picked')}</span>` : ''}</td></tr>`).join('')
-    || `<tr><td colspan="9" class="hint">${dlRows.length ? (dlFilter === 'missing' ? 'Every stop customer has an address.' : 'No matches.') : 'None yet. They are added as loads are entered or lists imported, or use + Add stop customer.'}</td></tr>`;
+    || `<tr><td colspan="10" class="hint">${dlRows.length ? (dlFilter === 'missing' ? 'Every stop customer has an address.' : 'No matches.') : 'None yet. They are added as loads are entered or lists imported, or use + Add stop customer.'}</td></tr>`;
   document.querySelectorAll('tr[data-dl]').forEach(tr => tr.onclick = (e) => { if (e.target.closest('[data-nofollow]')) return; editDl(tr.dataset.dl); });
   document.querySelectorAll('[data-fixsave]').forEach(b => b.onclick = () => fixAddr(b.dataset.fixsave));
   document.querySelectorAll('[data-fixaddr]').forEach(i => i.onkeydown = (e) => { if (e.key === 'Enter') fixAddr(i.dataset.fixaddr); });
@@ -511,7 +514,7 @@ async function fillOpenStops(locId, address) {
 }
 async function editDl(id) {
   const d = dlRows.find(x => x.id === id); dlEditing = d.id;
-  $('dl-name').value = d.name; $('dl-code').value = d.code || ''; $('dl-contact').value = d.contact || ''; $('dl-addr').value = d.address || '';
+  $('dl-name').value = d.name; $('dl-code').value = d.code || ''; $('dl-route').value = d.route_no || ''; $('dl-sort').value = d.sort_code || ''; $('dl-contact').value = d.contact || ''; $('dl-addr').value = d.address || '';
   $('dl-kind').value = d.kind || 'delivery';
   $('dl-phone').value = d.phone || ''; $('dl-email').value = d.email || ''; $('dl-notify').checked = !!d.notify; $('dl-nemail').value = d.notify_email || '';
   $('dl-ws').value = (d.window_start || '').slice(0, 5); $('dl-we').value = (d.window_end || '').slice(0, 5); $('dl-notes').value = d.notes || ''; $('dl-active').checked = d.active;
@@ -531,7 +534,7 @@ const EVS = { on_the_way: 'On the way', late: 'Late', delivered: 'Delivered', is
 const ACC = [['dl-instr', 'delivery_instructions'], ['dl-door', 'door_code'], ['dl-gate', 'gate_code'], ['dl-oname', 'other_code_name'],
              ['dl-ocode', 'other_code'], ['dl-ahname', 'after_hours_contact'], ['dl-ahphone', 'after_hours_phone']];
 function clearDl() {
-  dlEditing = null; ['dl-name', 'dl-code', 'dl-contact', 'dl-phone', 'dl-email', 'dl-nemail', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes', ...ACC.map(a => a[0])].forEach(id => $(id).value = '');
+  dlEditing = null; ['dl-name', 'dl-code', 'dl-route', 'dl-sort', 'dl-contact', 'dl-phone', 'dl-email', 'dl-nemail', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes', ...ACC.map(a => a[0])].forEach(id => $(id).value = '');
   $('dl-notify').checked = false; $('dl-kind').value = 'delivery';
   document.querySelectorAll('.dl-ev').forEach(c => c.checked = ['delivered', 'issue'].includes(c.value));
   $('dl-active').checked = true; $('dl-title').textContent = 'Add a stop customer'; $('dl-used').hidden = true;
@@ -539,7 +542,8 @@ function clearDl() {
 $('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; $('dl-edit').open = false; };
 $('dl-save').onclick = async () => {
   if (!$('dl-name').value.trim()) { $('dl-msg').innerHTML = '<span class="error">Enter the name.</span>'; return; }
-  const row = { name: $('dl-name').value.trim(), code: $('dl-code').value.trim() || null, contact: $('dl-contact').value.trim() || null,
+  const row = { name: $('dl-name').value.trim(), code: $('dl-code').value.trim() || null,
+    route_no: $('dl-route').value.trim() || null, sort_code: $('dl-sort').value.trim() || null, contact: $('dl-contact').value.trim() || null,
     address: $('dl-addr').value.trim() || null, window_start: $('dl-ws').value || null, window_end: $('dl-we').value || null,
     notes: $('dl-notes').value.trim() || null, active: $('dl-active').checked,
     kind: $('dl-kind').value,
@@ -601,19 +605,19 @@ function toTime(v) {
 
 
 // ---------- Delivery customer template and upload ----------
-const DL_HEAD = ['Name', 'Store #', 'Address', 'City', 'State', 'Zip', 'Window Opens', 'Window Closes', 'Contact', 'Phone', 'Email', 'Notify (Y/N)', 'Notification Email',
+const DL_HEAD = ['Name', 'Store #', 'Route #', 'Sort Code', 'Address', 'City', 'State', 'Zip', 'Window Opens', 'Window Closes', 'Contact', 'Phone', 'Email', 'Notify (Y/N)', 'Notification Email',
   'Delivery Instructions', 'Door Code', 'Gate Code', 'Other Code Name', 'Other Code', 'After-hours Contact', 'After-hours Phone', 'Office Notes', 'Active (Y/N)'];
 $('dl-tpl').onclick = () => {
   if (!window.XLSX) { alert('The spreadsheet tool did not load. Check your internet connection and refresh.'); return; }
   const cust = $('cust').selectedOptions[0]?.textContent || 'customer';
-  const rows = dlRows.map(d => [d.name, d.code || '', d.address || '', '', '', '', (d.window_start || '').slice(0, 5), (d.window_end || '').slice(0, 5),
+  const rows = dlRows.map(d => [d.name, d.code || '', d.route_no || '', d.sort_code || '', d.address || '', '', '', '', (d.window_start || '').slice(0, 5), (d.window_end || '').slice(0, 5),
     d.contact || '', d.phone || '', d.email || '', d.notify ? 'Y' : 'N', d.notify_email || '',
     d.delivery_instructions || '', d.door_code || '', d.gate_code || '', d.other_code_name || '', d.other_code || '', d.after_hours_contact || '', d.after_hours_phone || '',
     d.notes || '', d.active ? 'Y' : 'N']);
-  const sample = ['Parts Depot - Store 212', '212', '500 Farmington Ave', 'Hartford', 'CT', '06105', '06:00', '08:00', 'Pat Lee', '(860) 555-0212', 'store212@example.com', 'Y', '',
+  const sample = ['Parts Depot - Store 212', '212', '12', 'B3', '500 Farmington Ave', 'Hartford', 'CT', '06105', '06:00', '08:00', 'Pat Lee', '(860) 555-0212', 'store212@example.com', 'Y', '',
     'After hours: back door, leave totes in the cage and lock it', '4471#', '0915', 'Alarm', '2580 then OFF', 'Night manager', '(860) 555-0299', 'Dock 2', 'Y'];
   const ws = XLSX.utils.aoa_to_sheet([DL_HEAD, ...(rows.length ? rows : [sample])]);
-  ws['!cols'] = [34, 9, 30, 16, 7, 8, 13, 13, 18, 16, 28, 12, 28, 44, 11, 11, 16, 14, 20, 16, 30, 12].map(w => ({ wch: w }));
+  ws['!cols'] = [34, 9, 9, 10, 30, 16, 7, 8, 13, 13, 18, 16, 28, 12, 28, 44, 11, 11, 16, 14, 20, 16, 30, 12].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Delivery customers');
   XLSX.writeFile(wb, `Delivery-customers-${cust.replace(/[^A-Za-z0-9]+/g, '-')}.xlsx`);
 };
@@ -631,6 +635,8 @@ const DL_FIELDS = [   // matched in this order, so the specific ones win
   ['delivery_instructions', 'Delivery instructions', /instruction|direction|driver.*note|delivery.*note/i],
   ['contact', 'Contact name', /contact|attn|attention|manager/i],
   ['phone', 'Phone', /phone|tel|mobile|cell/i],
+  ['route_no', 'Route #', /^route|route ?(#|no|num)/i],
+  ['sort_code', 'Sort code', /sort/i],
   ['code', 'Store # / code', /store ?(#|no|num)|code|site ?(#|no|id)|loc(ation)? ?(#|no|id)|acct|account ?(#|no)|^#$/i],
   ['address', 'Address', /address|street|addr/i],
   ['city', 'City', /city|town/i],
@@ -679,7 +685,8 @@ function dlParsed() {
     const zip = String(g(r, 'zip')).trim();
     const address = [g(r, 'address'), g(r, 'city'), [g(r, 'state'), /^\d{3,4}$/.test(zip) ? zip.padStart(5, '0') : zip].filter(Boolean).join(' ')]
       .map(x => String(x).trim()).filter(Boolean).join(', ');
-    const row = { i, name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address, window_start: toTime(ws), window_end: toTime(we),
+    const row = { i, name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address,
+      route_no: String(g(r, 'route_no')).trim(), sort_code: String(g(r, 'sort_code')).trim(), window_start: toTime(ws), window_end: toTime(we),
       contact: String(g(r, 'contact')).trim(), phone: String(g(r, 'phone')).trim(), email: String(g(r, 'email')).trim().toLowerCase(),
       notify_email: String(g(r, 'notify_email')).trim().toLowerCase(), notify: yn(g(r, 'notify')), notes: String(g(r, 'notes')).trim(), active: yn(g(r, 'active')),
       delivery_instructions: String(g(r, 'delivery_instructions')).trim(), door_code: String(g(r, 'door_code')).trim(), gate_code: String(g(r, 'gate_code')).trim(),
@@ -706,8 +713,8 @@ function dlDraw() {
       ${bad.length ? ` · <span class="error">${bad.length} with an email that doesn't look right (rows ${bad.map(r => dlUp.header + r.i + 2).join(', ')})</span>` : ''}</p>
     <p class="hint">Blank cells never erase what's already on file. Existing delivery customers are matched by store # first, then by name.</p>
     <div class="tablewrap" style="max-height:300px;overflow:auto"><table style="min-width:900px">
-      <thead><tr><th>Row</th><th>Name</th><th>Store #</th><th>Address</th><th>Window</th><th>Phone</th><th>Email</th><th>Notify</th><th></th></tr></thead>
-      <tbody>${rows.map(r => `<tr style="${r.ok ? '' : 'opacity:.45'}"><td class="mono">${dlUp.header + r.i + 2}</td><td>${esc(r.name || r.match?.name || '')}</td><td class="mono">${esc(r.code)}</td>
+      <thead><tr><th>Row</th><th>Name</th><th>Store #</th><th>Route · Sort</th><th>Address</th><th>Window</th><th>Phone</th><th>Email</th><th>Notify</th><th></th></tr></thead>
+      <tbody>${rows.map(r => `<tr style="${r.ok ? '' : 'opacity:.45'}"><td class="mono">${dlUp.header + r.i + 2}</td><td>${esc(r.name || r.match?.name || '')}</td><td class="mono">${esc(r.code)}</td><td class="mono">${esc([r.route_no, r.sort_code].filter(Boolean).join(' · '))}</td>
         <td>${esc(r.address)}</td><td class="mono">${esc([r.window_start, r.window_end].filter(Boolean).join('–'))}</td><td class="mono">${esc(r.phone)}</td>
         <td${r.badEmail ? ' class="error"' : ''}>${esc(r.email)}</td><td>${r.notify == null ? '' : r.notify ? 'Y' : 'N'}</td>
         <td>${!r.ok ? 'skipped' : r.match ? 'Update' : '<span class="current">New</span>'}</td></tr>`).join('')}</tbody></table></div>

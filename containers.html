@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Containers · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select,textarea{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  textarea{height:auto;padding:8px 9px;font-family:var(--mono)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
+  .tile .s{font-size:12px;color:var(--muted);margin-top:3px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .t td.n,.t th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .t tr.click{cursor:pointer} .t tr.click:hover td{background:var(--panel-2)}
+  .t tr.sel td{background:var(--accent-deep)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--line);white-space:nowrap}
+  .pill.late{color:var(--late);border-color:var(--late)} .pill.ok{color:var(--ok);border-color:var(--ok)} .pill.warn{color:var(--warn);border-color:var(--warn)}
+  .st-pdc{color:var(--ok)} .st-out{color:var(--ink)} .st-loaded{color:var(--accent)} .st-missing{color:var(--late)} .st-retired{color:var(--ink-3)}
+  /* Receive */
+  .scanrow{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+  #rx-code{height:52px!important;font-size:22px!important;padding:0 14px!important;font-family:var(--mono);min-width:280px;flex:1;letter-spacing:.04em}
+  .rx-last{padding:14px 16px;border-radius:10px;font-size:16px;border:1px solid var(--line)}
+  .rx-last.good{border-color:var(--ok)} .rx-last.bad{border-color:var(--late)} .rx-last.meh{border-color:var(--warn)}
+  .rx-last b{font-family:var(--mono)}
+  #reader{max-width:420px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .drawer{border-top:1px solid var(--line);padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+  .hist{font-size:12.5px} .hist div{padding:4px 0;border-bottom:1px solid var(--line-soft)}
+  .acts{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a class="on" href="containers.html">Containers</a><a href="customers.html">Customers</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>Returnable containers</h1><span class="sp"></span>
+      <div class="tabs" id="tabs">
+        <button data-t="rx">Receive empties</button><button data-t="stores">At stores</button><button data-t="inv">PDC inventory</button>
+        <button data-t="all">All containers</button><button data-t="setup">Setup</button>
+      </div>
+    </div>
+    <div class="tiles" id="tiles"></div>
+
+    <!-- Receive empties -->
+    <div class="card" data-pane="rx">
+      <header><h2>Receive empties at the PDC</h2><span class="sp"></span><span class="mini">Scanner gun: just scan — each one saves by itself. Or type the barcode and press Enter.</span></header>
+      <div class="pad" style="display:flex;flex-direction:column;gap:12px">
+        <div class="scanrow">
+          <label>PDC<select id="rx-pdc"></select></label>
+          <label style="flex:1">Barcode<input id="rx-code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Scan or type"></label>
+          <button class="btn" id="rx-cam" type="button">📷 Use camera</button>
+        </div>
+        <div id="reader" hidden></div>
+        <div id="rx-last" class="rx-last" hidden></div>
+        <div id="rx-new" hidden></div>
+        <div id="rx-tally" class="mini"></div>
+      </div>
+      <div class="wrap"><table class="t"><thead><tr><th>Time</th><th>Barcode</th><th>Type</th><th>Came back from</th><th>Route</th><th class="n">Days out</th><th>Result</th></tr></thead><tbody id="rx-list"></tbody></table></div>
+    </div>
+
+    <!-- At stores -->
+    <div class="card" data-pane="stores">
+      <header><h2>Held at stores</h2><span class="sp"></span>
+        <label>Customer<select id="st-cust"><option value="">All</option></select></label>
+        <label>Route<select id="st-route"><option value="">All</option></select></label>
+        <label>Search<input id="st-q" placeholder="store, #, sort"></label>
+        <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="st-over" style="height:auto"> Overdue only</label>
+        <button class="btn small" id="st-csv" type="button">CSV</button>
+      </header>
+      <div class="wrap" id="st-table"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- PDC inventory -->
+    <div class="card" data-pane="inv">
+      <header><h2>Where every container is</h2><span class="sp"></span><span class="mini">On trucks = scanned at a pickup or the PDC, not yet scanned at a store.</span></header>
+      <div class="wrap" id="inv-table"></div>
+    </div>
+
+    <!-- All containers -->
+    <div class="card" data-pane="all">
+      <header><h2>Containers</h2><span class="sp"></span>
+        <label>Barcode<input id="al-q" placeholder="e.g. CG-10"></label>
+        <label>Status<select id="al-status"><option value="">Any</option><option value="pdc">At the PDC</option><option value="loaded">On a truck</option><option value="out">At a store</option><option value="missing">Missing</option><option value="retired">Retired</option></select></label>
+        <label>Type<select id="al-type"><option value="">Any</option></select></label>
+        <button class="btn primary small ed" id="al-add" type="button">+ Add containers</button>
+      </header>
+      <div id="reg" class="pad" hidden></div>
+      <div class="wrap" id="al-table"></div>
+    </div>
+
+    <!-- Setup -->
+    <div class="card" data-pane="setup">
+      <header><h2>Setup</h2></header>
+      <div class="pad" style="display:flex;flex-direction:column;gap:16px">
+        <div>
+          <b>Overdue after</b>
+          <div class="bar" style="margin-top:6px"><label>Days at a store<input id="su-days" type="number" min="1" max="365" style="width:100px"></label><button class="btn small ed" id="su-days-save" type="button">Save</button>
+          <span class="mini">A container held longer than this shows red, here and in the customer portal. A type can have its own number below.</span></div>
+        </div>
+        <div>
+          <b>Container types</b>
+          <table class="t" style="margin-top:6px;max-width:640px"><thead><tr><th>Name</th><th>Overdue after (days)</th><th>In use</th><th></th></tr></thead><tbody id="su-types"></tbody></table>
+          <div class="bar ed" style="margin-top:8px"><label>New type<input id="su-tname" placeholder="e.g. Rack"></label><button class="btn small" id="su-tadd" type="button">Add</button></div>
+        </div>
+        <div>
+          <b>PDCs</b> <span class="mini">— where empties come back to. Scans at a PDC count as loading, not delivering.</span>
+          <div id="su-pdcs" style="margin-top:6px"></div>
+          <div class="bar ed" style="margin-top:8px"><label style="min-width:320px">Mark a location as a PDC<input id="su-pdc-q" list="locs" placeholder="Start typing a location name"></label><button class="btn small" id="su-pdc-add" type="button">Add</button></div>
+        </div>
+      </div>
+    </div>
+    <datalist id="locs"></datalist>
+  </section>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const day = (t) => t ? new Date(t).toLocaleDateString([], { month: 'numeric', day: 'numeric', year: '2-digit' }) : '';
+const hm = (t) => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+const when = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+const dd = (n) => n == null ? '' : Math.floor(n);
+const STATUS = { pdc: 'At the PDC', loaded: 'On a truck', out: 'At a store', missing: 'Missing', retired: 'Retired' };
+const KIND = { registered: 'Added', loaded: 'Loaded on a truck', delivered: 'Left at store', received: 'Received back', missing: 'Marked missing', found: 'Found', retired: 'Retired', reactivated: 'Back in service', placed: 'Placed at store by the office' };
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('containers', 'edit');
+let TAB = 'rx', TYPES = [], PDCS = [], LOCS = [], CUSTS = [], ALERT = 14, BAL = [], OPEN = null, SESSION = [];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name, container_alert_days)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  const A = window.RC_ACCESS;
+  if (A && !A.can('containers') && !A.can('dispatch') && !A.can('customers')) return;   // access.js explains
+  if (data.carriers?.container_alert_days == null) {
+    $('app').hidden = false; $('app').innerHTML = '<div class="card empty error">Run 63_returnable_containers.sql in the Supabase SQL Editor first.</div>'; return;
+  }
+  ALERT = data.carriers.container_alert_days;
+  $('app').hidden = false;
+  if (!canEdit()) { document.querySelectorAll('.ed').forEach(e => e.hidden = true); document.querySelector('[data-t="rx"]').hidden = true; if (TAB === 'rx') TAB = 'stores'; }
+  await refs();
+  const t = new URLSearchParams(location.search).get('tab'); if (t && (t !== 'rx' || canEdit())) TAB = t;
+  go(TAB);
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => go(b.dataset.t));
+
+// Everything a pick-list needs; locations are paged (a carrier can have thousands of stores)
+async function fetchAll(q) {
+  const out = []; for (let i = 0; i < 20; i++) { const { data, error } = await q().range(i * 1000, i * 1000 + 999); if (error || !data) break; out.push(...data); if (data.length < 1000) break; } return out;
+}
+async function refs() {
+  const [t, c] = await Promise.all([
+    sb.from('container_types').select('id, name, alert_days, active, sort').order('sort').order('name'),
+    sb.from('customers').select('id, name, parent_customer_id').order('name'),
+  ]);
+  TYPES = t.data || []; CUSTS = c.data || [];
+  LOCS = await fetchAll(() => sb.from('delivery_locations').select('id, name, code, route_no, is_pdc, active, customer_id').order('name'));
+  PDCS = LOCS.filter(l => l.is_pdc);
+  const pdcOpts = PDCS.length ? PDCS.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('') : '<option value="">(no PDC set up — see Setup)</option>';
+  $('rx-pdc').innerHTML = pdcOpts;
+  const keep = localStorage.getItem('rc-pdc'); if (keep && PDCS.some(p => p.id === keep)) $('rx-pdc').value = keep;
+  $('al-type').innerHTML = '<option value="">Any</option>' + TYPES.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+  $('locs').innerHTML = LOCS.filter(l => l.active).map(l => `<option value="${esc(l.name)}${l.code ? ' #' + esc(l.code) : ''}"></option>`).join('');
+}
+const locByLabel = (v) => LOCS.find(l => (l.name + (l.code ? ' #' + l.code : '')) === v.trim()) || LOCS.find(l => l.name === v.trim());
+const mainOf = (id) => { const c = CUSTS.find(x => x.id === id); return c?.parent_customer_id || id; };
+
+function go(t) {
+  TAB = t; history.replaceState(null, '', '?tab=' + t);
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t);
+  stopCam();
+  tiles();
+  if (t === 'rx') { drawRx(); setTimeout(() => $('rx-code').focus(), 50); }
+  if (t === 'stores') loadStores();
+  if (t === 'inv') loadInv();
+  if (t === 'all') loadAll();
+  if (t === 'setup') drawSetup();
+}
+
+// ── Tiles (always) ──────────────────────────────────────────────────
+async function tiles() {
+  const { data, error } = await sb.from('container_inventory').select('status, n, overdue');
+  if (error) { $('tiles').innerHTML = `<div class="card empty error">${esc(error.message)}</div>`; return; }
+  const s = (k) => (data || []).filter(r => r.status === k).reduce((a, r) => a + r.n, 0);
+  const over = (data || []).reduce((a, r) => a + r.overdue, 0), live = (data || []).filter(r => r.status !== 'retired').reduce((a, r) => a + r.n, 0);
+  $('tiles').innerHTML = [
+    ['At stores', s('out'), over ? `<span class="error">${over} overdue</span> (over ${ALERT} days)` : 'none overdue'],
+    ['At the PDC', s('pdc'), 'on hand'],
+    ['On trucks', s('loaded'), 'loaded, not delivered yet'],
+    ['Missing', s('missing'), `${live} in service in all`],
+  ].map(([k, v, x]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Missing' && v ? 'error' : ''}">${v}</div><div class="s">${x}</div></div>`).join('');
+}
+
+// ── Receive empties ─────────────────────────────────────────────────
+let busy = false, lastCode = '', lastAt = 0;
+$('rx-pdc').onchange = () => localStorage.setItem('rc-pdc', $('rx-pdc').value);
+$('rx-code').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); const v = $('rx-code').value.trim(); $('rx-code').value = ''; if (v) receive(v); } };
+function beep(ok) {
+  try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
+    o.frequency.value = ok ? 880 : 220; o.type = ok ? 'sine' : 'square'; g.gain.value = .08; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + (ok ? .12 : .35)); } catch (_) {}
+  if (!ok && navigator.vibrate) navigator.vibrate(250);
+}
+async function receive(code) {
+  if (busy) return; busy = true;
+  const { data, error } = await sb.rpc('container_receive', { p_barcode: code, p_pdc: $('rx-pdc').value || null });
+  busy = false;
+  const r = error ? { result: 'error', barcode: code, message: error.message } : data;
+  r.at = new Date(); SESSION.unshift(r);
+  const box = $('rx-last'); box.hidden = false;   // an open "add it" form stays until it's used or skipped
+  if (r.result === 'received') {
+    beep(true); box.className = 'rx-last good';
+    box.innerHTML = `✓ <b>${esc(r.barcode)}</b> ${esc(r.type)} received${r.from ? ` — back from ${esc(r.from)}${r.route_no ? ' (route ' + esc(r.route_no) + ')' : ''} after ${dd(r.days)} day${dd(r.days) === 1 ? '' : 's'}` : r.was === 'missing' ? ' — it was marked missing' : r.was === 'loaded' ? ' — it came back on the truck without a delivery scan' : ''}`;
+  } else if (r.result === 'already_in') {
+    beep(true); box.className = 'rx-last meh'; box.innerHTML = `<b>${esc(r.barcode)}</b> is already at this PDC (since ${day(r.since)}). Nothing changed.`;
+  } else if (r.result === 'retired') {
+    beep(false); box.className = 'rx-last bad'; box.innerHTML = `<b>${esc(r.barcode)}</b> is <b>retired</b>. Set it aside — or put it back in service under All containers.`;
+  } else if (r.result === 'unknown') {
+    beep(false); box.className = 'rx-last bad'; box.innerHTML = `<b>${esc(r.barcode)}</b> isn't registered.`;
+    newForm(r.barcode);
+  } else { beep(false); box.className = 'rx-last bad'; box.innerHTML = `Couldn't save <b>${esc(code)}</b>: ${esc(r.message)}`; }
+  drawRx();
+  if (r.result !== 'unknown') $('rx-code').focus();
+}
+function newForm(code) {
+  const n = $('rx-new'); n.hidden = false;
+  n.innerHTML = `<div class="bar"><span>Add <b class="mono">${esc(code)}</b> and receive it:</span>
+    <label>Type<select id="nw-type">${TYPES.filter(t => t.active).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label>
+    <label>Whose<select id="nw-cust"><option value="">—</option>${CUSTS.filter(c => !c.parent_customer_id).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+    <button class="btn primary small" id="nw-go">Add &amp; receive</button><button class="btn small" id="nw-x">Skip</button><span id="nw-msg"></span></div>`;
+  $('nw-x').onclick = () => { n.hidden = true; $('rx-code').focus(); };
+  $('nw-go').onclick = async () => {
+    const { error } = await sb.rpc('container_register', { p_barcodes: [code], p_type: $('nw-type').value, p_customer: $('nw-cust').value || null, p_pdc: $('rx-pdc').value || null, p_note: 'Added while receiving' });
+    if (error) { $('nw-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    n.hidden = true; SESSION = SESSION.filter(x => !(x.result === 'unknown' && x.barcode === code));
+    const box = $('rx-last'); box.className = 'rx-last good'; box.innerHTML = `✓ <b>${esc(code)}</b> added — it's at the PDC now.`; beep(true);
+    SESSION.unshift({ result: 'received', barcode: code.toUpperCase(), type: TYPES.find(t => t.id === $('nw-type').value)?.name, at: new Date(), added: true });
+    drawRx(); tiles(); $('rx-code').focus();
+  };
+}
+function drawRx() {
+  const got = SESSION.filter(r => r.result === 'received'), by = {};
+  got.forEach(r => by[r.type] = (by[r.type] || 0) + 1);
+  $('rx-tally').innerHTML = got.length ? `This session: <b>${got.length}</b> received — ${Object.entries(by).map(([t, n]) => `${n} ${esc(t)}`).join(', ')}` : (PDCS.length ? '' : '<span class="warn">No PDC is set up yet. Add one under Setup so empties are counted at the right place.</span>');
+  const RES = { received: '<span class="pill ok">Received</span>', already_in: '<span class="pill">Already in</span>', retired: '<span class="pill warn">Retired</span>', unknown: '<span class="pill late">Not registered</span>', error: '<span class="pill late">Error</span>' };
+  $('rx-list').innerHTML = SESSION.slice(0, 200).map(r => `<tr><td class="mono">${hm(r.at)}</td><td class="mono">${esc(r.barcode)}</td><td>${esc(r.type || '')}</td>
+    <td>${esc(r.from || (r.added ? 'newly added' : ''))}</td><td class="mono">${esc(r.route_no || '')}</td><td class="n">${dd(r.days)}</td>
+    <td>${RES[r.result] || ''}${r.result === 'unknown' ? ` <button class="btn small" data-add="${esc(r.barcode)}">Add…</button>` : ''}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="empty">Scan the first empty. Each scan saves on its own.</td></tr>';
+  document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => newForm(b.dataset.add));
+}
+let cam = null;
+$('rx-cam').onclick = async () => {
+  if (cam) return stopCam();
+  if (!window.Html5Qrcode) { alert('The camera scanner did not load. Check the connection and refresh.'); return; }
+  $('reader').hidden = false; $('rx-cam').textContent = 'Stop camera';
+  try {
+    cam = new Html5Qrcode('reader');
+    await cam.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 280, height: 140 } }, (text) => {
+      const now = Date.now(); if (text === lastCode && now - lastAt < 3000) return;   // same label still in view
+      lastCode = text; lastAt = now; receive(text);
+    });
+  } catch (e) { alert('Camera not available: ' + (e?.message || e)); stopCam(); }
+};
+async function stopCam() { if (cam) { try { await cam.stop(); cam.clear(); } catch (_) {} cam = null; } $('reader').hidden = true; $('rx-cam').textContent = '📷 Use camera'; }
+
+// ── At stores ───────────────────────────────────────────────────────
+async function loadStores() {
+  $('st-table').innerHTML = '<div class="empty">Loading…</div>';
+  const { data, error } = await sb.from('container_balance').select('*');
+  if (error) { $('st-table').innerHTML = `<div class="empty error">${esc(error.message)}</div>`; return; }
+  BAL = data || [];
+  const mains = [...new Map(BAL.map(b => [mainOf(b.location_customer_id), b.location_main_customer])).entries()].sort((a, b) => String(a[1]).localeCompare(b[1]));
+  const kc = $('st-cust').value; $('st-cust').innerHTML = '<option value="">All</option>' + mains.map(([id, n]) => `<option value="${id}" ${id === kc ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  const routes = [...new Set(BAL.map(b => b.route_no).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const kr = $('st-route').value; $('st-route').innerHTML = '<option value="">All</option>' + routes.map(r => `<option ${r === kr ? 'selected' : ''}>${esc(r)}</option>`).join('');
+  drawStores();
+}
+['st-cust', 'st-route', 'st-over'].forEach(id => $(id).onchange = drawStores); $('st-q').oninput = drawStores;
+function storeRows() {
+  const q = $('st-q').value.trim().toLowerCase(), c = $('st-cust').value, r = $('st-route').value, over = $('st-over').checked;
+  const m = new Map();
+  BAL.filter(b => (!c || mainOf(b.location_customer_id) === c) && (!r || b.route_no === r)
+      && (!q || [b.location, b.location_code, b.sort_code, b.location_customer].join(' ').toLowerCase().includes(q)))
+    .forEach(b => {
+      if (!m.has(b.location_id)) m.set(b.location_id, { id: b.location_id, name: b.location, code: b.location_code, route: b.route_no, sort: b.sort_code, cust: b.location_customer, by: {}, held: 0, oldest: 0, overdue: 0 });
+      const g = m.get(b.location_id); g.by[b.type] = (g.by[b.type] || 0) + b.held; g.held += b.held; g.oldest = Math.max(g.oldest, Number(b.oldest_days)); g.overdue += b.overdue;
+    });
+  return [...m.values()].filter(g => !over || g.overdue).sort((a, b) => b.oldest - a.oldest);
+}
+function drawStores() {
+  const rows = storeRows(), types = [...new Set(BAL.map(b => b.type))].sort();
+  if (!rows.length) { $('st-table').innerHTML = `<div class="empty">${BAL.length ? 'No stores match.' : 'No containers are out at stores. They show here once a driver scans one at a delivery.'}</div>`; return; }
+  const tot = {}; rows.forEach(g => types.forEach(t => tot[t] = (tot[t] || 0) + (g.by[t] || 0)));
+  $('st-table').innerHTML = `<table class="t"><thead><tr><th>Store</th><th>Customer</th><th>Route</th><th>Sort</th>${types.map(t => `<th class="n">${esc(t)}</th>`).join('')}<th class="n">Total</th><th class="n">Oldest</th></tr></thead><tbody>
+    ${rows.map(g => `<tr class="click${OPEN === g.id ? ' sel' : ''}" data-loc="${g.id}"><td><b>${esc(g.name)}</b>${g.code ? ` <span class="mini">#${esc(g.code)}</span>` : ''}</td><td>${esc(g.cust)}</td>
+      <td class="mono">${esc(g.route || '')}</td><td class="mono">${esc(g.sort || '')}</td>${types.map(t => `<td class="n">${g.by[t] || ''}</td>`).join('')}<td class="n"><b>${g.held}</b></td>
+      <td class="n">${g.overdue ? `<span class="pill late" title="${g.overdue} overdue">${dd(g.oldest)} d</span>` : dd(g.oldest) + ' d'}</td></tr>
+      ${OPEN === g.id ? `<tr><td colspan="${6 + types.length}" id="st-detail"><div class="empty">Loading…</div></td></tr>` : ''}`).join('')}
+    <tr><td colspan="4"><b>${rows.length} store${rows.length === 1 ? '' : 's'}</b></td>${types.map(t => `<td class="n"><b>${tot[t] || ''}</b></td>`).join('')}<td class="n"><b>${rows.reduce((a, g) => a + g.held, 0)}</b></td><td></td></tr></tbody></table>`;
+  document.querySelectorAll('tr[data-loc]').forEach(tr => tr.onclick = () => { OPEN = OPEN === tr.dataset.loc ? null : tr.dataset.loc; drawStores(); if (OPEN) storeDetail(OPEN); });
+}
+async function storeDetail(loc) {
+  const { data, error } = await sb.from('container_list').select('id, barcode, type, since, days, overdue, load_no, load_id').eq('location_id', loc).eq('status', 'out').order('since');
+  const el = $('st-detail'); if (!el) return;
+  if (error) { el.innerHTML = `<div class="empty error">${esc(error.message)}</div>`; return; }
+  el.innerHTML = `<table class="t"><thead><tr><th>Barcode</th><th>Type</th><th>Left there</th><th class="n">Days</th><th>Load</th><th></th></tr></thead><tbody>${(data || []).map(x => `
+    <tr><td class="mono">${esc(x.barcode)}</td><td>${esc(x.type)}</td><td>${day(x.since)}</td><td class="n">${x.overdue ? `<span class="pill late">${dd(x.days)}</span>` : dd(x.days)}</td>
+    <td>${x.load_id ? `<a href="trip.html?load=${x.load_id}">${esc(x.load_no || '')}</a>` : ''}</td><td><a href="?tab=all&q=${encodeURIComponent(x.barcode)}">History</a></td></tr>`).join('')}</tbody></table>`;
+}
+$('st-csv').onclick = async () => {
+  const data = await fetchAll(() => sb.from('container_list').select('barcode, type, location, location_code, route_no, sort_code, location_customer, location_main_customer, since, days, overdue, load_no').eq('status', 'out').order('since'));
+  const cols = ['barcode', 'type', 'location', 'location_code', 'route_no', 'sort_code', 'location_customer', 'location_main_customer', 'since', 'days', 'overdue', 'load_no'];
+  const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const text = [cols.join(','), ...data.map(r => cols.map(c => q(c === 'since' ? (r.since || '').slice(0, 10) : r[c])).join(','))].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+  a.download = `containers-at-stores-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
+};
+
+// ── PDC inventory ───────────────────────────────────────────────────
+async function loadInv() {
+  const { data, error } = await sb.from('container_inventory').select('*');
+  if (error) { $('inv-table').innerHTML = `<div class="empty error">${esc(error.message)}</div>`; return; }
+  const rows = data || [], types = [...new Set(rows.map(r => r.type))].sort();
+  if (!rows.length) { $('inv-table').innerHTML = '<div class="empty">No containers yet. Add them under All containers.</div>'; return; }
+  const lines = [];
+  const pdcs = [...new Map(rows.filter(r => r.status === 'pdc').map(r => [r.pdc_id || '-', r.pdc || 'PDC (none picked)'])).entries()];
+  pdcs.forEach(([id, n]) => lines.push({ label: 'At ' + n, f: r => r.status === 'pdc' && (r.pdc_id || '-') === id, cls: 'st-pdc' }));
+  lines.push({ label: 'On trucks', f: r => r.status === 'loaded', cls: 'st-loaded' }, { label: 'At stores', f: r => r.status === 'out', cls: 'st-out', link: 'stores' },
+             { label: 'Missing', f: r => r.status === 'missing', cls: 'st-missing', link: 'all&status=missing' }, { label: 'Retired', f: r => r.status === 'retired', cls: 'st-retired' });
+  const cell = (f, t) => rows.filter(r => f(r) && (!t || r.type === t)).reduce((a, r) => a + r.n, 0);
+  $('inv-table').innerHTML = `<table class="t"><thead><tr><th>Where</th>${types.map(t => `<th class="n">${esc(t)}</th>`).join('')}<th class="n">Total</th></tr></thead><tbody>
+    ${lines.map(l => `<tr><td class="${l.cls}"><b>${l.link ? `<a href="?tab=${l.link}">${esc(l.label)}</a>` : esc(l.label)}</b></td>${types.map(t => `<td class="n">${cell(l.f, t) || ''}</td>`).join('')}<td class="n"><b>${cell(l.f) || ''}</b></td></tr>`).join('')}
+    <tr><td><b>In service</b> <span class="mini">(not retired)</span></td>${types.map(t => `<td class="n"><b>${cell(r => r.status !== 'retired', t)}</b></td>`).join('')}<td class="n"><b>${cell(r => r.status !== 'retired')}</b></td></tr></tbody></table>`;
+  document.querySelectorAll('#inv-table a').forEach(a => a.onclick = (e) => { e.preventDefault(); const p = new URLSearchParams(a.getAttribute('href').slice(1)); if (p.get('status')) $('al-status').value = p.get('status'); go(p.get('tab')); });
+}
+
+// ── All containers ──────────────────────────────────────────────────
+let alTimer = null, SEL = null;
+$('al-q').oninput = () => { clearTimeout(alTimer); alTimer = setTimeout(loadAll, 250); };
+$('al-status').onchange = $('al-type').onchange = loadAll;
+async function loadAll() {
+  const u = new URLSearchParams(location.search); if (u.get('q') && !$('al-q').value) $('al-q').value = u.get('q');
+  let q = sb.from('container_list').select('id, barcode, type, type_id, status, since, days, overdue, location, location_id, route_no, pdc, owner_customer, customer_id, load_no, load_id, note', { count: 'exact' }).order('barcode').limit(300);
+  const s = $('al-q').value.trim(); if (s) q = q.ilike('barcode', `%${s}%`);
+  if ($('al-status').value) q = q.eq('status', $('al-status').value);
+  if ($('al-type').value) q = q.eq('type_id', $('al-type').value);
+  const { data, error, count } = await q;
+  if (error) { $('al-table').innerHTML = `<div class="empty error">${esc(error.message)}</div>`; return; }
+  const rows = data || [];
+  $('al-table').innerHTML = rows.length ? `<table class="t"><thead><tr><th>Barcode</th><th>Type</th><th>Status</th><th>Where</th><th class="n">Days</th><th>Whose</th><th>Load</th></tr></thead><tbody>${rows.map(r => `
+    <tr class="click${SEL === r.id ? ' sel' : ''}" data-c="${r.id}"><td class="mono"><b>${esc(r.barcode)}</b></td><td>${esc(r.type)}</td><td class="st-${r.status}">${STATUS[r.status]}</td>
+      <td>${esc(r.status === 'out' ? r.location : r.status === 'pdc' ? (r.pdc || 'PDC') : '')}${r.status === 'out' && r.route_no ? ` <span class="mini">route ${esc(r.route_no)}</span>` : ''}</td>
+      <td class="n">${r.overdue ? `<span class="pill late">${dd(r.days)}</span>` : dd(r.days)}</td><td>${esc(r.owner_customer || '')}</td><td class="mono">${esc(r.load_no || '')}</td></tr>
+    ${SEL === r.id ? `<tr><td colspan="7" style="padding:0"><div class="drawer" id="drawer"></div></td></tr>` : ''}`).join('')}</tbody></table>
+    ${count > rows.length ? `<div class="mini" style="padding:8px 16px">Showing ${rows.length} of ${count}. Type part of a barcode to narrow it down.</div>` : ''}`
+    : '<div class="empty">No containers match.</div>';
+  document.querySelectorAll('tr[data-c]').forEach(tr => tr.onclick = () => { SEL = SEL === tr.dataset.c ? null : tr.dataset.c; loadAll(); });
+  if (SEL) { const r = rows.find(x => x.id === SEL); if (r) drawer(r); }
+}
+async function drawer(c) {
+  const { data: h } = await sb.from('container_moves').select('kind, at, location_name, pdc_name, load_no, load_id, by_name, note, undone_at').eq('container_id', c.id).order('at', { ascending: false }).limit(100);
+  const ed = canEdit(), el = $('drawer'); if (!el) return;
+  el.innerHTML = `
+    ${ed ? `<div class="acts">
+      ${c.status === 'out' || c.status === 'loaded' || c.status === 'missing' ? `<button class="btn small" data-a="found">Back at the PDC</button>` : ''}
+      ${c.status !== 'missing' && c.status !== 'retired' ? `<button class="btn small" data-a="missing">Mark missing</button>` : ''}
+      ${c.status !== 'retired' ? `<button class="btn small" data-a="place">It's at a store…</button><button class="btn small" data-a="retire">Retire…</button>` : `<button class="btn small" data-a="reactivate">Back in service</button>`}
+      <button class="btn small" data-a="edit">Type / owner…</button></div>
+      <div id="dw-form"></div>` : ''}
+    ${c.note ? `<div class="mini">Note: ${esc(c.note)}</div>` : ''}
+    <div class="hist">${(h || []).map(m => `<div${m.undone_at ? ' style="opacity:.45;text-decoration:line-through"' : ''}><span class="mono">${when(m.at)}</span> · <b>${KIND[m.kind] || m.kind}</b>
+      ${m.location_name ? ' · ' + esc(m.location_name) : ''}${m.kind === 'received' || m.kind === 'registered' ? (m.pdc_name ? ' → ' + esc(m.pdc_name) : '') : ''}
+      ${m.load_no ? ` · load ${m.load_id ? `<a href="trip.html?load=${m.load_id}">${esc(m.load_no)}</a>` : esc(m.load_no)}` : ''}${m.by_name ? ' · ' + esc(m.by_name) : ''}${m.note ? ` · <i>${esc(m.note)}</i>` : ''}${m.undone_at ? ' · driver removed the scan' : ''}</div>`).join('') || '<div>No history.</div>'}</div>`;
+  el.querySelectorAll('[data-a]').forEach(b => b.onclick = (e) => { e.stopPropagation(); act(c, b.dataset.a); });
+}
+async function act(c, a) {
+  const f = $('dw-form'), done = async (r) => { if (r.error) { alert(r.error.message); return; } await loadAll(); tiles(); };
+  if (a === 'found') return done(await sb.rpc('container_set_status', { p_id: c.id, p_status: 'pdc', p_note: prompt('Note (optional)') || null }));
+  if (a === 'reactivate') return done(await sb.rpc('container_set_status', { p_id: c.id, p_status: 'pdc', p_note: prompt('Note (optional) — e.g. repaired') || null }));
+  if (a === 'missing') { const n = prompt('Mark ' + c.barcode + ' missing. Note (optional):'); if (n === null) return; return done(await sb.rpc('container_set_status', { p_id: c.id, p_status: 'missing', p_note: n || null })); }
+  if (a === 'retire') { const n = prompt('Why is ' + c.barcode + ' retired? (broken, scrapped…)'); if (!n) return; return done(await sb.rpc('container_set_status', { p_id: c.id, p_status: 'retired', p_note: n })); }
+  if (a === 'place') {
+    f.innerHTML = `<div class="bar"><label style="min-width:300px">Store<input id="pl-loc" list="locs" placeholder="Start typing"></label><label style="flex:1">Note (required)<input id="pl-note" placeholder="e.g. store manager confirmed by phone"></label><button class="btn primary small" id="pl-go">Save</button></div>`;
+    $('pl-loc').focus();
+    $('pl-go').onclick = async () => { const l = locByLabel($('pl-loc').value); if (!l) return alert('Pick a store from the list.'); done(await sb.rpc('container_place', { p_id: c.id, p_location: l.id, p_note: $('pl-note').value })); };
+  }
+  if (a === 'edit') {
+    f.innerHTML = `<div class="bar"><label>Type<select id="ce-type">${TYPES.map(t => `<option value="${t.id}" ${t.id === c.type_id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>
+      <label>Whose<select id="ce-cust"><option value="">—</option>${CUSTS.filter(x => !x.parent_customer_id).map(x => `<option value="${x.id}" ${x.id === c.customer_id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+      <label style="flex:1">Note<input id="ce-note" value="${esc(c.note || '')}"></label><button class="btn primary small" id="ce-go">Save</button></div>`;
+    $('ce-go').onclick = async () => done(await sb.rpc('container_edit', { p_id: c.id, p_type: $('ce-type').value, p_customer: $('ce-cust').value || null, p_note: $('ce-note').value }));
+  }
+}
+
+// Register new containers: pasted list or a numbered range
+$('al-add').onclick = () => {
+  const r = $('reg'); if (!r.hidden) { r.hidden = true; return; }
+  r.hidden = false;
+  r.innerHTML = `<div class="grid">
+      <label>Type<select id="rg-type">${TYPES.filter(t => t.active).map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label>
+      <label>Whose (optional)<select id="rg-cust"><option value="">—</option>${CUSTS.filter(c => !c.parent_customer_id).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></label>
+      <label>At PDC<select id="rg-pdc"><option value="">—</option>${PDCS.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label></div>
+    <div class="bar" style="margin-top:10px"><b>Numbered range:</b><label>Prefix<input id="rg-pre" placeholder="CG-" style="width:90px"></label><label>From<input id="rg-from" type="number" style="width:100px"></label>
+      <label>To<input id="rg-to" type="number" style="width:100px"></label><label>Digits<input id="rg-dig" type="number" min="1" max="10" placeholder="auto" style="width:80px"></label><button class="btn small" id="rg-fill" type="button">Fill the list</button></div>
+    <label style="margin-top:10px">Barcodes — one per line (or scan them in here)<textarea id="rg-list" rows="6"></textarea></label>
+    <div class="bar" style="margin-top:8px"><button class="btn primary" id="rg-go">Add containers</button><span id="rg-msg" class="mini"></span></div>`;
+  if (PDCS.length === 1) $('rg-pdc').value = PDCS[0].id;
+  const cnt = () => { const n = $('rg-list').value.split(/[\r\n,;\t]+/).map(x => x.trim()).filter(Boolean).length; $('rg-msg').textContent = n ? `${n} barcode${n === 1 ? '' : 's'}` : ''; };
+  $('rg-list').oninput = cnt;
+  $('rg-fill').onclick = () => {
+    const a = parseInt($('rg-from').value, 10), b = parseInt($('rg-to').value, 10); if (isNaN(a) || isNaN(b) || b < a) return alert('Enter a From and a To number.');
+    if (b - a > 4999) return alert('Up to 5,000 at a time.');
+    const dig = parseInt($('rg-dig').value, 10) || String(b).length, out = [];
+    for (let i = a; i <= b; i++) out.push($('rg-pre').value + String(i).padStart(dig, '0'));
+    $('rg-list').value = out.join('\n'); cnt();
+  };
+  $('rg-go').onclick = async () => {
+    const list = $('rg-list').value.split(/[\r\n,;\t]+/).map(x => x.trim()).filter(Boolean);
+    if (!list.length) return alert('Add at least one barcode.');
+    $('rg-go').disabled = true;
+    const { data, error } = await sb.rpc('container_register', { p_barcodes: list, p_type: $('rg-type').value, p_customer: $('rg-cust').value || null, p_pdc: $('rg-pdc').value || null, p_note: null });
+    $('rg-go').disabled = false;
+    if (error) { $('rg-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    $('rg-msg').innerHTML = `<span class="ok">Added ${data.added}.</span>${data.existing.length ? ` ${data.existing.length} already existed and were left as they are: ${esc(data.existing.slice(0, 12).join(', '))}${data.existing.length > 12 ? '…' : ''}` : ''}${data.bad.length ? ` <span class="error">${data.bad.length} too long (over 60 characters).</span>` : ''}`;
+    $('rg-list').value = ''; loadAll(); tiles();
+  };
+};
+
+// ── Setup ───────────────────────────────────────────────────────────
+async function drawSetup() {
+  $('su-days').value = ALERT;
+  const { data: inv } = await sb.from('container_inventory').select('type_id, n, status');
+  const used = {}; (inv || []).forEach(r => { if (r.status !== 'retired') used[r.type_id] = (used[r.type_id] || 0) + r.n; });
+  const ed = canEdit();
+  $('su-types').innerHTML = TYPES.map(t => `<tr><td>${ed ? `<input data-tn="${t.id}" value="${esc(t.name)}">` : esc(t.name)}</td>
+    <td>${ed ? `<input data-td="${t.id}" type="number" min="1" max="365" value="${t.alert_days ?? ''}" placeholder="${ALERT} (default)" style="width:120px">` : (t.alert_days ?? ALERT)}</td>
+    <td class="n">${used[t.id] || 0}</td><td>${ed ? `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" data-ta="${t.id}" ${t.active ? 'checked' : ''} style="height:auto"> Active</label>` : (t.active ? 'Active' : 'Off')}</td></tr>`).join('');
+  const upd = async (id, patch) => { const { error } = await sb.from('container_types').update(patch).eq('id', id); if (error) alert(/unique|duplicate/.test(error.message) ? 'There is already a type with that name.' : error.message); await refs(); drawSetup(); };
+  document.querySelectorAll('[data-tn]').forEach(i => i.onchange = () => i.value.trim() && upd(i.dataset.tn, { name: i.value.trim() }));
+  document.querySelectorAll('[data-td]').forEach(i => i.onchange = () => upd(i.dataset.td, { alert_days: i.value ? +i.value : null }));
+  document.querySelectorAll('[data-ta]').forEach(i => i.onchange = () => upd(i.dataset.ta, { active: i.checked }));
+  $('su-pdcs').innerHTML = PDCS.length ? PDCS.map(p => `<div class="bar" style="padding:4px 0"><b>${esc(p.name)}</b>${p.code ? ` <span class="mini">#${esc(p.code)}</span>` : ''}<span class="mini">${esc(CUSTS.find(c => c.id === p.customer_id)?.name || '')}</span>${ed ? `<button class="btn small" data-rm="${p.id}">Remove</button>` : ''}</div>`).join('')
+    : '<div class="mini">None yet. A PDC is a stop customer (usually a pickup point) — add it under Customers first if it isn\'t there.</div>';
+  document.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => { const { error } = await sb.rpc('container_set_pdc', { p_location: b.dataset.rm, p_on: false }); if (error) alert(error.message); await refs(); drawSetup(); });
+}
+$('su-days-save').onclick = async () => { const { error } = await sb.rpc('container_set_alert_days', { p_days: +$('su-days').value }); if (error) return alert(error.message); ALERT = +$('su-days').value; tiles(); alert('Saved.'); };
+$('su-tadd').onclick = async () => {
+  const n = $('su-tname').value.trim(); if (!n) return;
+  const { error } = await sb.from('container_types').insert({ name: n, sort: 100 + TYPES.length * 10 });
+  if (error) return alert(/unique|duplicate/.test(error.message) ? 'There is already a type with that name.' : error.message);
+  $('su-tname').value = ''; await refs(); drawSetup();
+};
+$('su-pdc-add').onclick = async () => {
+  const l = locByLabel($('su-pdc-q').value); if (!l) return alert('Pick a location from the list.');
+  const { error } = await sb.rpc('container_set_pdc', { p_location: l.id, p_on: true }); if (error) return alert(error.message);
+  $('su-pdc-q').value = ''; await refs(); drawSetup();
+};
+
+start();
+</script>
+</body>
+</html>

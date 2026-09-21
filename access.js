@@ -5,12 +5,12 @@
 // The database enforces all of this too; this script only keeps the screens tidy.
 (function () {
   const SCREEN_OF = {
-    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'loads.html': 'loads', 'customers.html': 'customers',
+    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
     'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users',
   };
   const NAMES = { dispatch: 'Dispatch', loads: 'Loads', customers: 'Customers', drivers: 'Drivers', equipment: 'Equipment', rates: 'Rates',
-                  invoices: 'Invoices', tolls: 'Tolls', payroll: 'Payroll', money: 'Profit (needs the money switch)', safety: 'Incidents', integrations: 'Integrations', users: 'Users' };
+                  invoices: 'Invoices', tolls: 'Tolls', payroll: 'Payroll', money: 'Profit (needs the money switch)', safety: 'Incidents', containers: 'Containers', integrations: 'Integrations', users: 'Users' };
   const page = SCREEN_OF[location.pathname.split('/').pop()] ?? null;
 
   // Until we know, money and pay stay hidden (no flash of numbers for people who shouldn't see them)
@@ -61,7 +61,7 @@
       // Every page gets the same full menu: add any standard page this page's own list left out,
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
-        ['templates.html', 'Templates'], ['loads.html', 'Loads'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
+        ['templates.html', 'Templates'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
         ['payroll.html', 'Payroll'], ['profit.html', 'Profit'], ['tolls.html', 'Tolls'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'],
         ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
         ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['driver.html', 'Driver app']];

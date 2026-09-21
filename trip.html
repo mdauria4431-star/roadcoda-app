@@ -214,7 +214,7 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 // ── Read everything the trip needs ───────────────────────────────────
 async function load() {
   const L = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, driver2_id, trip_type_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, stop_items(id, unit_type, qty_ordered, qty_delivered))')
+    .select('id, load_no, status, service_date, miles, route_miles, invoice_id, trip_sheet_at, customer_id, driver_id, truck_id, trailer_id, trailer2_id, bobtail, driver2_id, trip_type_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, address, stop_type, window_start, window_end, eta, arrived_at, departed_at, status, issue_type, issue_resolution, issue_resolved_at, late_reason, seal_no, location_id, delivery_locations(route_no, sort_code), stop_items(id, unit_type, qty_ordered, qty_delivered))')
     .eq('id', LOAD).maybeSingle();
   if (L.error || !L.data) { $('trip').innerHTML = `<div class="card empty error">${esc(L.error?.message || 'That load was not found, or it belongs to another carrier.')}</div>`; return; }
   const l = L.data;
@@ -269,6 +269,10 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    boxes: await (async () => {   // returnable containers left at each stop (63); nothing if not installed or no access
+      const r = await sb.from('container_moves').select('stop_id, kind, containers(barcode, container_types(name))').eq('load_id', LOAD).is('undone_at', null).in('kind', ['delivered', 'loaded']);
+      return r.error ? {} : (r.data || []).reduce((m, x) => { if (x.stop_id) (m[x.stop_id] ||= []).push(x); return m; }, {});
+    })(),
   };
   T.finished = l.stops.length > 0 && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
   T.locked = !!T.close?.locked_at;
@@ -285,6 +289,18 @@ async function load() {
   }
   document.title = `Load ${l.load_no} · RoadCoda`;
   draw();
+}
+// Route # and sort code of the stop's store (62)
+function routeLine(s) {
+  const d = s.delivery_locations; if (!d || (!d.route_no && !d.sort_code)) return '';
+  return `<div class="mini">${[d.route_no && 'Route ' + esc(d.route_no), d.sort_code && 'Sort ' + esc(d.sort_code)].filter(Boolean).join(' · ')}</div>`;
+}
+// Returnable containers the driver scanned at this stop (63)
+function boxLine(s) {
+  const b = (T.boxes || {})[s.id]; if (!b || !b.length) return '';
+  const by = {}; b.forEach(x => { const t = x.containers?.container_types?.name || 'Container'; (by[t] ||= []).push(x.containers?.barcode || ''); });
+  const verb = b[0].kind === 'loaded' ? 'Loaded' : 'Left';
+  return `<div class="mini" title="${esc(b.map(x => x.containers?.barcode).join(', '))}">${verb}: ${Object.entries(by).map(([t, a]) => `${a.length} ${esc(t.toLowerCase())}${a.length > 1 ? 's' : ''}`).join(', ')}</div>`;
 }
 const nameOf = (id) => id ? (id === me.id ? 'You' : (names[id] || 'Someone at the office')) : 'System';
 
@@ -463,7 +479,7 @@ function stopsHtml(edit) {
     const done = ['delivered', 'exception'].includes(s.status);
     return `<tr id="s-${s.id}">
       <td class="n">${s.seq}</td>
-      <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}</td>
+      <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}${routeLine(s)}${boxLine(s)}</td>
       <td class="n dim">${s.window_start ? hm(s.window_start) + '–' + hm(s.window_end) : hm(s.window_end) || '—'}</td>
       <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}></td>
       <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}></td>
