@@ -122,6 +122,7 @@
       <label class="sr" for="day" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Service date</label>
       <input id="day" type="date" aria-label="Service date">
       <button class="btn small" id="refresh">Refresh</button>
+      <a class="btn small" href="messages.html" id="msgs-btn">Messages</a>
       <a class="btn small" href="templates.html">Templates</a>
       <button class="btn small" id="nc-btn">+ New customer</button>
       <a class="btn small primary" href="loads.html?new=1">New load</a>
@@ -221,7 +222,7 @@ const flagHtml = (code) => {
 const DONE = ['delivered', 'exception'];
 
 // ── Hours of service ────────────────────────────────────────────────
-let HOS = {};
+let HOS = {}, UNREAD = {};
 const hmm = (m) => m == null ? '–' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 const DUTYNAME = { off: 'Off duty', sleeper: 'Sleeper', on: 'On duty', driving: 'Driving', yard: 'Yard move', personal: 'Personal conveyance', waiting: 'Waiting', unknown: 'Status unknown' };
 function hosTag(driverId) {
@@ -307,7 +308,7 @@ function rowHtml(r, day) {
     <td class="n">${esc(l.load_no)}${old}</td>
     <td class="n">${esc(l.equipment?.unit_no || '')}</td>
     <td class="n dim">${trailer}</td>
-    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (r.finished ? '' : hosTag(l.driver_id)) : '<span class="none">—</span>'}</td>
+    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (r.finished ? '' : hosTag(l.driver_id)) + (UNREAD[l.driver_id] ? `<a href="messages.html?driver=${l.driver_id}" class="hos low" style="text-decoration:none" title="${UNREAD[l.driver_id]} unread message${UNREAD[l.driver_id] > 1 ? 's' : ''} from this driver">✉ ${UNREAD[l.driver_id]}</a>` : '') : '<span class="none">—</span>'}</td>
     <td class="dim">${esc(l.customers?.name || '')}</td>
     <td><span class="ofn${r.n > 1 ? '' : ' solo'}">${r.at}/${r.n}</span>${r.shown ? esc(name) : name}</td>
     <td class="n">${pu}</td>
@@ -326,7 +327,7 @@ async function loadBoard(quiet) {
     await loadFlagDefs();
     const day = $('day').value, from = addDays(day, -LOOKBACK_DAYS);
 
-    const [loadsR, flagsR, delaysR, dwellR, closeR, trailersR, hosR] = await Promise.all([
+    const [loadsR, flagsR, delaysR, dwellR, closeR, trailersR, hosR, msgR] = await Promise.all([
       sb.from('loads')
         .select('id, load_no, status, service_date, miles, driver_id, truck_id, trailer_id, trailer2_id, bobtail, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, stop_type, window_start, window_end, eta, arrived_at, departed_at, status)')
         .gte('service_date', from).lte('service_date', day).neq('status', 'cancelled').order('load_no'),
@@ -337,7 +338,11 @@ async function loadBoard(quiet) {
       sb.from('equipment').select('id, unit_no').eq('unit_type', 'trailer'),
       // hours of service (46); a carrier without an ELD simply has none
       sb.from('driver_hos_now').select('driver_id, duty_status, age_min, stale, drive_left_min, shift_left_min, cycle_left_min, break_left_min'),
+      sb.from('message_threads').select('driver_id, unread').gt('unread', 0),
     ]);
+    UNREAD = {}; (msgR.error ? [] : msgR.data || []).forEach(m => UNREAD[m.driver_id] = m.unread);
+    const totalUnread = Object.values(UNREAD).reduce((a, b) => a + b, 0);
+    $('msgs-btn').innerHTML = totalUnread ? `Messages <b style="margin-left:4px;color:var(--late)">${totalUnread}</b>` : 'Messages';
     HOS = {}; (hosR.error ? [] : hosR.data || []).forEach(h => HOS[h.driver_id] = h);
     if (loadsR.error) { $('board').innerHTML = `<tr><td colspan="11" class="error">${esc(loadsR.error.message)}</td></tr>`; return; }
     const missing = [flagsR, delaysR, dwellR, closeR].find(r => r.error);

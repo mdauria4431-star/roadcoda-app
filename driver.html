@@ -92,6 +92,18 @@
   .payline .amt.neg{color:var(--late)}
   .paytot{display:flex;justify-content:space-between;padding:6px 0;font-size:17px}
   .paytot.net{font-weight:700;font-size:20px;border-top:2px solid var(--line);margin-top:6px;padding-top:10px}
+  /* Messages */
+  .badge-n{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:11px;background:var(--late);color:#fff;font-size:13px;font-weight:700;padding:0 6px;margin-left:6px}
+  .msgpop{border:2px solid var(--accent);background:#eef6f6}
+  .msgpop .mm{padding:8px 0;border-bottom:1px solid var(--line);font-size:17px;line-height:1.4}
+  .msgpop .mm:last-of-type{border-bottom:0}
+  .thread{display:flex;flex-direction:column;gap:8px}
+  .bub{max-width:85%;padding:10px 13px;border-radius:14px;font-size:17px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}
+  .bub.them{align-self:flex-start;background:var(--surface);border:1px solid var(--line)}
+  .bub.me{align-self:flex-end;background:#dcefee;border:1px solid #b7dcda}
+  .bub .meta{font-size:13px;color:var(--muted);margin-top:3px}
+  .quick{display:flex;gap:8px;flex-wrap:wrap}
+  .quick .btn{flex:1 1 140px}
 </style>
 </head>
 <body>
@@ -181,6 +193,7 @@
   <section id="app" hidden style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;align-items:center;gap:10px">
       <h1 style="flex-grow:1">Today's stops</h1>
+      <button class="btn" id="msg-btn" style="min-height:44px">Messages<span class="badge-n" id="msg-n" hidden></span></button>
       <button class="btn" id="pay-btn" style="min-height:44px">My pay</button>
       <button class="btn" id="refresh" style="min-height:44px">Refresh</button>
     </div>
@@ -194,12 +207,28 @@
       </div>
       <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn primary" id="a2hs-btn" hidden>Add to home screen</button><button class="btn primary" id="handoff-btn" hidden>I added it: get app code</button><button class="btn" id="a2hs-later">Later</button></div>
     </div>
+    <div id="msg-pop" class="card msgpop" hidden role="alert" aria-live="assertive">
+      <b>Message from dispatch</b>
+      <div id="msg-pop-list"></div>
+      <div class="row"><button class="btn primary" id="msg-pop-ok">Got it</button><button class="btn" id="msg-pop-reply">Reply</button></div>
+    </div>
     <div id="devbar" class="card" hidden style="display:flex;align-items:center;gap:10px;padding:10px 14px">
       <div style="flex:1"><b id="devbar-unit"></b> · <span id="devbar-name"></span></div>
       <button class="btn" id="switch-btn" type="button" style="min-height:44px">Switch driver</button>
     </div>
     <div id="stops"></div>
     <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
+  </section>
+
+  <section id="msg-view" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h1 style="flex-grow:1">Messages</h1>
+      <button class="btn" id="msg-back" style="min-height:44px">Back to stops</button>
+    </div>
+    <div class="card"><div class="thread" id="thread"><div class="meta">Loading…</div></div></div>
+    <div class="quick" id="quick"></div>
+    <div class="row" style="margin-top:0"><input id="msg-text" maxlength="1000" placeholder="Type a message" autocomplete="off" style="flex:1 1 200px"><button class="btn primary" id="msg-send" style="flex:0 0 auto">Send</button></div>
+    <div class="meta">Messages go to your dispatcher. While the truck is moving the app is locked — messages wait and chime; read and reply when stopped.</div>
   </section>
 
   <section id="pay-view" hidden style="display:flex;flex-direction:column;gap:14px">
@@ -330,6 +359,7 @@ async function start() {
   if (!devNow) homeScreenPrompt();
   watchMotion();
   loadStops();
+  startMessages();
 }
 $('login-btn').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
@@ -430,7 +460,7 @@ $('pair-btn').onclick = async () => {
   $('pair-btn').disabled = false;
 };
 $('paircode').onkeydown = (e) => { if (e.key === 'Enter') $('pair-btn').click(); };
-function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'device-view', 'app', 'pay-view'].forEach(id => $(id).hidden = true); }
+function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'device-view', 'app', 'pay-view', 'msg-view'].forEach(id => $(id).hidden = true); }
 async function fnCall(body) {
   const { data, error } = await sb.functions.invoke('driver-login', { body });
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
@@ -719,6 +749,7 @@ async function act(btn) {
   if (error) { alert(error.message); btn.disabled = false; return; }
   if (ev !== 'arrive') kickNotices();
   loadStops();
+  if (ev === 'arrive') checkMessages(true);   // stopped at the dock: show anything that waited
 }
 
 // ---------- Barcode scanning (phone camera) ----------
@@ -806,6 +837,71 @@ setInterval(() => {
   const openForm = [...document.querySelectorAll('details')].some(d => d.open) || [...document.querySelectorAll('.issue')].some(d => !d.hidden);
   if (!busy && !openForm && $('scanner').hidden && !$('app').hidden) loadStops();
 }, 60000);
+// ---------- Messages ----------
+// The phone asks for messages every 15 seconds. A new one from dispatch
+// chimes; while the truck is moving it WAITS (the app is locked anyway) and
+// pops up once stopped, or the moment the driver taps Arrived.
+const QUICK = ['OK', 'On my way', 'Running late', 'At the dock', 'Waiting to unload', 'Call me'];
+let MSGS = [], seenIds = new Set(), msgTimer = null, msgReady = false;
+const moving = () => !$('lock').hidden;
+function chime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1175].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.18); g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + i * 0.18 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.18 + 0.16); o.start(ctx.currentTime + i * 0.18); o.stop(ctx.currentTime + i * 0.18 + 0.18); });
+    if (navigator.vibrate) navigator.vibrate([120, 80, 120]);
+  } catch (_) {}
+}
+async function checkMessages(showNow) {
+  if (!me) return;
+  const { data, error } = await sb.rpc('driver_messages', { p_since: null });
+  if (error) { $('msg-btn').hidden = /function|schema cache/.test(error.message); return; }   // before 54: no Messages button
+  MSGS = data || [];
+  const unseen = MSGS.filter(m => !m.from_driver && !m.read_at);
+  const fresh = unseen.filter(m => !seenIds.has(m.id));
+  fresh.forEach(m => seenIds.add(m.id));
+  if (fresh.length && msgReady) chime();
+  msgReady = true;
+  $('msg-n').hidden = !unseen.length; $('msg-n').textContent = unseen.length;
+  if (!$('msg-view').hidden) return drawThread();
+  // stopped (or just tapped Arrived): show what's waiting
+  if (unseen.length && !moving() && (showNow || !$('app').hidden)) {
+    $('msg-pop-list').innerHTML = unseen.map(m => `<div class="mm">${m.load_no ? `<span class="meta">Load ${esc(m.load_no)} · </span>` : ''}${esc(m.body)}<div class="meta">${esc(m.sender)} · ${time(m.created_at)}</div></div>`).join('');
+    $('msg-pop').hidden = false;
+  } else if (!unseen.length) $('msg-pop').hidden = true;
+}
+async function markSeen() { await sb.rpc('driver_messages_read'); $('msg-pop').hidden = true; checkMessages(); }
+$('msg-pop-ok').onclick = markSeen;
+$('msg-pop-reply').onclick = () => { markSeen(); openMessages(); };
+function openMessages() {
+  $('app').hidden = true; $('pay-view').hidden = true; $('msg-view').hidden = false; window.scrollTo(0, 0);
+  $('quick').innerHTML = QUICK.map(q => `<button class="btn" data-q="${esc(q)}">${esc(q)}</button>`).join('');
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => sendMsg(b.dataset.q, true));
+  drawThread(); sb.rpc('driver_messages_read').then(() => checkMessages());
+}
+function drawThread() {
+  $('thread').innerHTML = MSGS.map(m => `<div class="bub ${m.from_driver ? 'me' : 'them'}">${m.load_no ? `<div class="meta">Load ${esc(m.load_no)}</div>` : ''}${esc(m.body)}
+    <div class="meta">${esc(m.sender)} · ${new Date(m.created_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</div></div>`).join('')
+    || '<div class="meta">No messages yet. Messages from dispatch show here.</div>';
+  window.scrollTo(0, document.body.scrollHeight);
+}
+async function sendMsg(text, quick) {
+  const body = (text ?? $('msg-text').value).trim(); if (!body) return;
+  if (moving()) { alert('Stop the truck first — you can send when stopped.'); return; }
+  $('msg-send').disabled = true;
+  const { error } = await sb.rpc('driver_message', { p_body: body, p_load: null, p_quick: !!quick });
+  $('msg-send').disabled = false;
+  if (error) { alert(error.message); return; }
+  if (!quick) $('msg-text').value = '';
+  checkMessages();
+}
+$('msg-btn').onclick = openMessages;
+$('msg-back').onclick = () => { $('msg-view').hidden = true; $('app').hidden = false; loadStops(); };
+$('msg-send').onclick = () => sendMsg();
+$('msg-text').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); sendMsg(); } };
+function startMessages() { if (msgTimer) return; checkMessages(); msgTimer = setInterval(() => { if (!document.hidden) checkMessages(); }, 15000); }
+
 // ---------- My pay ----------
 // Only this driver's own lines, from the database's my_pay functions. No rates,
 // no other drivers, no customer prices. Approved weeks are final; this week and

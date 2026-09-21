@@ -222,7 +222,7 @@ async function load() {
   l.stops.forEach(s => (s.stop_items || []).sort((a, b) => a.unit_type.localeCompare(b.unit_type)));
   const stopIds = l.stops.map(s => s.id);
 
-  const [checks, delays, dwell, close, pods, drivers, units, eld, changes, closeLog, delayLog, codes, ourCodes, carrier, acts, actTypes, hos] = await Promise.all([
+  const [checks, delays, dwell, close, pods, drivers, units, eld, changes, closeLog, delayLog, codes, ourCodes, carrier, acts, actTypes, hos, msgs] = await Promise.all([
     sb.from('load_checks').select('code, label, blocks, severity, detail, rank, sort, stop_id').eq('load_id', LOAD),
     sb.from('stop_delays').select('stop_id, kind, free_min, over_min, delay_code_id, customer_code_id, billed_min, billable, waived, settled_at, note').eq('load_id', LOAD),
     sb.from('live_stop_dwell').select('stop_id, on_site_min, free_min, over_min').eq('load_id', LOAD),
@@ -240,6 +240,7 @@ async function load() {
     sb.from('load_activities').select('id, stop_id, activity_type_id, qty, amount, note, created_by, created_at').eq('load_id', LOAD).order('created_at'),
     sb.from('activity_types').select('id, name, unit, is_deduction, pay_source, pays_driver, bills_customer, active, sort').eq('pay_source', 'recorded').eq('active', true).order('sort'),
     sb.from('driver_hos_now').select('driver_id, duty_status, age_min, stale, drive_left_min, shift_left_min, cycle_left_min, break_left_min'),
+    sb.from('messages').select('id, from_driver, body, created_at, delivered_at, read_at').eq('load_id', LOAD).order('created_at'),
   ]);
   // Money: only for users with the money switch (the database refuses everyone else anyway)
   let margin = null, unitMargin = [];
@@ -265,6 +266,7 @@ async function load() {
     theirCodes: codes?.data || [], ourCodes: ourCodes?.data || [], carrier: carrier?.data || {},
     acts: acts?.error ? null : (acts?.data || []), actTypes: actTypes?.data || [],
     margin, unitMargin,
+    msgs: msgs?.error ? null : (msgs?.data || []),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
   };
   T.finished = l.stops.length > 0 && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
@@ -344,6 +346,7 @@ function draw() {
 
   html += closeoutHtml(edit);
   html += stopsHtml(edit);
+  html += messagesHtml();
   html += payItemsHtml(edit);
   html += marginHtml();
   html += logHtml();
@@ -470,6 +473,18 @@ function stopsHtml(edit) {
   return `<div class="card"><header><h2>Stops</h2><span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th><th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="10" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>`;
+}
+
+// ── Messages about this load (54) ────────────────────────────────────
+function messagesHtml() {
+  if (T.msgs === null || !T.l.driver_id) return '';
+  const hmm = (t) => new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const canSend = !ACC() || ACC().can('dispatch', 'edit');
+  const rows = T.msgs.map(m => `<div class="chk" data-s="ok" style="padding:6px 16px;${m.from_driver ? '' : 'justify-content:flex-end;text-align:right'}">
+      <div class="t" style="flex:0 1 70%"><b style="font-weight:500">${esc(m.body)}</b><span class="d">${m.from_driver ? esc(T.l.drivers?.full_name || 'Driver') : 'Office'} · ${hmm(m.created_at)}${m.from_driver ? '' : m.read_at ? ' · seen' : m.delivered_at ? ' · not seen yet' : ' · waiting for the phone'}</span></div></div>`).join('');
+  return `<div class="card"><header><h2>Messages about this load</h2><span class="sp"></span><a class="mini" href="messages.html?driver=${T.l.driver_id}">All messages with ${esc(T.l.drivers?.full_name || 'the driver')}</a></header>
+    ${rows || '<div class="empty">No messages about this load yet.</div>'}
+    ${canSend && !T.finished ? `<div class="acts" style="padding-top:12px"><input id="msg-text" maxlength="1000" placeholder="Message ${esc(T.l.drivers?.full_name || 'the driver')} about this load…"><button class="btn small primary" id="msg-send">Send</button><span class="mini">While the truck is moving the driver hears a chime and reads it when stopped.</span></div>` : ''}</div>`;
 }
 
 // ── Cost and margin (money switch only) ─────────────────────────────
@@ -660,6 +675,18 @@ function wire(edit) {
     if (error) return fail(error);
     window.open(data.signedUrl, '_blank', 'noopener');
   });
+
+  // Messages
+  if ($('msg-send')) {
+    const send = async () => {
+      const body = $('msg-text').value.trim(); if (!body) return;
+      const { error } = await sb.rpc('message_driver', { p_driver: T.l.driver_id, p_body: body, p_load: T.l.id });
+      if (error) return fail(error);
+      toast('Sent'); load();
+    };
+    $('msg-send').onclick = send;
+    $('msg-text').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } };
+  }
 
   // Pay items
   if ($('pi-type')) {
