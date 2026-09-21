@@ -80,6 +80,18 @@
   .lock b{font-family:Archivo,sans-serif;font-size:28px}
   .ios-first{padding:12px 14px;background:#fff8e6;border:1px solid #e6c77a;border-radius:10px;line-height:1.5;font-size:15px}
   .ios-first ol{margin:6px 0 0;padding-left:20px}
+  /* My pay */
+  .wkpick{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+  .wkpick button{flex:0 0 auto;min-height:52px;padding:6px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:15px;text-align:left;line-height:1.25}
+  .wkpick button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .wkpick small{display:block;color:var(--muted);font-size:13px}
+  .payline{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .payline:last-child{border-bottom:0}
+  .payline .w{flex:1;min-width:0}
+  .payline .amt{font-family:'IBM Plex Mono',monospace;font-weight:600;white-space:nowrap}
+  .payline .amt.neg{color:var(--late)}
+  .paytot{display:flex;justify-content:space-between;padding:6px 0;font-size:17px}
+  .paytot.net{font-weight:700;font-size:20px;border-top:2px solid var(--line);margin-top:6px;padding-top:10px}
 </style>
 </head>
 <body>
@@ -169,6 +181,7 @@
   <section id="app" hidden style="display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;align-items:center;gap:10px">
       <h1 style="flex-grow:1">Today's stops</h1>
+      <button class="btn" id="pay-btn" style="min-height:44px">My pay</button>
       <button class="btn" id="refresh" style="min-height:44px">Refresh</button>
     </div>
     <div id="a2hs" class="card" hidden style="border-color:#e6c77a;background:#fff8e6">
@@ -187,6 +200,16 @@
     </div>
     <div id="stops"></div>
     <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
+  </section>
+
+  <section id="pay-view" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <h1 style="flex-grow:1">My pay</h1>
+      <button class="btn" id="pay-back" style="min-height:44px">Back to stops</button>
+    </div>
+    <div class="wkpick" id="pay-weeks"></div>
+    <div class="card" id="pay-body"><div class="meta">Loading…</div></div>
+    <div class="meta">Your pay before taxes. Taxes and withholding come off in payroll. Questions about a line? Call the office.</div>
   </section>
 </main>
 
@@ -407,7 +430,7 @@ $('pair-btn').onclick = async () => {
   $('pair-btn').disabled = false;
 };
 $('paircode').onkeydown = (e) => { if (e.key === 'Enter') $('pair-btn').click(); };
-function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'device-view', 'app'].forEach(id => $(id).hidden = true); }
+function hideAll() { ['login-view', 'pw-view', 'link-view', 'card-view', 'setpin-view', 'device-view', 'app', 'pay-view'].forEach(id => $(id).hidden = true); }
 async function fnCall(body) {
   const { data, error } = await sb.functions.invoke('driver-login', { body });
   if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
@@ -783,6 +806,47 @@ setInterval(() => {
   const openForm = [...document.querySelectorAll('details')].some(d => d.open) || [...document.querySelectorAll('.issue')].some(d => !d.hidden);
   if (!busy && !openForm && $('scanner').hidden && !$('app').hidden) loadStops();
 }, 60000);
+// ---------- My pay ----------
+// Only this driver's own lines, from the database's my_pay functions. No rates,
+// no other drivers, no customer prices. Approved weeks are final; this week and
+// last week show "so far" until the office approves them.
+const payMoney = (n) => (Number(n) < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const payDay = (d) => new Date(d + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
+let payWeeks = [], payWeek = null;
+$('pay-btn').onclick = async () => {
+  $('app').hidden = true; $('pay-view').hidden = false; window.scrollTo(0, 0);
+  $('pay-weeks').innerHTML = ''; $('pay-body').innerHTML = '<div class="meta">Loading…</div>';
+  const { data, error } = await sb.rpc('my_pay_weeks');
+  if (error) { $('pay-body').innerHTML = `<div class="meta">${esc(/function|schema cache/.test(error.message) ? 'Pay is not switched on yet. Ask the office.' : error.message)}</div>`; return; }
+  payWeeks = (data || []).sort((a, b) => b.starts_on.localeCompare(a.starts_on));
+  if (!payWeeks.length) { $('pay-body').innerHTML = '<div class="meta">No pay to show yet.</div>'; return; }
+  payWeek = payWeek && payWeeks.some(w => w.starts_on === payWeek) ? payWeek : payWeeks[0].starts_on;
+  drawPayWeeks(); loadPayWeek();
+};
+$('pay-back').onclick = () => { $('pay-view').hidden = true; $('app').hidden = false; loadStops(); };
+function drawPayWeeks() {
+  $('pay-weeks').innerHTML = payWeeks.map(w => `<button data-w="${w.starts_on}" class="${w.starts_on === payWeek ? 'on' : ''}">
+      ${payDay(w.starts_on)} – ${payDay(w.ends_on)}<small>${w.final ? payMoney(w.net) : 'so far ' + payMoney(w.net)}</small></button>`).join('');
+  document.querySelectorAll('#pay-weeks button').forEach(b => b.onclick = () => { payWeek = b.dataset.w; drawPayWeeks(); loadPayWeek(); });
+}
+async function loadPayWeek() {
+  $('pay-body').innerHTML = '<div class="meta">Loading…</div>';
+  const { data, error } = await sb.rpc('my_pay', { p_from: payWeek });
+  if (error) { $('pay-body').innerHTML = `<div class="meta">${esc(error.message)}</div>`; return; }
+  const ls = data || [];
+  const gross = ls.filter(x => !x.is_deduction).reduce((a, x) => a + +x.amount, 0);
+  const ded = ls.filter(x => x.is_deduction).reduce((a, x) => a + +x.amount, 0);
+  const final = ls.length ? ls[0].final : !!payWeeks.find(w => w.starts_on === payWeek)?.final;
+  $('pay-body').innerHTML = `
+    <div class="meta" style="margin-bottom:6px">${final ? '<b style="color:var(--ok)">Approved</b> — this is what you were paid.' : '<b>Not final yet</b> — the office checks every trip before payday.'}</div>
+    ${ls.map(x => `<div class="payline"><div class="w"><b>${esc(x.pay_type)}</b>${x.qty != null ? ` · ${Number(x.qty).toLocaleString()}` : ''}
+        <div class="meta">${payDay(x.work_date)}${x.load_no ? ' · Load ' + esc(x.load_no) : ''}${x.detail ? ' · ' + esc(x.detail) : ''}${x.earlier_week ? ' · from an earlier week' : ''}</div></div>
+        <div class="amt ${x.amount < 0 ? 'neg' : ''}">${payMoney(x.amount)}</div></div>`).join('') || '<div class="meta">Nothing yet this week.</div>'}
+    <div class="paytot" style="margin-top:8px"><span>Gross</span><span>${payMoney(gross)}</span></div>
+    ${ded ? `<div class="paytot"><span>Deductions</span><span style="color:var(--late)">${payMoney(ded)}</span></div>` : ''}
+    <div class="paytot net"><span>Before taxes</span><span>${payMoney(gross + ded)}</span></div>`;
+}
+
 start();
 </script>
 </body>

@@ -240,6 +240,16 @@ async function load() {
     sb.from('load_activities').select('id, stop_id, activity_type_id, qty, amount, note, created_by, created_at').eq('load_id', LOAD).order('created_at'),
     sb.from('activity_types').select('id, name, unit, is_deduction, pay_source, pays_driver, bills_customer, active, sort').eq('pay_source', 'recorded').eq('active', true).order('sort'),
   ]);
+  // Money: only for users with the money switch (the database refuses everyone else anyway)
+  let margin = null, unitMargin = [];
+  if (!ACC() || ACC().money) {
+    const [m, u] = await Promise.all([
+      sb.rpc('load_margin', { p_from: l.service_date, p_to: l.service_date }),
+      sb.rpc('load_unit_margin', { p_load: LOAD }),
+    ]);
+    if (!m.error) margin = (m.data || []).find(x => x.load_id === LOAD) || null;
+    if (!u.error) unitMargin = u.data || [];
+  }
   const firstErr = [checks, delays, dwell, close, changes, closeLog].find(r => r.error);
   if (firstErr) { $('trip').innerHTML = `<div class="card empty error">${esc(firstErr.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql first.</div>`; return; }
 
@@ -253,6 +263,7 @@ async function load() {
     changes: changes.data || [], closeLog: closeLog.data || [], delayLog: delayLog.data || [],
     theirCodes: codes?.data || [], ourCodes: ourCodes?.data || [], carrier: carrier?.data || {},
     acts: acts?.error ? null : (acts?.data || []), actTypes: actTypes?.data || [],
+    margin, unitMargin,
   };
   T.finished = l.stops.length > 0 && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
   T.locked = !!T.close?.locked_at;
@@ -320,6 +331,7 @@ function draw() {
   html += closeoutHtml(edit);
   html += stopsHtml(edit);
   html += payItemsHtml(edit);
+  html += marginHtml();
   html += logHtml();
   $('trip').innerHTML = html;
   wire(edit);
@@ -445,6 +457,29 @@ function stopsHtml(edit) {
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th><th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="10" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>`;
 }
+
+// ── Cost and margin (money switch only) ─────────────────────────────
+function marginHtml() {
+  const m = T.margin; if (!m) return '';
+  const $$ = (n) => (n < 0 ? '−$' : '$') + Math.abs(Number(n || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const line = (k, v, note, bold) => `<div class="chk" data-s="ok" style="padding:6px 16px"><div class="t"><b style="${bold ? '' : 'font-weight:500;color:var(--muted)'}">${k}</b>${note ? `<span class="d">${note}</span>` : ''}</div><span class="n"${bold ? ' style="font-weight:600"' : ''}>${v}</span></div>`;
+  const good = m.margin >= 0;
+  const u = T.unitMargin.map(x => `<tr><td class="n">${x.stop_seq}</td><td>${esc(x.consignee)}</td><td>${esc(x.unit_type)}</td><td class="n" style="text-align:right">${num(x.qty)}</td>
+      <td class="n" style="text-align:right">${$$(x.billed_per_unit)}</td><td class="n" style="text-align:right">${$$(x.cost_per_unit)}</td>
+      <td class="n" style="text-align:right;color:${x.margin_per_unit >= 0 ? 'var(--ok)' : 'var(--late)'}">${$$(x.margin_per_unit)}</td>
+      <td class="n dim" style="text-align:right">${$$(x.margin)}</td></tr>`).join('');
+  return `<div class="card money"><header><h2>Cost &amp; margin</h2><span class="sp"></span>
+      <span class="chip ${good ? 'ok' : 'bad'}">${$$(m.margin)} · ${m.margin_pct ?? '—'}%</span></header>
+    ${line('Billed', $$(m.billed), `linehaul ${$$(m.linehaul)} · fuel ${$$(m.fuel_surcharge)}${+m.extras ? ' · extras ' + $$(m.extras) : ''}`, true)}
+    ${line('Driver pay', $$(m.driver_pay), esc(m.pay_basis))}
+    ${+m.fuel ? line('Fuel', $$(m.fuel)) : ''}${+m.tolls ? line('Tolls', $$(m.tolls)) : ''}${+m.other_costs ? line('Other costs', $$(m.other_costs)) : ''}
+    ${line('Equipment &amp; overhead', $$(m.equipment), `${num(m.miles)} mi at the carrier's per-mile rates`)}
+    ${line('Margin', $$(m.margin), `cost ${$$(m.cost)}`, true)}
+    ${u ? `<div class="boardwrap" style="border-top:1px solid var(--line-soft)"><table class="stops" style="min-width:720px"><thead><tr><th>#</th><th>Delivered to</th><th>Unit</th><th style="text-align:right">Qty</th><th style="text-align:right">Billed / unit</th><th style="text-align:right">Cost / unit</th><th style="text-align:right">Margin / unit</th><th style="text-align:right">Line margin</th></tr></thead><tbody>${u}</tbody></table></div>
+      <div class="mini" style="padding:8px 16px 12px">The load's cost and extras are spread over its units by what each line billed, so the lines add back up to the load.</div>` : ''}
+  </div>`;
+}
+const num = (n) => n == null ? '' : Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 // ── Pay items: what dispatch records for payroll (and billing) ─────
 function payItemsHtml(edit) {
