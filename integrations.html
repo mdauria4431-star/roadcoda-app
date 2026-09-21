@@ -108,6 +108,15 @@
         <tbody id="veh-body"></tbody></table></div>
       <p class="hint" id="unmatched"></p>
     </section>
+
+    <section class="card" id="drv-card" hidden>
+      <h2>Drivers and ELD drivers</h2>
+      <p class="hint">For hours of service on the dispatch board. RoadCoda matches ELD drivers to your drivers by CDL number, then email, then phone, then an exact name. Fix any that are wrong or missing here. Samsara keys need the <b>Read ELD Compliance Settings (US)</b> permission for hours.</p>
+      <div class="tablewrap" style="margin-top:10px"><table>
+        <thead><tr><th>ELD</th><th>Driver in the ELD</th><th>License</th><th>RoadCoda driver</th><th>Hours left</th></tr></thead>
+        <tbody id="drv-body"></tbody></table></div>
+      <p class="hint" id="drv-unmatched"></p>
+    </section>
   </div>
 </main>
 
@@ -170,7 +179,7 @@ async function load() {
   ]);
   if (a.error) { $('cards').innerHTML = `<div class="card error">${esc(a.error.message)}. Run 30_integrations.sql in the Supabase SQL Editor first.</div>`; return; }
   rows = a.data || []; trucks = t.data || [];
-  renderCards(); renderPcm(); await renderVehicles();
+  renderCards(); renderPcm(); await renderVehicles(); await renderDrivers();
 }
 
 function renderCards() {
@@ -275,6 +284,39 @@ async function renderVehicles() {
   const loose = trucks.filter(t => !matched.has(t.id) && t.unit_type !== 'trailer');
   $('unmatched').textContent = loose.length ? `Trucks with no ELD vehicle: ${loose.map(t => t.unit_no).join(', ')}.` : 'Every truck is matched to an ELD vehicle.';
 }
+async function renderDrivers() {
+  const anyEld = rows.some(r => r.kind === 'eld' && r.status !== 'disconnected');
+  $('drv-card').hidden = !anyEld;
+  if (!anyEld) return;
+  const [e, d, h] = await Promise.all([
+    sb.from('eld_drivers').select('id, provider, name, license_number, license_state, driver_id, match_how').order('provider').order('name'),
+    sb.from('drivers').select('id, full_name, active').eq('active', true).order('full_name'),
+    sb.from('driver_hos_now').select('driver_id, duty_status, age_min, stale, drive_left_min, shift_left_min, cycle_left_min'),
+  ]);
+  if (e.error) { $('drv-card').hidden = true; return; }        // before 46_driver_hos.sql
+  const live = new Set(rows.filter(r => r.status !== 'disconnected').map(r => r.provider));
+  const list = (e.data || []).filter(x => live.has(x.provider));
+  const drivers = d.data || [], H = new Map((h.data || []).map(x => [x.driver_id, x]));
+  const hm = (m) => m == null ? '–' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+  const opts = (sel) => '<option value="">Not matched</option>' + drivers.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.full_name)}</option>`).join('');
+  const HOW = { license: 'CDL number', email: 'email', phone: 'phone', name: 'name', manual: 'hand' };
+  $('drv-body').innerHTML = list.length ? list.map(x => {
+    const k = x.driver_id && H.get(x.driver_id);
+    return `<tr><td>${esc(PROVIDERS.find(q => q.id === x.provider)?.name || x.provider)}</td><td>${esc(x.name || '(no name)')}</td>
+      <td class="mono">${esc([x.license_state, x.license_number].filter(Boolean).join(' '))}</td>
+      <td><select data-drv="${x.id}" aria-label="RoadCoda driver for ${esc(x.name || '')}">${opts(x.driver_id)}</select>${x.match_how ? `<div class="hint">matched by ${HOW[x.match_how] || x.match_how}</div>` : ''}</td>
+      <td>${k ? `<span class="mono">drive ${hm(k.drive_left_min)} · shift ${hm(k.shift_left_min)} · cycle ${hm(k.cycle_left_min)}</span><br><span class="hint">${esc(k.duty_status)} · ${k.age_min} min ago${k.stale ? ' (not current)' : ''}</span>` : '<span class="hint">–</span>'}</td></tr>`;
+  }).join('') : '<tr><td colspan="5" class="hint">No ELD drivers yet. Click Sync now.</td></tr>';
+  const matched = new Set(list.map(x => x.driver_id).filter(Boolean));
+  const loose = drivers.filter(t => !matched.has(t.id));
+  $('drv-unmatched').textContent = loose.length ? `Drivers with no ELD match: ${loose.map(t => t.full_name).join(', ')}`.replace(/\.?$/, '.') : 'Every active driver is matched to the ELD.';
+}
+$('drv-body').onchange = async (ev) => {
+  const s = ev.target.closest('select[data-drv]'); if (!s) return;
+  const { error } = await sb.rpc('set_eld_driver_match', { p_eld_driver: s.dataset.drv, p_driver: s.value || null });
+  if (error) { alert(error.message); }
+  await renderDrivers();
+};
 $('veh-body').onchange = async (ev) => {
   const s = ev.target.closest('select[data-veh]'); if (!s) return;
   const { error } = await sb.rpc('set_eld_vehicle_match', { p_eld_vehicle: s.dataset.veh, p_equipment: s.value || null });

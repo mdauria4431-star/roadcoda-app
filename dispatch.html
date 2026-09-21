@@ -76,6 +76,12 @@
   .flag.on{border-color:color-mix(in srgb,var(--late) 55%,var(--line));color:var(--late);background:color-mix(in srgb,var(--late) 14%,transparent)}
   .flag.warn{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
   .empty{padding:26px 16px;color:var(--muted);text-align:center}
+  /* Hours of service next to the driver: the lowest of drive, shift and cycle left */
+  .hos{display:inline-block;margin-left:6px;padding:0 5px;border-radius:5px;font-family:var(--mono);font-size:11px;font-weight:600;
+    border:1px solid var(--line);color:var(--muted);background:var(--panel-2);vertical-align:1px}
+  .hos.low{color:var(--late);border-color:color-mix(in srgb,var(--late) 55%,var(--line));background:color-mix(in srgb,var(--late) 12%,transparent)}
+  .hos.mid{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
+  .hos.old{opacity:.55;border-style:dashed}
 
   .legend{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:9px 2px 0}
   .legend .lgl{font-family:var(--ui);font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
@@ -214,6 +220,21 @@ const flagHtml = (code) => {
 
 const DONE = ['delivered', 'exception'];
 
+// ── Hours of service ────────────────────────────────────────────────
+let HOS = {};
+const hmm = (m) => m == null ? '–' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+const DUTYNAME = { off: 'Off duty', sleeper: 'Sleeper', on: 'On duty', driving: 'Driving', yard: 'Yard move', personal: 'Personal conveyance', waiting: 'Waiting', unknown: 'Status unknown' };
+function hosTag(driverId) {
+  const h = HOS[driverId]; if (!h) return '';
+  const left = [h.drive_left_min, h.shift_left_min, h.cycle_left_min].filter(x => x != null);
+  if (!left.length) return '';
+  const low = Math.min(...left);
+  const cls = h.stale ? 'old' : low < 60 ? 'low' : low < 120 ? 'mid' : '';
+  const tip = `${DUTYNAME[h.duty_status] || h.duty_status} · drive ${hmm(h.drive_left_min)} · shift ${hmm(h.shift_left_min)} · cycle ${hmm(h.cycle_left_min)}` +
+    (h.break_left_min != null ? ` · break due in ${hmm(h.break_left_min)}` : '') + ` · from the ELD ${h.age_min} min ago${h.stale ? ' — not current' : ''}`;
+  return `<span class="hos ${cls}" title="${esc(tip)}">${hmm(low)}</span>`;
+}
+
 // Work out one load's row: where it is, how it's doing, which band it sits in.
 function describe(l, ctx) {
   const stops = (l.stops || []).slice().sort((a, b) => a.seq - b.seq);
@@ -286,7 +307,7 @@ function rowHtml(r, day) {
     <td class="n">${esc(l.load_no)}${old}</td>
     <td class="n">${esc(l.equipment?.unit_no || '')}</td>
     <td class="n dim">${trailer}</td>
-    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) : '<span class="none">—</span>'}</td>
+    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (r.finished ? '' : hosTag(l.driver_id)) : '<span class="none">—</span>'}</td>
     <td class="dim">${esc(l.customers?.name || '')}</td>
     <td><span class="ofn${r.n > 1 ? '' : ' solo'}">${r.at}/${r.n}</span>${r.shown ? esc(name) : name}</td>
     <td class="n">${pu}</td>
@@ -305,7 +326,7 @@ async function loadBoard(quiet) {
     await loadFlagDefs();
     const day = $('day').value, from = addDays(day, -LOOKBACK_DAYS);
 
-    const [loadsR, flagsR, delaysR, dwellR, closeR, trailersR] = await Promise.all([
+    const [loadsR, flagsR, delaysR, dwellR, closeR, trailersR, hosR] = await Promise.all([
       sb.from('loads')
         .select('id, load_no, status, service_date, miles, driver_id, truck_id, trailer_id, customers(name), drivers(full_name), equipment(unit_no, unit_type), stops(id, seq, consignee, stop_type, window_start, window_end, eta, arrived_at, departed_at, status)')
         .gte('service_date', from).lte('service_date', day).neq('status', 'cancelled').order('load_no'),
@@ -314,7 +335,10 @@ async function loadBoard(quiet) {
       sb.from('live_stop_dwell').select('load_id, stop_id, on_site_min, free_min, over_min'),
       sb.from('load_closeout').select('load_id, dispatch_at, billing_at, locked_at'),
       sb.from('equipment').select('id, unit_no').eq('unit_type', 'trailer'),
+      // hours of service (46); a carrier without an ELD simply has none
+      sb.from('driver_hos_now').select('driver_id, duty_status, age_min, stale, drive_left_min, shift_left_min, cycle_left_min, break_left_min'),
     ]);
+    HOS = {}; (hosR.error ? [] : hosR.data || []).forEach(h => HOS[h.driver_id] = h);
     if (loadsR.error) { $('board').innerHTML = `<tr><td colspan="11" class="error">${esc(loadsR.error.message)}</td></tr>`; return; }
     const missing = [flagsR, delaysR, dwellR, closeR].find(r => r.error);
     if (missing) { $('board').innerHTML = `<tr><td colspan="11" class="error">${esc(missing.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql in the SQL Editor.</td></tr>`; return; }
@@ -368,6 +392,7 @@ async function loadBoard(quiet) {
     $('legend').innerHTML = '<span class="lgl">Flags</span>' +
       Object.values(FLAGDEF).map(f => `<span class="li">${flagHtml(f.code)}${esc(f.label)}</span>`).join('') +
       '<span class="li"><span class="flag" style="border-color:transparent;background:none;color:var(--late)">red</span>blocks billing</span>' +
+      (Object.keys(HOS).length ? '<span class="li"><span class="hos">5:30</span>hours the driver has left (lowest of drive, shift, cycle) — red under 1h</span>' : '') +
       '<span class="li"><span class="flag" style="border-color:transparent;background:none;color:var(--warn)">amber</span>flagged, not blocking</span>';
 
     // Closed today

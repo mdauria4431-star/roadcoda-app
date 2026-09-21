@@ -222,7 +222,7 @@ async function load() {
   l.stops.forEach(s => (s.stop_items || []).sort((a, b) => a.unit_type.localeCompare(b.unit_type)));
   const stopIds = l.stops.map(s => s.id);
 
-  const [checks, delays, dwell, close, pods, drivers, units, eld, changes, closeLog, delayLog, codes, ourCodes, carrier, acts, actTypes] = await Promise.all([
+  const [checks, delays, dwell, close, pods, drivers, units, eld, changes, closeLog, delayLog, codes, ourCodes, carrier, acts, actTypes, hos] = await Promise.all([
     sb.from('load_checks').select('code, label, blocks, severity, detail, rank, sort, stop_id').eq('load_id', LOAD),
     sb.from('stop_delays').select('stop_id, kind, free_min, over_min, delay_code_id, customer_code_id, billed_min, billable, waived, settled_at, note').eq('load_id', LOAD),
     sb.from('live_stop_dwell').select('stop_id, on_site_min, free_min, over_min').eq('load_id', LOAD),
@@ -239,6 +239,7 @@ async function load() {
     sb.from('carriers').select('require_trip_sheet, require_seal, close_pod_days').maybeSingle(),
     sb.from('load_activities').select('id, stop_id, activity_type_id, qty, amount, note, created_by, created_at').eq('load_id', LOAD).order('created_at'),
     sb.from('activity_types').select('id, name, unit, is_deduction, pay_source, pays_driver, bills_customer, active, sort').eq('pay_source', 'recorded').eq('active', true).order('sort'),
+    sb.from('driver_hos_now').select('driver_id, duty_status, age_min, stale, drive_left_min, shift_left_min, cycle_left_min, break_left_min'),
   ]);
   // Money: only for users with the money switch (the database refuses everyone else anyway)
   let margin = null, unitMargin = [];
@@ -264,6 +265,7 @@ async function load() {
     theirCodes: codes?.data || [], ourCodes: ourCodes?.data || [], carrier: carrier?.data || {},
     acts: acts?.error ? null : (acts?.data || []), actTypes: actTypes?.data || [],
     margin, unitMargin,
+    hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
   };
   T.finished = l.stops.length > 0 && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
   T.locked = !!T.close?.locked_at;
@@ -297,7 +299,17 @@ function draw() {
     : `<span class="chip">${esc({ planned: 'Planned', dispatched: 'Dispatched', in_progress: 'In progress', delivered: 'Delivered' }[l.status] || l.status)}</span>`;
 
   const opt = (list, cur, blank) => `<option value="">${blank}</option>` + list.map(x => `<option value="${x.id}"${x.id === cur ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
-  const drvList = T.drivers.filter(d => d.active || d.id === l.driver_id).map(d => ({ id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') }));
+  const hmm = (m) => m == null ? '–' : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+  const lowOf = (h) => { const x = [h?.drive_left_min, h?.shift_left_min, h?.cycle_left_min].filter(v => v != null); return x.length ? Math.min(...x) : null; };
+  const drvList = T.drivers.filter(d => d.active || d.id === l.driver_id).map(d => {
+    const h = T.hos[d.id], low = lowOf(h);
+    return { id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') + (low != null ? ` — ${hmm(low)} left${h.stale ? ' (old reading)' : ''}` : '') };
+  });
+  const H = T.hos[l.driver_id], Hlow = lowOf(H);
+  const hosLine = !H || T.finished ? '' : `<div class="mini" style="margin-top:4px;color:${!H.stale && Hlow != null && Hlow < 60 ? 'var(--late)' : !H.stale && Hlow != null && Hlow < 120 ? 'var(--warn)' : 'var(--ink-3)'}">
+      ${esc({ off: 'Off duty', sleeper: 'Sleeper', on: 'On duty', driving: 'Driving', yard: 'Yard move', personal: 'Personal conveyance', waiting: 'Waiting' }[H.duty_status] || 'Status unknown')}
+      · drive ${hmm(H.drive_left_min)} · shift ${hmm(H.shift_left_min)} · cycle ${hmm(H.cycle_left_min)}${H.break_left_min != null ? ` · break in ${hmm(H.break_left_min)}` : ''}
+      · ELD ${H.age_min} min ago${H.stale ? ' — not current' : ''}</div>`;
   const trkList = T.units.filter(u => u.unit_type !== 'trailer' && (u.active || u.id === l.truck_id)).map(u => ({ id: u.id, label: `${u.unit_no} · ${u.unit_type.replace('_', ' ')}` }));
   const trlList = T.units.filter(u => u.unit_type === 'trailer' && (u.active || u.id === l.trailer_id)).map(u => ({ id: u.id, label: u.unit_no }));
   const eld = T.eld;
@@ -317,7 +329,7 @@ function draw() {
       <a class="btn small" href="loads.html?load=${l.id}${DAY ? '&day=' + DAY : ''}">Open in Loads</a>
     </div>
     <div class="facts">
-      <div class="f"><b>Driver</b><select class="ed" data-load="driver_id"${dis}>${opt(drvList, l.driver_id, '— none —')}</select></div>
+      <div class="f"><b>Driver</b><select class="ed" data-load="driver_id"${dis}>${opt(drvList, l.driver_id, '— none —')}</select>${hosLine}</div>
       <div class="f"><b>Truck</b><select class="ed" data-load="truck_id"${dis}>${opt(trkList, l.truck_id, '— none —')}</select></div>
       <div class="f"><b>Trailer</b>${tractor
         ? `<select class="ed" data-load="trailer_id"${dis}>${opt(trlList, l.trailer_id, trlList.length ? '— none —' : 'No trailers on Equipment')}</select>`
