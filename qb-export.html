@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuickBooks · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<script src="qb-export.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .sp{flex:1}
+  .bar,.row{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .three{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+  .big{font-family:var(--mono);font-size:22px;font-weight:600}
+  .warns{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+  .t td{padding:5px 10px;border-bottom:1px solid var(--line-soft)}
+  .t input{height:28px;width:100%}
+  details > summary{cursor:pointer;font-weight:600;padding:4px 0}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:440px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+  .toast.err{border-color:var(--late)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="invoices.html">Invoices</a><a class="on" href="qb-export.html">QuickBooks</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>QuickBooks export</h1><span class="sp"></span>
+      <label>QuickBooks<select id="ed"><option value="online">QuickBooks Online</option><option value="desktop">QuickBooks Desktop</option></select></label>
+      <label>From<input type="date" id="from"></label><label>To<input type="date" id="to"></label>
+      <label>&nbsp;<select id="preset"><option value="">Quick pick…</option><option value="lm">Last month</option><option value="tm">This month</option><option value="lw">Last week</option></select></label>
+      <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="again" style="height:auto"> Include what was already exported</label>
+    </div>
+    <div class="mini" id="howto"></div>
+
+    <div class="three">
+      <div class="card"><header><h2>Invoices</h2><span class="sp"></span><span class="mini">approved, dated in the range</span></header>
+        <div class="pad"><div class="big" id="inv-n">–</div><div class="mini" id="inv-s"></div><ul class="warns" id="inv-w"></ul>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="inv-dl">Download</button></div></div></div>
+      <div class="card"><header><h2>Payments received</h2><span class="sp"></span><span class="mini">invoices marked paid in the range</span></header>
+        <div class="pad"><div class="big" id="pay-n">–</div><div class="mini" id="pay-s"></div><ul class="warns" id="pay-w"></ul>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="pay-dl">Download</button></div></div></div>
+      <div class="card" id="prl-card"><header><h2>Payroll journal</h2><span class="sp"></span><span class="mini">approved pay weeks / periods ending in the range</span></header>
+        <div class="pad"><div class="big" id="prl-n">–</div><div class="mini" id="prl-s"></div><ul class="warns" id="prl-w"></ul>
+          <div class="row" style="margin-top:10px"><button class="btn primary" id="prl-dl">Download</button></div></div></div>
+    </div>
+
+    <div class="card">
+      <header><h2>Match RoadCoda to your QuickBooks</h2><span class="sp"></span><span class="mini">Set once. Names must match QuickBooks exactly (sub-accounts as Parent:Sub).</span></header>
+      <div class="pad" style="display:flex;flex-direction:column;gap:12px">
+        <details open><summary>Accounts</summary><div class="grid" style="margin-top:8px" id="accts"></div></details>
+        <details open><summary>Kinds of invoice line → QuickBooks item and income account</summary><div id="items" style="margin-top:8px"></div></details>
+        <details><summary>Customer names in QuickBooks</summary><div class="mini" style="margin:6px 0">Blank = the RoadCoda name. Fill in only where QuickBooks spells the customer differently.</div><div id="custs"></div></details>
+        <details id="payacct-d"><summary>Pay items → GL account</summary><div class="mini" style="margin:6px 0">Blank = the wages / deductions account above.</div><div id="payaccts"></div></details>
+        <div class="row ed"><button class="btn primary small" id="save">Save</button><span class="mini" id="save-msg"></span></div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = (n) => (n < 0 ? '−' : '') + '$' + Math.abs(+n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const A = () => window.RC_ACCESS;
+const can = (s, l) => !A() || A().can(s, l);
+const KEYS = { 'contract:fixed': 'Contract — fixed charges', 'contract:variable': 'Contract — per unit (variable)', 'contract:extras': 'Contract — extras', 'contract:pass_through': 'Pass-through (tolls and other costs billed back)',
+  linehaul: 'Linehaul', fuel: 'Fuel surcharge', detention: 'Detention', tolls: 'Tolls', charge: 'Extra charges / accessorials', load: 'Per-load invoice (load total)', toll_reconcile: 'Toll reconciliation (credit or charge)', other: 'Other lines' };
+const ACCTS = [['ar_account', 'Accounts receivable'], ['deposit_account', 'Payments deposit to'], ['income_account', 'Income account (default)'], ['default_item', 'Item (default)'],
+  ['wages_account', 'Driver wages'], ['office_wages_account', 'Office wages'], ['deductions_account', 'Payroll deductions'], ['clearing_account', 'Payroll clearing (net pay)']];
+let S = {}, MAP = {}, INV = [], PAY = [], PRL = [], CUSTS = [], TYPES = [], OCODES = [], tt = null;
+function toast(html, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = html; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 5000); }
+const fail = (e) => toast(esc(e.message || e), true);
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (A() && !A().can('invoices')) return;
+  $('app').hidden = false;
+  if (!can('invoices', 'edit')) document.querySelectorAll('.ed').forEach(e => e.hidden = true);
+  const [s, m, c] = await Promise.all([sb.from('qb_settings').select('*').maybeSingle(), sb.from('qb_item_map').select('*'), sb.from('customers').select('id, name, qb_name, parent_customer_id').order('name')]);
+  if (s.error) { $('app').innerHTML = `<div class="card pad error">${esc(s.error.message)} — run 69_quickbooks_export.sql in the SQL Editor.</div>`; return; }
+  S = s.data || { edition: 'online', ar_account: 'Accounts Receivable', deposit_account: 'Undeposited Funds', income_account: 'Freight Income', default_item: 'Freight',
+                  wages_account: 'Wages:Drivers', office_wages_account: 'Wages:Office', deductions_account: 'Payroll Deductions', clearing_account: 'Payroll Clearing' };
+  (m.data || []).forEach(x => MAP[x.line_key] = x); CUSTS = c.data || [];
+  const canPay = can('payroll') || can('office_payroll');
+  $('prl-card').hidden = !canPay; $('payacct-d').hidden = !canPay;
+  if (canPay) {
+    const [t, o] = await Promise.all([can('payroll') ? sb.from('activity_types').select('id, name, is_deduction, pays_driver, gl_account, active').eq('active', true).order('sort') : { data: [] },
+                                      can('office_payroll') ? sb.from('office_pay_codes').select('item, name, gl_account, is_deduction').order('sort') : { data: [] }]);
+    TYPES = (t.data || []).filter(x => x.pays_driver || x.is_deduction); OCODES = o.error ? [] : (o.data || []);
+  }
+  $('ed').value = S.edition;
+  const now = new Date(); $('from').value = iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)); $('to').value = iso(new Date(now.getFullYear(), now.getMonth(), 0));
+  ['ed', 'from', 'to', 'again'].forEach(id => $(id).onchange = async () => {
+    if (id === 'ed') { S.edition = $('ed').value; if (can('invoices', 'edit')) await sb.from('qb_settings').upsert({ ...S, edition: S.edition }, { onConflict: 'carrier_id' }); }   // remembered
+    load(); });
+  $('preset').onchange = () => { const p = $('preset').value, d = new Date(); if (!p) return;
+    if (p === 'lm') { $('from').value = iso(new Date(d.getFullYear(), d.getMonth() - 1, 1)); $('to').value = iso(new Date(d.getFullYear(), d.getMonth(), 0)); }
+    if (p === 'tm') { $('from').value = iso(new Date(d.getFullYear(), d.getMonth(), 1)); $('to').value = iso(d); }
+    if (p === 'lw') { const e = new Date(d); e.setDate(d.getDate() - d.getDay() - 1); const b = new Date(e); b.setDate(e.getDate() - 6); $('from').value = iso(b); $('to').value = iso(e); }
+    $('preset').value = ''; load(); };
+  drawSetup(); load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load() {
+  const args = { p_from: $('from').value, p_to: $('to').value, p_again: $('again').checked };
+  const [i, p, r] = await Promise.all([sb.rpc('qb_invoice_lines', args), sb.rpc('qb_payments', args), $('prl-card').hidden ? { data: [] } : sb.rpc('qb_payroll', args)]);
+  if (i.error) return fail(i.error);
+  INV = i.data || []; PAY = p.data || []; PRL = r.error ? [] : (r.data || []);
+  $('howto').innerHTML = S.edition === 'online'
+    ? 'QuickBooks Online: <b>Settings ⚙ › Import data</b> › Invoices (or Journal entries) › upload the file, map the columns, pick MM/DD/YYYY. Add new customers and products in QuickBooks first (or tick "add new customers"). Turn account numbers off before importing journal entries. Up to 1,000 rows a file. If sales tax is set up in QuickBooks Online, it won\'t import invoices this way.'
+    : 'QuickBooks Desktop: <b>back up your company file first</b> — an IIF import can\'t be undone. Then <b>File › Utilities › Import › IIF Files</b>. Customers, items and accounts should already exist in QuickBooks with the same names.';
+  const inv = RC_QB.invoices(S.edition, INV, S), pay = RC_QB.payments(S.edition, PAY, S), prl = RC_QB.payroll(S.edition, PRL, S);
+  const invIds = [...new Set(INV.map(l => l.invoice_id))], invTot = INV.reduce((a, l) => a + +l.amount, 0);
+  $('inv-n').textContent = invIds.length; $('inv-s').textContent = `${money(invTot)} · ${inv.count} in the file`;
+  $('pay-n').textContent = PAY.length; $('pay-s').textContent = money(PAY.reduce((a, p) => a + +p.amount, 0));
+  const pids = [...new Set(PRL.map(x => x.period_id))]; $('prl-n').textContent = pids.length;
+  $('prl-s').textContent = `${money(PRL.reduce((a, x) => a + +(x.debit || 0), 0))} gross wages`;
+  $('inv-w').innerHTML = inv.warnings.map(w => `<li>${esc(w)}</li>`).join(''); $('pay-w').innerHTML = pay.warnings.map(w => `<li>${esc(w)}</li>`).join(''); $('prl-w').innerHTML = prl.warnings.map(w => `<li>${esc(w)}</li>`).join('');
+  const done = (arr, key) => arr.some(x => x[key]) ? ' <span class="warn">(includes some already exported)</span>' : '';
+  $('inv-s').innerHTML += done(INV, 'exported_at'); $('pay-s').innerHTML += done(PAY, 'exported_at'); $('prl-s').innerHTML += done(PRL, 'exported_at');
+  $('inv-dl').disabled = !inv.files.length; $('pay-dl').disabled = !pay.files.length; $('prl-dl').disabled = !prl.files.length;
+  $('inv-dl').onclick = () => download('invoices', inv); $('pay-dl').onclick = () => download('payments', pay); $('prl-dl').onclick = () => download('payroll', prl);
+  drawItemKeys();
+}
+function save(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: name.endsWith('.iif') ? 'text/plain' : 'text/csv' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); }
+async function download(kind, r) {
+  const stamp = `-${$('from').value}-to-${$('to').value}`;
+  r.files.forEach((f, i) => setTimeout(() => save(f.name.replace(/(\.\w+)$/, stamp + '$1'), f.text), i * 400));
+  const { data, error } = await sb.rpc('qb_mark_exported', { p_kind: kind, p_ids: r.exported });
+  if (error) return fail(error);
+  toast(`Downloaded ${r.files.length} file${r.files.length > 1 ? 's' : ''}. ${data} marked exported — the next export leaves ${data === 1 ? 'it' : 'them'} out unless you tick "Include what was already exported".`);
+  setTimeout(load, 1200);
+}
+
+// ── Mapping ─────────────────────────────────────────────────────────
+function drawSetup() {
+  const dis = can('invoices', 'edit') ? '' : ' disabled';
+  $('accts').innerHTML = ACCTS.map(([k, l]) => `<label>${l}<input data-s="${k}" value="${esc(S[k] || '')}"${dis}></label>`).join('');
+  $('custs').innerHTML = `<table class="t" style="max-width:720px"><thead><tr><th>RoadCoda customer</th><th>Name in QuickBooks</th></tr></thead><tbody>${CUSTS.map(c => `<tr><td>${esc(c.name)}</td><td><input data-c="${c.id}" value="${esc(c.qb_name || '')}" placeholder="${esc(c.name)}"${dis}></td></tr>`).join('')}</tbody></table>`;
+  const pdis = (s) => can(s, 'edit') ? '' : ' disabled';
+  $('payaccts').innerHTML = `<table class="t" style="max-width:720px"><thead><tr><th>Pay item</th><th>GL account</th></tr></thead><tbody>
+    ${TYPES.map(t => `<tr><td>${esc(t.name)}${t.is_deduction ? ' <span class="mini">deduction</span>' : ''}</td><td><input data-a="${t.id}" value="${esc(t.gl_account || '')}" placeholder="${esc(t.is_deduction ? S.deductions_account : S.wages_account)}"${pdis('payroll')}></td></tr>`).join('')}
+    ${OCODES.map(o => `<tr><td>Office: ${esc(o.name)}</td><td><input data-o="${o.item}" value="${esc(o.gl_account || '')}" placeholder="${esc(o.is_deduction ? S.deductions_account : S.office_wages_account)}"${pdis('office_payroll')}></td></tr>`).join('')}</tbody></table>`;
+}
+function drawItemKeys() {
+  const dis = can('invoices', 'edit') ? '' : ' disabled';
+  const keys = [...new Set([...Object.keys(KEYS).filter(k => k !== 'other'), ...Object.keys(MAP), ...INV.map(l => l.line_key)])];
+  const used = new Set(INV.map(l => l.line_key));
+  $('items').innerHTML = `<table class="t" style="max-width:820px"><thead><tr><th>Kind of line</th><th>QuickBooks item</th><th>Income account</th></tr></thead><tbody>${keys.map(k => `<tr><td>${esc(KEYS[k] || k)}${used.has(k) ? ' <span class="mini">· in this range</span>' : ''}</td>
+    <td><input data-mi="${esc(k)}" value="${esc(MAP[k]?.qb_item || '')}" placeholder="${esc(S.default_item)}"${dis}></td><td><input data-ma="${esc(k)}" value="${esc(MAP[k]?.account || '')}" placeholder="${esc(S.income_account)}"${dis}></td></tr>`).join('')}</tbody></table>`;
+}
+$('save').onclick = async () => {
+  const row = { edition: $('ed').value }; document.querySelectorAll('[data-s]').forEach(i => row[i.dataset.s] = i.value.trim() || null);
+  for (const [k] of ACCTS) if (!row[k]) return $('save-msg').innerHTML = '<span class="error">Every account needs a name.</span>';
+  const jobs = [sb.from('qb_settings').upsert(row, { onConflict: 'carrier_id' }).select().single()];
+  document.querySelectorAll('[data-mi]').forEach(i => { const k = i.dataset.mi, a = document.querySelector(`[data-ma="${CSS.escape(k)}"]`).value.trim(), it = i.value.trim();
+    if ((MAP[k]?.qb_item || '') !== it || (MAP[k]?.account || '') !== a) jobs.push(sb.from('qb_item_map').upsert({ line_key: k, qb_item: it || null, account: a || null }, { onConflict: 'carrier_id,line_key' })); });
+  document.querySelectorAll('[data-c]').forEach(i => { const c = CUSTS.find(x => x.id === i.dataset.c), v = i.value.trim() || null; if ((c.qb_name || null) !== v) jobs.push(sb.from('customers').update({ qb_name: v }).eq('id', c.id)); });
+  document.querySelectorAll('[data-a]:not([disabled])').forEach(i => { const t = TYPES.find(x => x.id === i.dataset.a), v = i.value.trim() || null; if ((t.gl_account || null) !== v) jobs.push(sb.from('activity_types').update({ gl_account: v }).eq('id', t.id)); });
+  document.querySelectorAll('[data-o]:not([disabled])').forEach(i => { const o = OCODES.find(x => x.item === i.dataset.o), v = i.value.trim() || null; if ((o.gl_account || null) !== v) jobs.push(sb.from('office_pay_codes').update({ gl_account: v }).eq('item', o.item)); });
+  const res = await Promise.all(jobs), bad = res.find(r => r.error); if (bad) return fail(bad.error);
+  S = res[0].data; const m = await sb.from('qb_item_map').select('*'); MAP = {}; (m.data || []).forEach(x => MAP[x.line_key] = x);
+  const c = await sb.from('customers').select('id, name, qb_name, parent_customer_id').order('name'); CUSTS = c.data || [];
+  $('save-msg').innerHTML = '<span class="ok">Saved.</span>'; drawSetup(); load();
+};
+
+start();
+</script>
+</body>
+</html>

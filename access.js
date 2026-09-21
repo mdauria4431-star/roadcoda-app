@@ -5,7 +5,7 @@
 // The database enforces all of this too; this script only keeps the screens tidy.
 (function () {
   const SCREEN_OF = {
-    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'loads.html': 'loads', 'customers.html': 'customers',
+    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
     'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users',
   };
@@ -62,7 +62,7 @@
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
         ['templates.html', 'Templates'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
-        ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['handbooks.html', 'Handbooks'],
+        ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['handbooks.html', 'Handbooks'],
         ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
         ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['driver.html', 'Driver app']];
       const here = location.pathname.split('/').pop() || 'index.html';

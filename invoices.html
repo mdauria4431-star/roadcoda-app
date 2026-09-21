@@ -448,7 +448,15 @@ async function showInvoice(id) {
     setStatus('approved');
   };
   if ($('d-sent')) $('d-sent').onclick = () => setStatus('sent');
-  if ($('d-paid')) $('d-paid').onclick = () => setStatus('paid');
+  if ($('d-paid')) $('d-paid').onclick = async () => {
+    const ref = prompt(`Mark ${inv.invoice_no} paid.\n\nCheck # or payment reference (optional — goes to QuickBooks with the payment):`, '');
+    if (ref === null) return;
+    try { await saveEdits(); } catch (e) { return msg(e.message); }
+    const { error } = await sb.from('invoices').update({ status: 'paid' }).eq('id', inv.id);
+    if (error) return msg(error.message);
+    if (ref.trim()) await sb.rpc('invoice_payment_ref', { p_invoice: inv.id, p_ref: ref.trim() });   // 69; nothing happens before it's installed
+    reload();
+  };
   if ($('d-reopen')) $('d-reopen').onclick = async () => {
     const why = prompt(`Reopen invoice ${inv.invoice_no}? It goes back to draft and its sent / paid marks come off. If the customer already has it, send them the corrected one.\n\nWhy? (goes on the record)`);
     if (!why) return;
