@@ -53,11 +53,11 @@
   var GROUPS = [
     { name: 'Daily', items: ['index.html', 'dispatch.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'profit.html', 'tolls.html'] },
-    { name: 'Safety', items: ['incidents.html'] },
-    { name: 'Setup', items: ['customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
+    { name: 'Safety', items: ['incidents.html', 'retention.html'] },
+    { name: 'Setup', items: ['getting-started.html', 'customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'templates.html': '↻', 'loads.html': '▸',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'retention.html': '♥', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
@@ -67,7 +67,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -169,6 +169,18 @@
       cl.href = 'customer-logins.html'; cl.textContent = 'Customer logins';
       if (here === 'customer-logins.html') cl.className = 'on';
       nav.appendChild(cl); links['customer-logins.html'] = cl;
+    }
+    if (!links['retention.html'] && (!acc || (acc.can && acc.can('safety')))) {
+      var rt = document.createElement('a');
+      rt.href = 'retention.html'; rt.textContent = 'Retention';
+      if (here === 'retention.html') rt.className = 'on';
+      nav.appendChild(rt); links['retention.html'] = rt;
+    }
+    if (!links['getting-started.html'] && (!acc || (acc.can && acc.can('users')))) {
+      var gs = document.createElement('a');
+      gs.href = 'getting-started.html'; gs.textContent = 'Getting started';
+      if (here === 'getting-started.html') gs.className = 'on';
+      nav.appendChild(gs); links['getting-started.html'] = gs;
     }
     if (!links['incidents.html'] && (!acc || (acc.can && acc.can('safety')))) {
       var il = document.createElement('a');

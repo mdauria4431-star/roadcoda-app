@@ -5,7 +5,7 @@
 // The database enforces all of this too; this script only keeps the screens tidy.
 (function () {
   const SCREEN_OF = {
-    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'loads.html': 'loads', 'customers.html': 'customers',
+    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
     'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users',
   };
@@ -58,6 +58,21 @@
     const nav = document.querySelector('header nav');
     if (nav) {
       nav.querySelectorAll('a').forEach((a) => { const s = SCREEN_OF[a.getAttribute('href')]; if (s && s !== 'home' && !can(s)) a.remove(); });
+      // Every page gets the same full menu: add any standard page this page's own list left out,
+      // if this user can open it (the sidebar then groups them).
+      const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
+        ['templates.html', 'Templates'], ['loads.html', 'Loads'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
+        ['payroll.html', 'Payroll'], ['profit.html', 'Profit'], ['tolls.html', 'Tolls'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'],
+        ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
+        ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['driver.html', 'Driver app']];
+      const here = location.pathname.split('/').pop() || 'index.html';
+      FULL.forEach(([h, t]) => {
+        if (nav.querySelector(`a[href="${h}"]`)) return;
+        const s = SCREEN_OF[h];
+        if (s && s !== 'home' && !can(s)) return;
+        const a = document.createElement('a'); a.href = h; a.textContent = t; if (h === here) a.className = 'on';
+        nav.appendChild(a);
+      });
       if (can('users') && !nav.querySelector('a[href="users.html"]')) {
         const a = document.createElement('a'); a.href = 'users.html'; a.textContent = 'Users'; if (page === 'users') a.className = 'on';
         const drv = nav.querySelector('a[href="driver.html"]'); nav.insertBefore(a, drv || null);

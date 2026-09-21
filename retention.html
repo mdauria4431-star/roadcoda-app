@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retention · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select,textarea{border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  input,select{height:32px} textarea{padding:7px 9px;min-height:54px}
+  h1{margin:0;font-size:19px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
+  .tile .s{font-size:12px;color:var(--muted);margin-top:3px}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+  .t td{padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .t tr.r{cursor:pointer} .t tr.r:hover{background:var(--row-hover)} .t tr.on{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .bar{display:inline-block;width:70px;height:7px;border-radius:4px;background:var(--panel-2);overflow:hidden;vertical-align:middle;margin-right:6px}
+  .bar i{display:block;height:100%;background:var(--ok)}
+  .flag{color:var(--late);font-weight:600}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:900px){.cols{grid-template-columns:1fr}}
+  .chk{display:flex;align-items:flex-start;gap:10px;padding:7px 16px;border-bottom:1px solid var(--line-soft)}
+  .chk input{width:18px;height:18px;margin-top:1px;flex:none}
+  .chk .mini{display:block}
+  .wk{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding:10px 16px 4px}
+  .ci{padding:10px 16px;border-bottom:1px solid var(--line-soft)}
+  .ans{display:grid;grid-template-columns:1fr auto;gap:2px 16px;font-size:12.5px;margin-top:6px}
+  .ans b{font-family:var(--mono)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:12px 16px}
+  .tabs{display:flex;gap:6px}
+  .tabs button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .ed{display:flex;gap:8px;align-items:center;padding:6px 16px;border-bottom:1px solid var(--line-soft)}
+  .ed input[type=text]{flex:1}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="drivers.html">Drivers</a><a href="incidents.html">Incidents</a><a class="on" href="retention.html">Retention</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h1>Driver onboarding &amp; retention</h1><span class="sp"></span>
+      <div class="tabs" id="tabs"><button data-t="drivers" class="on">Drivers</button><button data-t="lists">Checklists &amp; questions</button></div></div>
+
+    <div id="t-drivers" style="display:flex;flex-direction:column;gap:12px">
+      <div class="tiles" id="tiles"></div>
+      <div class="card"><header><h2>Needs a call</h2><span class="mini">Low scores, "unlikely to stay", or asked for a call — until someone records what was done</span></header><div id="fu"></div></div>
+      <div class="card"><header><h2>Drivers</h2><span class="mini">Active drivers and anyone who left in the last 12 months. Click one.</span></header><div id="board"></div></div>
+      <div id="detail"></div>
+    </div>
+
+    <div id="t-lists" hidden style="display:flex;flex-direction:column;gap:12px">
+      <p class="mini" style="margin:0">Edit the lists every new driver goes through, and the check-in questions. Untick <b>Use</b> to retire one without losing its history.</p>
+      <div id="lists"></div>
+    </div>
+  </section>
+</main>
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dt = (t) => t ? new Date(t).toLocaleDateString([], { month: 'numeric', day: 'numeric', year: '2-digit' }) : '';
+const pl = (p) => p ? (p[0] === 'w' ? 'Week ' + p.slice(1) : 'Check-in ' + p.slice(1)) : '';
+const can = (s, l) => !window.RC_ACCESS || window.RC_ACCESS.can(s, l);
+let ITEMS = [], QS = [], BOARD = [], CUR = null, CARRIER = null;
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  CARRIER = data.carrier_id; $('who').textContent = `${data.full_name || ''} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('safety')) return;
+  $('app').hidden = false;
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b)); $('t-drivers').hidden = b.dataset.t !== 'drivers'; $('t-lists').hidden = b.dataset.t !== 'lists'; if (b.dataset.t === 'lists') drawLists(); });
+  await load();
+  const q = new URLSearchParams(location.search).get('driver'); if (q) show(q);
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load() {
+  const [b, s, it, qs, fu] = await Promise.all([
+    sb.rpc('retention_board'), sb.rpc('retention_stats'),
+    sb.from('onboarding_items').select('*').order('week', { nullsFirst: true }).order('sort'),
+    sb.from('retention_questions').select('*').order('sort'),
+    sb.from('retention_checkins').select('*, drivers(full_name)').eq('flagged', true).is('followed_up_at', null).order('answered_at', { ascending: false }),
+  ]);
+  if (b.error) { $('board').innerHTML = `<div class="empty error">${esc(b.error.message)}${/retention_board|schema cache/.test(b.error.message) ? ' — run 58_onboarding_retention.sql.' : ''}</div>`; return; }
+  BOARD = b.data || []; ITEMS = it.data || []; QS = qs.data || [];
+  const st = s.data || {};
+  $('tiles').innerHTML = [
+    ['Active drivers', st.active ?? '—', `${st.hired_12m ?? 0} hired in 12 months`],
+    ['Turnover, 12 months', st.turnover_pct != null ? st.turnover_pct + '%' : '—', `${st.left_12m ?? 0} left · ${st.left_voluntary ?? 0} by choice`],
+    ['Left within 90 days', st.left_early ?? 0, 'early leavers'],
+    ['Average tenure', st.avg_tenure_days != null ? Math.round(st.avg_tenure_days / 30.4) + ' mo' : '—', 'active and recent'],
+    ['Check-ins, 90 days', st.avg_score_90d != null ? st.avg_score_90d + ' / 5' : '—', `${st.answered_90d ?? 0} answered`],
+    ['Needs a call', (fu.data || []).length, 'open follow-ups'],
+  ].map(([k, v, x]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Needs a call' && (fu.data || []).length ? 'flag' : ''}">${v}</div><div class="s">${x}</div></div>`).join('');
+  const f = fu.data || [];
+  $('fu').innerHTML = f.length ? `<table class="t"><tbody>${f.map(c => `<tr><td style="width:160px"><a href="#" data-d="${c.driver_id}">${esc(c.drivers?.full_name)}</a><div class="mini">${pl(c.period)} · ${dt(c.answered_at)}</div></td>
+      <td><span class="flag">${esc(c.flag_reasons || 'low scores')}</span> · avg ${c.avg_score ?? '—'}${c.comment ? `<div>“${esc(c.comment)}”</div>` : ''}</td>
+      <td style="width:130px">${can('safety', 'edit') ? `<button class="btn small" data-fu="${c.id}">Followed up…</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nobody waiting on a call. 👍</div>';
+  document.querySelectorAll('[data-fu]').forEach(x => x.onclick = async () => { const n = prompt('What was done? (goes on the record)'); if (n === null) return; const { error } = await sb.rpc('retention_follow_up', { p_checkin: x.dataset.fu, p_note: n }); if (error) return alert(error.message); load(); if (CUR) show(CUR); });
+  document.querySelectorAll('#fu [data-d]').forEach(a => a.onclick = (e) => { e.preventDefault(); show(a.dataset.d); });
+  $('board').innerHTML = BOARD.length ? `<table class="t"><thead><tr><th>Driver</th><th>Hired</th><th>Stage</th><th>Before first load</th><th>This week's plan</th><th>Last check-in</th><th>Missed</th><th></th></tr></thead><tbody>${BOARD.map(r => `
+    <tr class="r ${CUR === r.driver_id ? 'on' : ''}" data-id="${r.driver_id}"><td><b>${esc(r.full_name)}</b></td><td>${dt(r.hire_date)}${r.end_date ? `<div class="mini">left ${dt(r.end_date)}</div>` : ''}</td>
+      <td>${esc(r.stage)}</td><td><span class="bar"><i style="width:${r.start_total ? r.start_done / r.start_total * 100 : 0}%"></i></span>${r.start_done}/${r.start_total}</td>
+      <td>${r.week_total ? `${r.week_done}/${r.week_total}` : '<span class="mini">—</span>'}</td>
+      <td>${r.last_period ? `${pl(r.last_period)} · <b>${r.last_avg ?? '—'}</b> <span class="mini">${dt(r.last_answered)}</span>` : '<span class="mini">none yet</span>'}</td>
+      <td>${r.missed ? `<span class="flag">${r.missed}</span>` : ''}</td><td>${r.open_flags ? '<span class="flag">needs a call</span>' : ''}${r.leave_type ? `<span class="mini">${esc(r.leave_type)}</span>` : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">No drivers yet.</div>';
+  document.querySelectorAll('#board tr[data-id]').forEach(tr => tr.onclick = () => show(tr.dataset.id));
+}
+
+async function show(id) {
+  CUR = id; history.replaceState(null, '', '?driver=' + id);
+  document.querySelectorAll('#board tr[data-id]').forEach(tr => tr.classList.toggle('on', tr.dataset.id === id));
+  const [d, ch, ci] = await Promise.all([
+    sb.from('drivers').select('*').eq('id', id).single(),
+    sb.from('driver_checks').select('*').eq('driver_id', id),
+    sb.from('retention_checkins').select('*').eq('driver_id', id).not('answered_at', 'is', null).order('answered_at', { ascending: false }),
+  ]);
+  if (d.error) return;
+  const dr = d.data, done = new Map((ch.data || []).map(c => [c.item_id, c])), edit = can('drivers', 'edit') || can('safety', 'edit');
+  const auto = { cdl: !!dr.cdl_number, med_card: !!dr.med_card_expires, app: !!dr.user_id };
+  const week = dr.hire_date ? Math.floor((new Date() - new Date(dr.hire_date + 'T12:00:00')) / 864e5 / 7) + 1 : null;
+  const line = (i) => { const c = done.get(i.id), a = i.auto_key ? auto[i.auto_key] : null;
+    return `<label class="chk" style="flex-direction:row;font-weight:500"><input type="checkbox" data-item="${i.id}" ${c || a ? 'checked' : ''} ${i.auto_key || !edit ? 'disabled' : ''}>
+      <span>${esc(i.title)}${i.detail ? `<span class="mini">${esc(i.detail)}</span>` : ''}${a ? '<span class="mini ok">ticks itself</span>' : ''}${c ? `<span class="mini">done ${dt(c.done_at)}</span>` : ''}</span></label>`; };
+  const start = ITEMS.filter(i => i.list === 'driver_start' && i.active);
+  const weeks = [1, 2, 3, 4, 5, 6].map(w => ({ w, list: ITEMS.filter(i => i.list === 'driver_week' && i.active && i.week === w) }));
+  const qname = (qid) => QS.find(q => q.id === qid)?.text || 'Question';
+  $('detail').innerHTML = `<div class="card"><header><h2>${esc(dr.full_name)}</h2><span class="mini">${dr.hire_date ? 'hired ' + dt(dr.hire_date) + (week && week <= 6 && dr.active ? ` · week ${week}` : '') : 'no hire date — add it on Drivers so the plan and check-ins can start'}</span></header>
+    <div class="cols" style="gap:0">
+      <div><div class="wk">Before the first load</div>${start.map(line).join('')}</div>
+      <div><div class="wk">First six weeks</div>${weeks.map(x => `<div class="wk" style="padding-top:6px;${week === x.w ? 'color:var(--accent-hi)' : ''}">Week ${x.w}${week === x.w ? ' · this week' : ''}</div>${x.list.map(line).join('')}`).join('')}</div>
+    </div></div>
+    <div class="card"><header><h2>Check-ins</h2><span class="mini">Seen only by users with the Safety screen</span></header>
+      ${(ci.data || []).map(c => `<div class="ci"><b>${pl(c.period)}</b> · ${dt(c.answered_at)} · average <b>${c.avg_score ?? '—'}</b>${c.flagged ? ` · <span class="flag">${esc(c.flag_reasons || 'flagged')}</span>` : ''}
+        ${c.followed_up_at ? `<div class="mini ok">Followed up ${dt(c.followed_up_at)}: ${esc(c.follow_note || '')}</div>` : ''}
+        <div class="ans">${QS.filter(q => (c.answers || {})[q.id] != null).map(q => { const v = c.answers[q.id]; return `<span>${esc(q.text)}</span><b class="${typeof v === 'number' && v <= 2 ? 'flag' : ''}">${v === true ? 'Yes' : v === false ? 'No' : esc(v)}</b>`; }).join('')}</div>
+        ${c.comment ? `<div style="margin-top:6px">“${esc(c.comment)}”</div>` : ''}</div>`).join('') || '<div class="empty">No check-ins answered yet. They appear in the driver app at the end of each of the first six weeks, then every 13 weeks.</div>'}
+    </div>
+    <div class="card"><header><h2>Leaving</h2><span class="mini">Record why a driver left — it feeds turnover and the reasons list</span></header>
+      <div class="grid">
+        <label>Last day<input type="date" id="l-end" value="${dr.end_date || ''}"></label>
+        <label>Left<select id="l-type"><option value="">—</option>${[['voluntary', 'By choice (quit)'], ['involuntary', 'Let go'], ['other', 'Other']].map(([v, t]) => `<option value="${v}"${dr.leave_type === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label>Rehire?<select id="l-rehire"><option value="">—</option><option value="true"${dr.rehire_eligible === true ? ' selected' : ''}>Eligible</option><option value="false"${dr.rehire_eligible === false ? ' selected' : ''}>Not eligible</option></select></label>
+        <label style="grid-column:1/-1">Main reason<input id="l-reason" list="reasons" value="${esc(dr.leave_reason || '')}" placeholder="e.g. Home time, Pay, Another carrier, Equipment, Dispatch, Personal"></label>
+        <datalist id="reasons"><option>Home time</option><option>Pay</option><option>Another carrier offered more</option><option>Equipment</option><option>Dispatch / communication</option><option>Customers / waiting time</option><option>Personal / family</option><option>Retired</option><option>Safety / performance</option></datalist>
+      </div>
+      <div style="padding:0 16px 14px">${can('drivers', 'edit') ? '<button class="btn primary" id="l-save">Save</button> <span class="mini">Saving a last day marks the driver inactive.</span>' : '<span class="mini">Needs Edit on Drivers to change.</span>'} <span id="l-msg" class="mini"></span></div>
+    </div>`;
+  document.querySelectorAll('#detail [data-item]').forEach(cb => cb.onchange = async () => {
+    const q = cb.checked ? sb.from('driver_checks').insert({ driver_id: id, item_id: cb.dataset.item }) : sb.from('driver_checks').delete().eq('driver_id', id).eq('item_id', cb.dataset.item);
+    const { error } = await q; if (error) { alert(error.message); cb.checked = !cb.checked; return; } load();
+  });
+  if ($('l-save')) $('l-save').onclick = async () => {
+    const end = $('l-end').value || null;
+    const upd = { end_date: end, leave_type: $('l-type').value || null, leave_reason: $('l-reason').value.trim() || null,
+      rehire_eligible: $('l-rehire').value === '' ? null : $('l-rehire').value === 'true', ...(end ? { active: false } : {}) };
+    const { error } = await sb.from('drivers').update(upd).eq('id', id);
+    $('l-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved.</span>'; if (!error) load();
+  };
+  $('detail').scrollIntoView({ behavior: 'smooth' });
+}
+
+function drawLists() {
+  const ed = can('safety', 'edit') || can('drivers', 'edit');
+  const block = (title, list, week) => `<div class="card"><header><h2>${title}</h2></header>
+    ${ITEMS.filter(i => i.list === list && (week == null || i.week === week)).map(i => `<div class="ed"><input type="text" value="${esc(i.title)}" data-it="${i.id}" ${ed ? '' : 'disabled'} aria-label="Item"><label style="flex-direction:row;align-items:center;gap:5px;font-weight:500"><input type="checkbox" data-use="${i.id}" ${i.active ? 'checked' : ''} ${ed ? '' : 'disabled'} style="height:auto"> Use</label>${i.auto_key ? '<span class="mini">ticks itself</span>' : ''}</div>`).join('')}
+    ${ed ? `<div class="ed"><input type="text" placeholder="Add an item…" data-new="${list}" data-week="${week ?? ''}"><button class="btn small" data-add="${list}" data-week="${week ?? ''}">Add</button></div>` : ''}</div>`;
+  $('lists').innerHTML = block('New driver — before the first load', 'driver_start', null)
+    + [1, 2, 3, 4, 5, 6].map(w => block(`New driver — week ${w}`, 'driver_week', w)).join('')
+    + [1, 2, 3, 4, 5, 6].map(w => block(`Your go-live — week ${w} (Getting started)`, 'carrier_week', w)).join('')
+    + `<div class="card"><header><h2>Check-in questions</h2><span class="mini">1–5 answers; "likely to stay" and "want a call" drive the follow-up list</span></header>
+      ${QS.map(q => `<div class="ed"><input type="text" value="${esc(q.text)}" data-q="${q.id}" ${ed ? '' : 'disabled'} aria-label="Question"><span class="mini">${q.kind === 'scale' ? '1–5' : q.kind === 'yesno' ? 'yes / no' : 'text'}${q.role ? ' · ' + q.role : ''}</span><label style="flex-direction:row;align-items:center;gap:5px;font-weight:500"><input type="checkbox" data-quse="${q.id}" ${q.active ? 'checked' : ''} ${ed ? '' : 'disabled'} style="height:auto"> Use</label></div>`).join('')}
+      ${ed ? `<div class="ed"><input type="text" placeholder="Add a 1–5 question…" id="q-new"><button class="btn small" id="q-add">Add</button></div>` : ''}</div>`;
+  const upd = async (tbl, id, row) => { const { error } = await sb.from(tbl).update(row).eq('id', id); if (error) alert(error.message); await load(); };
+  document.querySelectorAll('[data-it]').forEach(x => x.onchange = () => upd('onboarding_items', x.dataset.it, { title: x.value.trim() }));
+  document.querySelectorAll('[data-use]').forEach(x => x.onchange = () => upd('onboarding_items', x.dataset.use, { active: x.checked }));
+  document.querySelectorAll('[data-q]').forEach(x => x.onchange = () => upd('retention_questions', x.dataset.q, { text: x.value.trim() }));
+  document.querySelectorAll('[data-quse]').forEach(x => x.onchange = () => upd('retention_questions', x.dataset.quse, { active: x.checked }));
+  document.querySelectorAll('[data-add]').forEach(b => b.onclick = async () => {
+    const inp = document.querySelector(`[data-new="${b.dataset.add}"][data-week="${b.dataset.week}"]`); if (!inp.value.trim()) return;
+    const { error } = await sb.from('onboarding_items').insert({ carrier_id: CARRIER, list: b.dataset.add, week: b.dataset.week ? +b.dataset.week : null, title: inp.value.trim(), sort: 500 });
+    if (error) return alert(error.message); await load(); drawLists();
+  });
+  if ($('q-add')) $('q-add').onclick = async () => {
+    if (!$('q-new').value.trim()) return;
+    const { error } = await sb.from('retention_questions').insert({ carrier_id: CARRIER, text: $('q-new').value.trim(), kind: 'scale', sort: 65 });
+    if (error) return alert(error.message); await load(); drawLists();
+  };
+}
+start();
+</script>
+</body>
+</html>

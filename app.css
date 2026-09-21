@@ -277,23 +277,23 @@ html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
 .rc-menubtn{display:none}
 @media (max-width:900px){
   body{padding-left:0!important}
-  header{position:sticky!important;top:0;z-index:40;width:auto!important;height:auto!important;flex-direction:row!important;flex-wrap:wrap!important;
+  body > header{position:sticky!important;top:0;z-index:40;width:auto!important;height:auto!important;flex-direction:row!important;flex-wrap:wrap!important;
          align-items:center;gap:8px;border-right:0!important;border-bottom:1px solid var(--line);
          padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px!important;overflow:visible!important}
   .rc-menubtn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--line);
               background:var(--raise);color:var(--ink);font-family:var(--ui);font-weight:600;font-size:15px;order:0}
-  header .brand{order:1;margin:0 0 0 auto!important;padding:0!important}
-  header .brand b{display:none}
+  body > header .brand{order:1;margin:0 0 0 auto!important;padding:0!important}
+  body > header .brand b{display:none}
   /* the menu, the who-am-I line and the footer controls only when ☰ is open */
-  header nav, header .who, header .rc-foot{display:none!important}
-  html.rc-menu-open header nav{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;order:2;width:100%;
+  body > header nav, body > header .who, body > header .rc-foot{display:none!important}
+  html.rc-menu-open body > header nav{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;order:2;width:100%;
          max-height:calc(100vh - 70px);overflow:auto;gap:2px;padding:8px 0}
-  html.rc-menu-open header .who{display:block!important;order:3;width:100%;font-size:13px;padding:4px 2px}
-  html.rc-menu-open header .rc-foot{display:flex!important;order:4;width:100%;flex-direction:row!important;flex-wrap:wrap;gap:6px;padding:4px 0 6px}
-  header nav a{height:44px!important;font-size:15px}
+  html.rc-menu-open body > header .who{display:block!important;order:3;width:100%;font-size:13px;padding:4px 2px}
+  html.rc-menu-open body > header .rc-foot{display:flex!important;order:4;width:100%;flex-direction:row!important;flex-wrap:wrap;gap:6px;padding:4px 0 6px}
+  body > header nav a{height:44px!important;font-size:15px}
   .rc-sec{display:block}
   .rc-sub{margin:0 0 4px 10px}
-  html.rc-rail-in header nav a .rc-lbl{display:inline!important}
+  html.rc-rail-in body > header nav a .rc-lbl{display:inline!important}
   main{padding:12px 10px 32px!important}
   /* wide tables scroll sideways inside their card instead of pushing the page */
   main table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
@@ -304,10 +304,10 @@ html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
   .btn{min-height:40px}
   .btn.small{min-height:36px}
   h1{font-size:20px}
-  .card > header{padding:10px 12px!important}
+  .card > body > header{padding:10px 12px!important}
   .modal .box{width:calc(100vw - 20px)!important;max-width:none!important;max-height:calc(100vh - 20px);overflow:auto}
 }
-@media (max-width:900px) and (prefers-reduced-motion:no-preference){ html.rc-menu-open header nav{animation:rc-drop .14s ease-out} }
+@media (max-width:900px) and (prefers-reduced-motion:no-preference){ html.rc-menu-open body > header nav{animation:rc-drop .14s ease-out} }
 @keyframes rc-drop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -421,4 +421,15 @@ html[data-rc-theme="light"]{ --late-bg:#fdf1ef; --late-line:#f0c9c2; --warn:#9a6
 .banner.soft{
   border-color:color-mix(in srgb,var(--risk) 35%,var(--line));
   background:color-mix(in srgb,var(--risk) 9%,transparent);
+}
+
+
+/* ── Headings inside cards are not the sidebar ─────────────────────────
+   The sidebar rules above style <header>; a card's own <header> must stay a
+   plain row, on every screen size. */
+main header, .card > header, section > header{
+  position:static!important;width:auto!important;height:auto!important;min-height:0!important;
+  flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;flex-wrap:wrap!important;
+  border-right:0!important;background:none!important;box-shadow:none!important;overflow:visible!important;z-index:auto!important;
+  inset:auto!important;text-align:left!important;
 }

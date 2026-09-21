@@ -162,6 +162,12 @@
   .topbtns .btn,.toprow > .btn{min-height:48px;padding:0 8px;font-size:16px}
   .toprow > .btn.red{width:100%}
   @media (min-width:600px){ .toprow{flex-direction:row;flex-wrap:wrap;align-items:center} .toprow h1{flex:1 1 auto} .topbtns{display:flex} .toprow > .btn.red{width:auto} }
+  .ciq{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .ciq .q{font-size:17px;font-weight:600;margin-bottom:8px}
+  .ciq .seg{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  .ciq .seg.yn{grid-template-columns:1fr 1fr}
+  .ciq .seg button{min-height:52px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:700;font-size:18px}
+  .ciq .seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 </style>
 </head>
 <body>
@@ -269,6 +275,11 @@
       </div>
       <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn primary" id="a2hs-btn" hidden>Add to home screen</button><button class="btn primary" id="handoff-btn" hidden>I added it: get app code</button><button class="btn" id="a2hs-later">Later</button></div>
     </div>
+    <div id="ci-card" class="card" hidden style="border:2px solid var(--accent)">
+      <b style="font-size:18px" id="ci-title">Quick check-in</b>
+      <div class="meta" style="font-size:15px;margin:4px 0 10px">One minute, a few taps. It goes to management, not dispatch.</div>
+      <div class="row" style="margin-top:0"><button class="btn primary" id="ci-go" style="flex:1">Start</button><button class="btn" id="ci-later">Later</button></div>
+    </div>
     <div id="msg-pop" class="card msgpop" hidden role="alert" aria-live="assertive">
       <b>Message from dispatch</b>
       <div id="msg-pop-list"></div>
@@ -347,6 +358,15 @@
       <div class="meta" id="inc-saved"></div>
     </div>
     <div class="card inc-sec" id="inc-recent" hidden></div>
+  </section>
+
+  <section id="ci-view" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1 id="ci-h">Check-in</h1>
+    <div class="meta" style="font-size:15px">1 = not at all, 5 = completely. Your answers go to management, not dispatch.</div>
+    <div id="ci-qs" style="display:flex;flex-direction:column;gap:12px"></div>
+    <label>Anything we should fix? (optional)<textarea id="ci-comment" rows="3" maxlength="1500"></textarea></label>
+    <button class="btn primary" id="ci-send" style="min-height:56px;font-size:18px">Send</button>
+    <button class="btn" id="ci-cancel" style="min-height:44px">Not now</button>
   </section>
 
   <section id="wit-view" hidden style="display:flex;flex-direction:column;gap:12px">
@@ -491,6 +511,7 @@ async function start() {
   watchMotion();
   loadStops();
   startMessages();
+  checkCheckin();
 }
 $('login-btn').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
@@ -994,7 +1015,7 @@ const YN = [
 const SHOTS = [['scene', 'The scene'], ['our_vehicle', 'Our truck damage'], ['other_vehicle', 'Other vehicle'], ['plate', 'Their plate'],
   ['insurance_card', 'Their insurance card'], ['license', 'Their licence'], ['cargo', 'Cargo'], ['police', 'Police / report card'], ['injury', 'Injury'], ['other', 'Anything else']];
 let INC = null, INCF = {}, incTimer = null;
-function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
+function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
 async function openIncident(existing) {
   incShow('inc-view');
   $('inc-call').href = officePhone ? 'tel:' + officePhone.replace(/[^\d+]/g, '') : '#';
@@ -1114,6 +1135,44 @@ $('w-save').onclick = async () => {
     alert('Witness card saved. Thank them — and take their phone number if they didn\'t write one.');
   } catch (e) { alert('Not saved: ' + (e.message || e)); }
   $('w-save').disabled = false;
+};
+
+// ---------- Retention check-in (58) ----------
+// End of each of the first six weeks, then every 13 weeks. Never while moving.
+let CI = null, CIA = {}, ciLaterUntil = 0;
+async function checkCheckin() {
+  if (!me || Date.now() < ciLaterUntil) return;
+  const { data, error } = await sb.rpc('driver_checkin_due');
+  if (error || !data) { $('ci-card').hidden = true; return; }
+  CI = data; $('ci-title').textContent = data.title; $('ci-card').hidden = false;
+}
+$('ci-later').onclick = () => { ciLaterUntil = Date.now() + 4 * 3600e3; $('ci-card').hidden = true; };
+$('ci-go').onclick = () => {
+  if (!CI) return; CIA = {};
+  $('ci-h').textContent = CI.title;
+  $('ci-qs').innerHTML = CI.questions.map(q => `<div class="ciq"><div class="q">${esc(q.text)}</div>${q.kind === 'yesno'
+    ? `<div class="seg yn">${['Yes', 'No'].map(t => `<button type="button" data-q="${q.id}" data-v="${t === 'Yes'}">${t}</button>`).join('')}</div>`
+    : q.kind === 'text' ? `<textarea data-qt="${q.id}" rows="2" maxlength="500"></textarea>`
+    : `<div class="seg">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${q.id}" data-v="${n}">${n}</button>`).join('')}</div>`}</div>`).join('');
+  document.querySelectorAll('#ci-qs [data-q]').forEach(b => b.onclick = () => {
+    CIA[b.dataset.q] = b.dataset.v === 'true' ? true : b.dataset.v === 'false' ? false : +b.dataset.v;
+    b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  });
+  $('ci-comment').value = '';
+  incShow('ci-view');
+};
+$('ci-cancel').onclick = () => incShow('app');
+$('ci-send').onclick = async () => {
+  if (moving()) { alert('Stop the truck first.'); return; }
+  document.querySelectorAll('#ci-qs [data-qt]').forEach(t => { if (t.value.trim()) CIA[t.dataset.qt] = t.value.trim(); });
+  const missing = CI.questions.filter(q => q.kind === 'scale' && CIA[q.id] == null).length;
+  if (missing) { alert(`Please answer ${missing === 1 ? 'the last question' : 'every question'} (1 to 5).`); return; }
+  $('ci-send').disabled = true;
+  const { error } = await sb.rpc('driver_checkin_submit', { p_period: CI.period, p_answers: CIA, p_comment: $('ci-comment').value });
+  $('ci-send').disabled = false;
+  if (error) { alert(error.message); return; }
+  CI = null; $('ci-card').hidden = true; incShow('app');
+  alert('Thank you. Management reads every one of these.');
 };
 
 // ---------- Messages ----------

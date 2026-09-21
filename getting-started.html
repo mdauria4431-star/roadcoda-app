@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px;max-width:900px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px}
+  h1{margin:0;font-size:19px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .mini{font-size:12px;color:var(--ink-3)}
+  .progress{height:10px;border-radius:5px;background:var(--panel-2);overflow:hidden}
+  .progress i{display:block;height:100%;background:var(--accent)}
+  .step{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line-soft)}
+  .step:last-child{border-bottom:0}
+  .step .tick{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;flex:none;font-size:13px;font-weight:700}
+  .step.done .tick{background:var(--ok);border-color:var(--ok);color:#fff}
+  .step .w{flex:1;min-width:0}
+  .step .t{font-weight:600}
+  .step.done .t{color:var(--muted)}
+  .step input[type=checkbox]{width:20px;height:20px}
+  .error{color:var(--late)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="getting-started.html">Getting started</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Getting started</h1>
+    <div class="mini" id="summary"></div>
+    <div class="progress"><i id="bar" style="width:0"></i></div>
+    <div id="sections"></div>
+  </section>
+</main>
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let ME = null;
+const canTick = () => !window.RC_ACCESS || window.RC_ACCESS.can('users', 'edit');
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  ME = data; $('who').textContent = `${data.full_name || ''} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  $('app').hidden = false; load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load() {
+  const { data, error } = await sb.rpc('getting_started');
+  if (error) { $('sections').innerHTML = `<div class="card" style="padding:16px"><span class="error">${esc(error.message)}</span>${/getting_started|schema cache/.test(error.message) ? ' — run 58_onboarding_retention.sql.' : ''}</div>`; return; }
+  const rows = data || [], done = rows.filter(r => r.done).length;
+  $('bar').style.width = (rows.length ? done / rows.length * 100 : 0) + '%';
+  const setup = rows.filter(r => r.section === 'Set up'), setDone = setup.filter(r => r.done).length;
+  $('summary').innerHTML = `${done} of ${rows.length} done. ${setDone < setup.length ? `<b>Set up</b> steps tick themselves as you add the data — ${setup.length - setDone} to go.` : 'Setup is complete — now work through the six go-live weeks.'}`;
+  const secs = [...new Set(rows.map(r => r.section))];
+  $('sections').innerHTML = secs.map(s => {
+    const list = rows.filter(r => r.section === s), d = list.filter(r => r.done).length;
+    return `<div class="card" style="margin-bottom:12px"><header><h2>${esc(s === 'Set up' ? 'Set up' : 'Going live · ' + s)}</h2><span class="sp"></span><span class="mini">${d} / ${list.length}</span></header>
+      ${list.map(r => `<div class="step ${r.done ? 'done' : ''}">
+        ${r.auto || r.section === 'Set up' ? `<span class="tick">${r.done ? '✓' : ''}</span>` : `<input type="checkbox" data-step="${esc(r.step)}" ${r.done ? 'checked' : ''} ${canTick() ? '' : 'disabled'} aria-label="${esc(r.title)}">`}
+        <div class="w"><div class="t">${esc(r.title)}</div>${r.detail ? `<div class="mini">${esc(r.detail)}</div>` : ''}</div>
+        ${r.link && !r.done ? `<a class="btn small" href="${esc(r.link)}">Go</a>` : ''}</div>`).join('')}</div>`;
+  }).join('');
+  document.querySelectorAll('[data-step]').forEach(cb => cb.onchange = async () => {
+    const q = cb.checked ? sb.from('carrier_setup_ticks').insert({ step: cb.dataset.step }) : sb.from('carrier_setup_ticks').delete().eq('step', cb.dataset.step);
+    const { error } = await q; if (error) { alert(error.message); cb.checked = !cb.checked; return; } load();
+  });
+}
+start();
+</script>
+</body>
+</html>
