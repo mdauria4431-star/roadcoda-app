@@ -51,13 +51,13 @@
   // Six visible groups instead of eleven flat links. Setup is weekly work, so
   // it folds away — that's what buys the dispatch board its width.
   var GROUPS = [
-    { name: 'Daily', items: ['index.html', 'dispatch.html', 'planner.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
+    { name: 'Daily', items: ['index.html', 'dispatch.html', 'map.html', 'planner.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'office-payroll.html', 'profit.html', 'tolls.html', 'ifta.html', 'qb-export.html'] },
     { name: 'Safety', items: ['safety.html', 'incidents.html', 'claims.html', 'compliance.html', 'retention.html', 'handbooks.html'] },
     { name: 'Setup', items: ['getting-started.html', 'customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html', 'features.html', 'devices.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'devices.html': '▯', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'devices.html': '▯', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
@@ -67,7 +67,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -193,6 +193,13 @@
       il.href = 'incidents.html'; il.textContent = 'Incidents';
       if (here === 'incidents.html') il.className = 'on';
       nav.appendChild(il); links['incidents.html'] = il;
+    }
+    // Live map (87): a RoadCoda add-on — only when it's switched on for this carrier
+    if (links['dispatch.html'] && !links['map.html'] && acc && acc.feature && acc.feature('live_tracking')) {
+      var lm = document.createElement('a');
+      lm.href = 'map.html'; lm.textContent = 'Live map';
+      if (here === 'map.html') lm.className = 'on';
+      nav.appendChild(lm); links['map.html'] = lm;
     }
     if (links['dispatch.html'] && !links['messages.html']) {
       var ml = document.createElement('a');

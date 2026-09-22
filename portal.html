@@ -219,6 +219,7 @@ async function loadList() {
           <td class="n">${qty(r.delivered)} of ${qty(r.ordered)}</td><td>${r.issue ? `<span class="pill bad">${esc(ISSUE[r.issue] || r.issue)}</span>` : ''}</td><td>${r.pod ? '✓' : ''}</td></tr>`).join('')}</tbody></table>`;
   document.querySelectorAll('tr[data-l]').forEach(tr => tr.onclick = () => showLoad(tr.dataset.l));
 }
+let TRACK_ON = null;   // 87
 async function showLoad(id) {
   const { data: l, error } = await sb.rpc('portal_load', { p_load: id });
   if (error) { $('detail').innerHTML = `<div class="card empty err">${esc(error.message)}</div>`; return; }
@@ -235,9 +236,13 @@ async function showLoad(id) {
   if (DOCS.length) { try { const r = await sb.storage.from('scan-photos').createSignedUrls(DOCS.map(d => d.path), 3600); (Array.isArray(r.data) ? r.data : []).forEach(x => { if (x.signedUrl) durls[x.path] = x.signedUrl; }); } catch (_) { /* listed without links */ } }
   const DOCN = { bol: 'BOL', fuel_receipt: 'Fuel receipt', lumper: 'Lumper receipt', scale: 'Scale ticket', toll: 'Toll receipt', trip_sheet: 'Trip sheet', other: 'Document' };
   const seqOf = Object.fromEntries(l.stops.map(x => [x.id, x.seq]));
+  // Live tracking (87): a Track button on stops still to come, when the carrier has the add-on
+  if (TRACK_ON === null) { try { const r = await sb.rpc('portal_tracking_on'); TRACK_ON = !r.error && r.data === true; } catch (_) { TRACK_ON = false; } }
+  const canTrack = (s) => TRACK_ON && l.status === 'in_progress' && s.status === 'pending';
   $('detail').innerHTML = `<div class="card"><div class="bar"><h2>Load ${esc(l.load_no)} · ${day(l.service_date)}</h2>${STATUS(l.status)}${ME.kind === 'billing' && (ME.accounts || []).length > 1 ? `<span class="hint">${esc(l.account)}</span>` : ''}<span class="sp"></span><button class="btn noprint" onclick="window.print()">Print</button></div>
     ${l.stops.map(s => `<div class="stop">
       <div><div class="k">${s.type === 'pickup' ? 'Pickup' : 'Stop ' + s.seq}</div><b>${esc(s.name)}</b><div class="hint">${esc(s.address || '')}</div>
+        ${canTrack(s) ? `<button class="btn noprint" data-track="${s.id}" style="margin-top:6px">Track this ${s.type === 'pickup' ? 'pickup' : 'delivery'}</button>` : ''}
         ${s.issue ? `<div style="margin-top:6px"><span class="pill bad">${esc(ISSUE[s.issue] || s.issue)}</span>${s.issue_resolution ? ` <span class="hint">${esc(s.issue_resolution)}</span>` : ''}</div>` : ''}
         ${(s.delays || []).length ? `<div class="hint" style="margin-top:6px">Delay: ${s.delays.map(d => `${esc(d.code || '')} ${esc(d.reason || '')} · ${d.minutes} min`).join('; ')}</div>` : ''}</div>
       <div><div class="k">Times</div>Window ${hm(s.window_start)}–${hm(s.window_end)}<br>Arrived <b style="display:inline">${hm(s.arrived_at)}</b>${!s.arrived_at && s.eta ? ` <span class="hint">(ETA ${hm(s.eta)})</span>` : ''}<br>Departed <b style="display:inline">${hm(s.departed_at)}</b></div>
@@ -247,6 +252,13 @@ async function showLoad(id) {
     </div>`).join('')}
     ${DOCS.length ? `<div class="stop" style="display:block"><div class="k">Documents</div>${DOCS.map(d => `<div style="padding:3px 0">${durls[d.path] ? `<a href="${durls[d.path]}" target="_blank" rel="noopener">${DOCN[d.kind] || 'Document'}</a>` : (DOCN[d.kind] || 'Document')}${d.stop_id && seqOf[d.stop_id] ? ` · stop ${seqOf[d.stop_id]}` : ''}${d.note ? ` <span class="hint">${esc(d.note)}</span>` : ''}</div>`).join('')}</div>` : ''}</div>`;
   document.querySelectorAll('[data-receipt]').forEach(b => b.onclick = () => receipt(b.dataset.receipt));
+  document.querySelectorAll('[data-track]').forEach(b => b.onclick = async () => {
+    const w = window.open('', '_blank');                      // open now, so a phone doesn't block it as a pop-up
+    const { data, error } = await sb.rpc('portal_track_link', { p_stop: b.dataset.track });
+    if (error || !data) { if (w) w.close(); alert(error ? error.message : 'Tracking isn\'t available for this stop now.'); return; }
+    const url = new URL('track.html?t=' + encodeURIComponent(data), location.href).href;
+    if (w) w.location = url; else location.href = url;
+  });
   $('detail').scrollIntoView({ behavior: 'smooth' });
 }
 

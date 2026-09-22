@@ -520,6 +520,27 @@ function watchMotion() {
   }, () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
 }
 
+// ---------- Live tracking (87): the phone as a fallback position ----------
+// While a load is in progress and the app is open, send where the truck is: every 3 minutes, or sooner
+// after moving 300 m. The server ignores it when the truck's ELD reported in the last 10 minutes, and
+// says 'off' when the carrier doesn't have live tracking (then the app stops asking this session).
+let pingAt = 0, pingLL = null, pingWait = 0, pingOff = false;
+const metersBetween = (a, b) => { const R = 6371000, r = Math.PI / 180, dLa = (b[0] - a[0]) * r, dLo = (b[1] - a[1]) * r;
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+setInterval(async () => {
+  if (pingOff || document.hidden || !lastPos || !me || Date.now() < pingWait) return;
+  const ll = [lastPos.latitude, lastPos.longitude];
+  if (pingLL && Date.now() - pingAt < 180000 && metersBetween(pingLL, ll) < 300) return;
+  try {
+    const { data, error } = await sb.rpc('driver_ping', { p_lat: ll[0], p_lon: ll[1], p_heading: lastPos.heading ?? null,
+      p_speed_mph: lastPos.speed != null ? Math.round(lastPos.speed * 2.23694 * 10) / 10 : null, p_accuracy_m: lastPos.accuracy ?? null });
+    if (error) { if (/driver_ping|schema cache/.test(error.message)) pingOff = true; return; }
+    if (data === 'off') { pingOff = true; return; }
+    if (data === 'no_trip') { pingWait = Date.now() + 300000; return; }
+    pingAt = Date.now(); pingLL = ll;
+  } catch (_) { /* offline: try again next time */ }
+}, 60000);
+
 // ---------- Sign in ----------
 async function start() {
   // Sign-in QR code / copied link from the office: tap to sign this phone in

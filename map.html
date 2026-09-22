@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live map · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<script src="rc-map.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 16px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  label.chk{flex-direction:row;align-items:center;gap:6px;font-weight:500} label.chk input{height:auto}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  .sp{flex:1}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .wrap{display:grid;grid-template-columns:330px 1fr;gap:12px;height:calc(100vh - 150px);min-height:460px}
+  @media (max-width:900px){.wrap{grid-template-columns:1fr;height:auto}.wrap #map{height:60vh}}
+  #list{overflow:auto}
+  #map{border-radius:12px;border:1px solid var(--line);min-height:420px;z-index:0}
+  .trk{display:grid;grid-template-columns:12px 1fr auto;gap:4px 10px;padding:9px 12px;border-bottom:1px solid var(--line-soft);cursor:pointer}
+  .trk:hover{background:var(--row-hover)} .trk.on{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+  .dot{width:12px;height:12px;border-radius:50%;margin-top:3px}
+  .trk b{font-family:var(--mono)} .trk .r{text-align:right;font-size:11.5px;color:var(--ink-3)}
+  .trk .l2{grid-column:2/-1;font-size:12px;color:var(--ink-3);line-height:1.4}
+  .late{color:var(--late);font-weight:700}
+  .counts{display:flex;gap:12px;font-size:12.5px;color:var(--ink-3);flex-wrap:wrap}
+  .counts i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+  .leaflet-popup-content{font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:13px;line-height:1.45;margin:10px 12px}
+  .pop h3{margin:0 0 4px;font-size:14px} .pop .k{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+  .pop .b{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap} .pop a.bt,.pop button.bt{height:26px;padding:0 9px;border-radius:6px;border:1px solid #bbb;background:#fff;color:#111;font-weight:600;font-size:12px;display:inline-flex;align-items:center;text-decoration:none}
+  .rc-truck,.rc-stop{background:none;border:0}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:1000;box-shadow:0 6px 24px rgba(0,0,0,.3);line-height:1.5}
+  .toast.err{border-color:var(--late)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="map.html">Live map</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>Live map</h1>
+      <div class="counts" id="counts"></div>
+      <span class="sp"></span>
+      <label>Find<input id="find" placeholder="Truck, driver, load, stop…"></label>
+      <label class="chk"><input type="checkbox" id="onload" checked> Only trucks with a load</label>
+      <span class="mini" id="upd"></span>
+      <button class="btn small" id="refresh">Refresh</button>
+    </div>
+    <div id="off" hidden></div>
+    <div class="wrap" id="wrap">
+      <div class="card" id="list"></div>
+      <div id="map"></div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = RC_MAP.esc;
+const hm = (t) => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+const COLOR = { late: 'var(--late)', moving: 'var(--ok)', stopped: 'var(--accent)', stale: '#8a8f98', none: '#8a8f98' };
+const SRC = { phone: "driver's phone", sample: 'sample', samsara: 'Samsara', motive: 'Motive', geotab: 'Geotab' };
+let TRUCKS = [], MARK = {}, SEL = null, ROUTE = null, map = null, fitted = false, timer = null, tt = null;
+function toast(h, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 5000); }
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('dispatch')) return;
+  $('app').hidden = false;
+  if (!window.L) { $('off').hidden = false; $('off').innerHTML = '<div class="card empty error">The map library didn\'t load — check the internet connection and refresh.</div>'; $('wrap').hidden = true; return; }
+  map = L.map('map', { zoomControl: true }).setView([39.5, -98.35], 4);
+  RC_MAP.tiles(map);
+  await load();
+  timer = setInterval(() => { if (!document.hidden) load(); }, 60000);
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('refresh').onclick = () => load();
+$('find').oninput = $('onload').onchange = () => draw();
+
+async function load() {
+  const { data, error } = await sb.rpc('live_map');
+  if (error) {
+    $('off').hidden = false; $('wrap').hidden = true;
+    $('off').innerHTML = `<div class="card empty ${/add-on/.test(error.message) ? '' : 'error'}">${esc(error.message)}${/live_map|schema cache/.test(error.message) ? ' — run 87_live_tracking.sql in the SQL Editor.' : ''}</div>`;
+    return;
+  }
+  TRUCKS = (data || []).map(t => ({ ...t, state: stateOf(t) }));
+  $('upd').textContent = 'Updated ' + hm(new Date());
+  draw();
+}
+function stateOf(t) {
+  if (!t.pos) return 'none';
+  if (t.next && t.next.late) return 'late';
+  if (RC_MAP.age(t.pos.at) === 'stale') return 'stale';
+  return (t.pos.speed || 0) > 3 ? 'moving' : 'stopped';
+}
+const RANK = { late: 0, moving: 1, stopped: 2, stale: 3, none: 4 };
+
+function draw() {
+  const f = $('find').value.trim().toLowerCase();
+  const shown = TRUCKS.filter(t => (!$('onload').checked || t.load) && (!f || [t.unit_no, t.load?.driver, t.load?.load_no, t.load?.customer, t.next?.name].some(x => String(x || '').toLowerCase().includes(f))))
+    .sort((a, b) => RANK[a.state] - RANK[b.state] || String(a.unit_no).localeCompare(String(b.unit_no)));
+  const n = (s) => TRUCKS.filter(t => t.state === s).length;
+  $('counts').innerHTML = [['late', 'Running late'], ['moving', 'Moving'], ['stopped', 'Stopped'], ['stale', 'No update for an hour+'], ['none', 'No position']]
+    .filter(([s]) => n(s)).map(([s, t]) => `<span><i style="background:${COLOR[s]}"></i>${n(s)} ${t}</span>`).join('');
+  $('list').innerHTML = shown.length ? shown.map(t => `<div class="trk ${SEL === t.id ? 'on' : ''}" data-id="${t.id}">
+      <span class="dot" style="background:${COLOR[t.state]}"></span>
+      <div><b>${esc(t.unit_no)}</b> ${t.load ? `· ${esc(t.load.driver || 'no driver')}` : '<span class="mini">no load</span>'}</div>
+      <div class="r">${t.pos ? RC_MAP.ago(t.pos.at) : 'no position'}</div>
+      <div class="l2">${t.load ? `Load ${esc(t.load.load_no)} · ${esc(t.load.customer || '')} · ${t.load.done}/${t.load.total} stops${t.load.status !== 'in_progress' ? ` · ${esc(t.load.status)}` : ''}` : ''}
+        ${t.next ? `<br>Next: ${esc(t.next.name)}${t.next.eta ? ` · ETA ${hm(t.next.eta)}` : ''}${t.next.late ? ' <span class="late">LATE</span>' : ''}` : ''}</div></div>`).join('')
+    : '<div class="empty">No trucks to show.</div>';
+  document.querySelectorAll('.trk').forEach(el => el.onclick = () => select(el.dataset.id, true));
+
+  // markers
+  const ids = new Set(shown.map(t => t.id));
+  for (const id of Object.keys(MARK)) if (!ids.has(id)) { MARK[id].remove(); delete MARK[id]; }
+  const pts = [];
+  for (const t of shown) {
+    if (!t.pos) continue;
+    const ll = [t.pos.lat, t.pos.lon]; pts.push(ll);
+    const icon = RC_MAP.truckIcon(t.unit_no, COLOR[t.state], t.pos.heading, t.state === 'moving' || (t.pos.speed || 0) > 3, t.pos.provider === 'phone');
+    if (MARK[t.id]) { MARK[t.id].setLatLng(ll).setIcon(icon); } else { MARK[t.id] = L.marker(ll, { icon, title: t.unit_no }).addTo(map).on('click', () => select(t.id, false)); }
+    MARK[t.id].bindPopup(() => popup(t), { maxWidth: 300 });
+  }
+  if (!fitted && pts.length) { map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 }); fitted = true; }
+  if (SEL) route(TRUCKS.find(t => t.id === SEL));
+}
+
+function popup(t) {
+  const n = t.next, p = t.pos;
+  const div = document.createElement('div'); div.className = 'pop';
+  div.innerHTML = `<h3>${esc(t.unit_no)}${t.load ? ` · ${esc(t.load.driver || '')}` : ''}</h3>
+    ${t.load ? `<div>Load <b>${esc(t.load.load_no)}</b> · ${esc(t.load.customer || '')} · ${t.load.done}/${t.load.total} stops done</div>` : '<div>No load today.</div>'}
+    ${n ? `<div class="k">${n.pickup ? 'Next pickup' : 'Next stop'}</div><div><b>${esc(n.name)}</b><br>${esc(n.address || '')}<br>
+      Window ${hm(n.window_start)}–${hm(n.window_end)}${n.eta ? ` · ETA <b>${hm(n.eta)}</b>` : ''}${n.late ? ' <span style="color:#c62828;font-weight:700">LATE</span>' : ''}</div>` : ''}
+    <div class="k">Position</div><div>${RC_MAP.ago(p.at)} · ${p.speed > 3 ? `${Math.round(p.speed)} mph` : 'stopped'} · from ${esc(SRC[p.provider] || p.provider)}${p.address ? `<br>${esc(p.address)}` : ''}</div>
+    <div class="b">${t.load ? `<a class="bt" href="trip.html?load=${t.load.id}">Open trip</a>` : ''}${n && n.id ? `<button class="bt" data-link="${n.id}">Copy tracking link</button>` : ''}</div>`;
+  const b = div.querySelector('[data-link]'); if (b) b.onclick = () => copyLink(b.dataset.link, n.name);
+  return div;
+}
+async function copyLink(stopId, name) {
+  const { data, error } = await sb.rpc('office_track_link', { p_stop: stopId });
+  if (error) return toast(esc(error.message), true);
+  if (!data) return toast('That stop is already done — no tracking link.');
+  const url = new URL('track.html?t=' + encodeURIComponent(data), location.href).href;
+  try { await navigator.clipboard.writeText(url); toast(`Tracking link for <b>${esc(name)}</b> copied. It shows the truck only while this is the driver's next stop, and stops working after delivery.`); }
+  catch (_) { toast(`Tracking link for <b>${esc(name)}</b>:<br><input value="${esc(url)}" style="width:100%" onclick="this.select()">`); }
+}
+
+// the selected truck: a dashed line through its next stop and the rest, and numbered stops
+function select(id, fly) {
+  SEL = id; const t = TRUCKS.find(x => x.id === id);
+  document.querySelectorAll('.trk').forEach(el => el.classList.toggle('on', el.dataset.id === id));
+  route(t);
+  if (t && t.pos && MARK[t.id]) { if (fly) map.setView([t.pos.lat, t.pos.lon], Math.max(map.getZoom(), 11)); MARK[t.id].openPopup(); }
+  else if (t && !t.pos) toast(`${esc(t.unit_no)} has no position yet — it appears once its ELD or the driver's phone reports one.`);
+}
+function route(t) {
+  if (ROUTE) { ROUTE.remove(); ROUTE = null; }
+  if (!t || !t.pos) return;
+  ROUTE = L.layerGroup().addTo(map);
+  const stops = [];
+  if (t.next && t.next.lat != null) stops.push({ seq: t.next.seq, name: t.next.name, lat: t.next.lat, lon: t.next.lon, next: true });
+  for (const r of t.rest || []) if (r.lat != null && !(t.next && r.seq === t.next.seq)) stops.push(r);
+  const line = [[t.pos.lat, t.pos.lon], ...stops.map(s => [s.lat, s.lon])];
+  if (line.length > 1) L.polyline(line, { color: t.state === 'late' ? '#c62828' : '#5b3cc4', weight: 3, dashArray: '6 6', opacity: .85 }).addTo(ROUTE);
+  stops.forEach(s => L.marker([s.lat, s.lon], { icon: RC_MAP.stopIcon(s.seq, s.next ? (t.state === 'late' ? '#c62828' : '#5b3cc4') : '#888') })
+    .bindTooltip(`${s.seq}. ${esc(s.name)}`).addTo(ROUTE));
+  const missing = (t.rest || []).filter(r => r.lat == null).length;
+  if (missing) toast(`${missing} of ${t.unit_no}'s stops have no map point yet — they fill in as drivers scan there (or look them up in the Route planner).`);
+}
+
+start();
+</script>
+</body>
+</html>

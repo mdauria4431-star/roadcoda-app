@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Track your delivery</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="rc-map.js"></script>
+<style>
+  :root{--brand:#0f5e63;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--bg:#f6f4ef}
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,'Segoe UI',Arial,sans-serif}
+  .wrap{max-width:640px;margin:0 auto;padding:16px}
+  .head{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:3px solid var(--brand);margin-bottom:14px}
+  .head img{max-height:44px;max-width:200px}
+  .head .n{font-weight:700;font-size:16px;color:var(--brand)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  h1{font-size:22px;margin:0 0 4px}
+  .big{font-size:19px;font-weight:700;margin:2px 0}
+  .muted{color:var(--muted);font-size:13.5px}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line)}
+  .row:first-of-type{border-top:0}
+  .row b{text-align:right}
+  #map{height:340px;border-radius:14px;border:1px solid var(--line);margin-bottom:12px;z-index:0}
+  .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12.5px;font-weight:700;background:var(--brand);color:#fff}
+  .foot{text-align:center;color:#a09c94;font-size:12px;margin-top:18px}
+  a{color:var(--brand)}
+  .rc-truck,.rc-stop{background:none;border:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head" id="head"><div class="n">Delivery tracking</div></div>
+  <div class="card" id="status"><div class="muted">Loading…</div></div>
+  <div id="map" hidden></div>
+  <div class="card" id="details" hidden></div>
+  <div class="foot">Updates every minute · Powered by RoadCoda</div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const token = new URLSearchParams(location.search).get('t') || '';
+// the address keeps the link, so a refresh or a bookmark still works; no-referrer keeps it from leaking to other sites
+let sb = null, map = null, TRUCK = null, DEST = null, fitted = false, TZ = undefined;
+try { sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } }); } catch (_) {}
+const t = (v) => v ? new Date(v).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) : '';
+const d = (v) => v ? new Date(v).toLocaleDateString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' }) : '';
+
+async function load() {
+  if (!sb || !token) return show({ state: 'invalid' });
+  const { data, error } = await sb.rpc('track_lookup', { p_token: token });
+  if (error) { $('status').innerHTML = '<div class="muted">Tracking isn\'t available right now. Please try again in a minute.</div>'; return; }
+  show(data || { state: 'invalid' });
+}
+
+function show(x) {
+  TZ = x.tz || undefined;
+  const c = x.carrier || {};
+  if (/^#[0-9a-f]{6}$/i.test(c.color || '')) document.documentElement.style.setProperty('--brand', c.color);
+  const logo = c.logo_path && window.RC_CONFIG ? `${RC_CONFIG.SUPABASE_URL}/storage/v1/object/public/brand-logos/${encodeURI(c.logo_path)}` : '';
+  if (c.name) $('head').innerHTML = `${logo ? `<img src="${esc(logo)}" alt="${esc(c.name)}">` : ''}<div class="n">${esc(c.name)}</div>`;
+  const phone = c.phone ? `<p class="muted" style="margin:10px 0 0">Questions? Call <a href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ''))}">${esc(c.phone)}</a>.</p>` : '';
+  const s = x.stop || {}, what = s.pickup ? 'pickup' : 'delivery';
+  const eta = s.eta && new Date(s.eta) > new Date(x.now || Date.now()) ? `Expected around <b>${t(s.eta)}</b>` : '';
+  const H = {
+    invalid: ['This tracking link isn\'t valid', 'Check the link in your email, or contact the carrier.'],
+    expired: ['Tracking for this delivery has ended', 'The link stops working after delivery.'],
+    scheduled: [`Your ${what} is scheduled`, s.window_start ? `${d(s.window_start)}, ${t(s.window_start)}–${t(s.window_end)}` : ''],
+    on_route: ['On the way', `The driver has <b>${x.stops_before}</b> stop${x.stops_before === 1 ? '' : 's'} before yours. ${eta}`],
+    next: [`You're the next stop`, eta || 'The driver is on the way to you.'],
+    arrived: ['The driver has arrived', s.arrived_at ? `Arrived at ${t(s.arrived_at)}.` : ''],
+    delivered: [s.pickup ? 'Picked up' : 'Delivered', `${d(s.departed_at || s.arrived_at)} at ${t(s.departed_at || s.arrived_at)}.`],
+  }[x.state] || ['Tracking', ''];
+  // running behind the window: say so, like the Running late email does
+  const late = ['next', 'on_route'].includes(x.state) && s.window_end && ((s.eta && new Date(s.eta) > new Date(s.window_end)) || (!s.eta && new Date(s.window_end) < new Date(x.now || Date.now())));
+  $('status').innerHTML = `<h1>${H[0]}</h1><div class="big" style="font-weight:500;font-size:16px">${H[1]}</div>
+    ${late ? `<div style="margin-top:8px;padding:8px 12px;border-radius:10px;background:#fdecea;color:#8a1c12;font-weight:600">Running behind the scheduled window (${t(s.window_start)}–${t(s.window_end)}). We're sorry for the delay.</div>` : ''}
+    ${x.state === 'next' && x.truck ? `<div class="muted" style="margin-top:6px">Truck position updated ${RC_MAP.ago(x.truck.at, x.now)}${x.truck.moving ? '' : ' · currently stopped'}.</div>` : ''}
+    ${x.state === 'next' && !x.truck ? '<div class="muted" style="margin-top:6px">The truck\'s live position isn\'t available right now.</div>' : ''}${phone}`;
+  if (['invalid', 'expired'].includes(x.state)) { $('details').hidden = true; $('map').hidden = true; return; }
+  $('details').hidden = false;
+  $('details').innerHTML = `<div class="row"><span>${s.pickup ? 'Pickup at' : 'Delivering to'}</span><b>${esc(s.name || '')}</b></div>
+    ${s.address ? `<div class="row"><span>Address</span><b>${esc(s.address)}</b></div>` : ''}
+    ${s.window_start ? `<div class="row"><span>Scheduled window</span><b>${d(s.window_start)}, ${t(s.window_start)}–${t(s.window_end)}</b></div>` : ''}
+    ${x.load_no ? `<div class="row"><span>Reference</span><b>Load ${esc(x.load_no)}</b></div>` : ''}`;
+  drawMap(x);
+}
+
+function drawMap(x) {
+  const s = x.stop || {};
+  // the map only while this is the next stop and the truck's position is known
+  if (x.state !== 'next' || !x.truck || !window.L) { $('map').hidden = true; return; }
+  $('map').hidden = false;
+  if (!map) { map = L.map('map', { zoomControl: true, attributionControl: true }); RC_MAP.tiles(map); }
+  const tl = [x.truck.lat, x.truck.lon];
+  const brand = getComputedStyle(document.documentElement).getPropertyValue('--brand').trim() || '#0f5e63';
+  if (TRUCK) TRUCK.setLatLng(tl); else TRUCK = L.marker(tl, { icon: RC_MAP.truckIcon('Truck', brand, x.truck.heading, x.truck.moving, false), title: 'The truck' }).addTo(map);
+  TRUCK.setIcon(RC_MAP.truckIcon('Truck', brand, x.truck.heading, x.truck.moving, false));
+  const pts = [tl];
+  if (s.lat != null) { const dl = [s.lat, s.lon]; pts.push(dl); if (!DEST) DEST = L.marker(dl, { icon: RC_MAP.stopIcon('★', brand), title: s.name }).addTo(map); }
+  if (!fitted) { pts.length > 1 ? map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 }) : map.setView(tl, 12); fitted = true; }
+  setTimeout(() => map.invalidateSize(), 50);
+}
+
+load();
+setInterval(() => { if (!document.hidden) load(); }, 60000);
+</script>
+</body>
+</html>

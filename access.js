@@ -7,15 +7,15 @@
   const SCREEN_OF = {
     'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'safety.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
-    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home', 'planner.html': 'dispatch',
+    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home', 'planner.html': 'dispatch', 'map.html': 'dispatch',
   };
   // Pages that belong to a module the carrier can switch off (82)
   const FEATURE_OF = { 'containers.html': 'containers', 'ifta.html': 'ifta', 'claims.html': 'claims', 'compliance.html': 'compliance', 'handbooks.html': 'handbooks',
     'retention.html': 'retention', 'office-payroll.html': 'office_payroll', 'qb-export.html': 'quickbooks', 'tolls.html': 'tolls', 'profit.html': 'profit',
-    'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets', 'planner.html': 'route_planner' };
+    'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets', 'planner.html': 'route_planner', 'map.html': 'live_tracking' };
   const FEATURE_NAME = { containers: 'Returnable containers', ifta: 'IFTA fuel tax', claims: 'Claims & subrogation', compliance: 'Driver files & inspections', handbooks: 'Employee handbooks',
     retention: 'Onboarding & retention', office_payroll: 'Office staff payroll', quickbooks: 'QuickBooks export', tolls: 'Tolls', profit: 'Profit reports', activity_files: 'Customer activity files',
-    ratings: 'Delivery ratings', trip_sheets: 'Trip sheets', route_planner: 'Route planner' };
+    ratings: 'Delivery ratings', trip_sheets: 'Trip sheets', route_planner: 'Route planner', live_tracking: 'Live tracking (a RoadCoda add-on)' };
   const pageFile = location.pathname.split('/').pop() || 'index.html';
   const NAMES = { dispatch: 'Dispatch', loads: 'Loads', customers: 'Customers', drivers: 'Drivers', equipment: 'Equipment', rates: 'Rates',
                   invoices: 'Invoices', tolls: 'Tolls', payroll: 'Payroll', money: 'Profit (needs the money switch)', safety: 'Incidents', containers: 'Containers', office_payroll: 'Office payroll', ifta: 'IFTA / fuel tax', integrations: 'Integrations', users: 'Users' };
@@ -101,7 +101,9 @@
     }
     if (FEATURE_OF[pageFile] && !data.feature(FEATURE_OF[pageFile])) {
       document.documentElement.classList.add('rc-blocked');
-      note(`<b>${FEATURE_NAME[FEATURE_OF[pageFile]] || 'This module'}</b> is switched off for your company. ${data.owner || can('users', 'edit') ? '<a href="features.html">Switch it on under Features</a>.' : 'Ask the owner if you need it.'} <a href="index.html">Go to Home</a>`);
+      const addon = ['live_tracking', 'edi', 'texts', 'ai_reader', 'dock_scanning'].includes(FEATURE_OF[pageFile]);   // paid add-ons: only RoadCoda switches them
+      note(addon ? `<b>${FEATURE_NAME[FEATURE_OF[pageFile]]}</b> isn't on for your company. It's a paid add-on — contact RoadCoda to add it. <a href="index.html">Go to Home</a>`
+        : `<b>${FEATURE_NAME[FEATURE_OF[pageFile]] || 'This module'}</b> is switched off for your company. ${data.owner || can('users', 'edit') ? '<a href="features.html">Switch it on under Features</a>.' : 'Ask the owner if you need it.'} <a href="index.html">Go to Home</a>`);
     } else if (page && page !== 'home' && !can(page)) {
       document.documentElement.classList.add('rc-blocked');
       note(`You don't have access to <b>${NAMES[page] || 'this screen'}</b>. Ask the owner if you need it. <a href="index.html">Go to Home</a>`);
