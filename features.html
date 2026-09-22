@@ -79,6 +79,12 @@
       <div class="core" id="core"></div>
     </div>
 
+    <div class="card pad" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:260px"><h2 style="margin-bottom:4px">Devices for your drivers</h2>
+        <div class="mini" style="font-size:13.5px">Which phones, tablets and scanners to buy — one device per truck, phones with and without full scanning, and rugged scanners for auto-parts routes where every box, cage, tote and bumper cover is scanned.</div></div>
+      <a class="btn" href="devices.html">Open the device guide</a>
+    </div>
+
     <div id="groups" style="display:flex;flex-direction:column;gap:14px"></div>
   </section>
 </main>
@@ -94,7 +100,7 @@ const WELCOME = new URLSearchParams(location.search).get('welcome') === '1';
 function toast(t) { $('toast').textContent = t; $('toast').hidden = false; clearTimeout(tt); tt = setTimeout(() => $('toast').hidden = true, 4000); }
 
 const CORE = ['Dispatch board & loads', 'Load templates', 'Customers & delivery locations', 'Route & sort codes', 'Rates, detention & trip types', 'Invoices', 'Driver payroll',
-  'Drivers & trucks (truck devices)', 'Driver app: stops, scans, photos', 'Receiver signatures & exceptions', 'Customer portal', 'Messages', 'Close-out checks', 'Accident & injury reporting', 'Office users & permissions'];
+  'Drivers & trucks (truck devices)', 'Driver app: stops, scans, photos', 'Scans work with no signal', 'Barcode scanners (built-in or Bluetooth)', 'Receiver signatures & exceptions', 'Customer portal', 'Messages', 'Close-out checks', 'Accident & injury reporting', 'Office users & permissions'];
 const PRESETS = [
   ['essentials', 'Essentials', 'Run loads, prove delivery, bill and pay — nothing extra.', 'Everything under "Always included"'],
   ['growing', 'Growing fleet', 'Essentials plus the tools most fleets add first.', 'Tolls, QuickBooks, profit, activity files, invoice drafts on delivery, documents, GPS stop times, trip sheets, driver files, IFTA, payroll company files'],
