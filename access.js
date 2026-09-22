@@ -7,15 +7,15 @@
   const SCREEN_OF = {
     'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
-    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home',
+    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home', 'planner.html': 'dispatch',
   };
   // Pages that belong to a module the carrier can switch off (82)
   const FEATURE_OF = { 'containers.html': 'containers', 'ifta.html': 'ifta', 'claims.html': 'claims', 'compliance.html': 'compliance', 'handbooks.html': 'handbooks',
     'retention.html': 'retention', 'office-payroll.html': 'office_payroll', 'qb-export.html': 'quickbooks', 'tolls.html': 'tolls', 'profit.html': 'profit',
-    'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets' };
+    'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets', 'planner.html': 'route_planner' };
   const FEATURE_NAME = { containers: 'Returnable containers', ifta: 'IFTA fuel tax', claims: 'Claims & subrogation', compliance: 'Driver files & inspections', handbooks: 'Employee handbooks',
     retention: 'Onboarding & retention', office_payroll: 'Office staff payroll', quickbooks: 'QuickBooks export', tolls: 'Tolls', profit: 'Profit reports', activity_files: 'Customer activity files',
-    ratings: 'Delivery ratings', trip_sheets: 'Trip sheets' };
+    ratings: 'Delivery ratings', trip_sheets: 'Trip sheets', route_planner: 'Route planner' };
   const pageFile = location.pathname.split('/').pop() || 'index.html';
   const NAMES = { dispatch: 'Dispatch', loads: 'Loads', customers: 'Customers', drivers: 'Drivers', equipment: 'Equipment', rates: 'Rates',
                   invoices: 'Invoices', tolls: 'Tolls', payroll: 'Payroll', money: 'Profit (needs the money switch)', safety: 'Incidents', containers: 'Containers', office_payroll: 'Office payroll', ifta: 'IFTA / fuel tax', integrations: 'Integrations', users: 'Users' };
@@ -78,7 +78,7 @@
       // Every page gets the same full menu: add any standard page this page's own list left out,
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
-        ['templates.html', 'Templates'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
+        ['templates.html', 'Templates'], ['planner.html', 'Route planner'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
         ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['compliance.html', 'Compliance'], ['claims.html', 'Claims'], ['handbooks.html', 'Handbooks'],
         ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
         ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['features.html', 'Features'], ['devices.html', 'Devices'], ['driver.html', 'Driver app']];

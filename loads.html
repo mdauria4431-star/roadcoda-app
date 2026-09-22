@@ -264,7 +264,7 @@ async function start() {
   $('day').value = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('day') || '') ? qs.get('day') : todayISO();
   await loadLists();
   await loadList();
-  if (qs.get('load')) { await showDetail(qs.get('load')); if (qs.get('addstop') && $('d-addstop')) $('d-addstop').click(); }
+  if (qs.get('load')) { await showDetail(qs.get('load')); if (qs.get('addstop') && $('d-addstop')) $('d-addstop').click(); if (qs.get('recalc') && $('d-recalc')) $('d-recalc').click(); }   // recalc: from the route planner (84)
   if (qs.get('new')) {
     await $('new-btn').onclick();
     if (lists.customers.some(c => c.id === qs.get('customer'))) { $('f-customer').value = qs.get('customer'); $('f-customer').onchange(); }
