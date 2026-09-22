@@ -926,11 +926,33 @@ async function loadStops() {
       <b>Call dispatch</b>${officePhone ? ` · <a href="tel:${esc(officePhone.replace(/[^\d+]/g, ''))}">${esc(officePhone)}</a>` : ''}. Dispatch adds or removes the stop and it shows up here.</div>`;
     openHtml += html;
   }
-  const html = picker + openHtml;
+  // Dock load-out (88): not released yet, or left short — the driver sees it before starting
+  let dockCard = '';
+  if (loads[0] && loads[0].status === 'planned') {
+    try {
+      const { data: d, error } = await sb.rpc('driver_loadout', { p_load: loads[0].id });
+      if (!error && d && d.required && !d.released) {
+        dockCard = `<div class="card" style="border:2px solid #c62828"><b>The dock hasn't released this load yet.</b><div style="margin-top:4px">Every piece has to be scanned onto your truck first. You can't start the trip until then — call the dock if you're waiting.</div></div>`;
+      } else if (!error && d && d.released && (d.short > 0 || d.override) && !d.acked) {
+        const byStop = {}; (d.missing || []).forEach(m => { (byStop[m.seq + '. ' + m.name] = byStop[m.seq + '. ' + m.name] || []).push(m.barcode); });
+        dockCard = `<div class="card" style="border:2px solid #e0a100"><b>${d.short > 0 ? `You're leaving ${d.short} piece${d.short === 1 ? '' : 's'} short.` : 'The dock released this load on a supervisor\'s approval.'}</b>
+          ${d.reason ? `<div style="margin-top:4px">Supervisor: “${esc(d.reason)}”</div>` : ''}
+          ${Object.entries(byStop).map(([k, v]) => `<div style="margin-top:6px"><b>${esc(k)}</b> — ${v.length} not on your truck (they'll follow): <span style="font-family:monospace;font-size:13px">${v.map(esc).join(', ')}</span></div>`).join('')}
+          <div style="margin-top:6px">Your delivery counts already leave these out.</div>
+          <button class="btn primary" id="dock-ack" style="margin-top:10px;width:100%">I understand — start with ${d.short > 0 ? 'these missing' : 'this load'}</button></div>`;
+      }
+    } catch (_) { /* never stops the driver from seeing their stops */ }
+  }
+  const html = dockCard + picker + openHtml;
   // keep open instructions open across the 60-second refresh
   const wasOpen = new Set([...document.querySelectorAll('details.instr[open]')].map(d => d.dataset.stop));
   $('stops').innerHTML = html;
   document.querySelectorAll('details.instr').forEach(d => { if (wasOpen.has(d.dataset.stop)) d.open = true; });
+  if ($('dock-ack')) $('dock-ack').onclick = async () => {
+    const { error } = await sb.rpc('driver_loadout_ack', { p_load: loads[0].id });
+    if (error) { alert(error.message); return; }
+    loadStops();
+  };
   document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
     curLoad = b.dataset.pick; try { localStorage.setItem('rc-driver-load', curLoad); } catch (_) {}
     loadStops(); window.scrollTo({ top: 0 });

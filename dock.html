@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dock · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  .btn.big{height:46px;font-size:16px;padding:0 20px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  label.chk{flex-direction:row;align-items:center;gap:6px;font-weight:500} label.chk input{height:auto}
+  input,select,textarea{height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-family:inherit;font-size:14px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .bar,.row{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  .sp{flex:1}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:12px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .who-pick{display:flex;gap:8px;flex-wrap:wrap}
+  .who-pick button{height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);font-weight:600;font-size:15px}
+  .who-pick button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .loads{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+  .ld{padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;text-align:left}
+  .ld:hover{border-color:var(--accent)}
+  .ld b{font-family:var(--mono);font-size:15px}
+  .meter{height:8px;border-radius:4px;background:var(--panel-2);overflow:hidden;margin:8px 0 4px} .meter i{display:block;height:100%;background:var(--accent)}
+  .tag{display:inline-block;padding:1px 8px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;border:1px solid var(--line);margin-right:4px;white-space:nowrap}
+  .tag.ok{background:var(--ok);color:#fff;border-color:var(--ok)} .tag.red{background:var(--late);color:#fff;border-color:var(--late)} .tag.amber{background:var(--warn);color:#000;border-color:var(--warn)}
+  .scan{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .scan input{height:56px;font-size:22px;font-family:var(--mono);flex:1;min-width:240px}
+  .mode{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .mode button{height:56px;padding:0 16px;border:0;background:var(--panel-2);font-weight:700;color:var(--muted)}
+  .mode button.on{background:var(--accent);color:#fff}
+  .mode button.off.on{background:var(--warn);color:#000}
+  .fb{padding:16px 18px;border-radius:12px;font-size:20px;font-weight:700;line-height:1.35;border:2px solid transparent}
+  .fb small{display:block;font-size:14px;font-weight:500;margin-top:2px}
+  .fb.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);border-color:var(--ok)}
+  .fb.bad{background:color-mix(in srgb,var(--late) 18%,transparent);border-color:var(--late)}
+  .fb.warn{background:color-mix(in srgb,var(--warn) 22%,transparent);border-color:var(--warn)}
+  .fb.dim{background:var(--panel-2)}
+  .stops{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+  .stop{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .stop h3{margin:0 0 6px;font-size:14px}
+  .lbl{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:12.5px;padding:2px 0}
+  .lbl.done{color:var(--ok)} .lbl.miss{color:var(--ink)} .lbl.follow{color:var(--warn)}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .t td.n{text-align:right;font-family:var(--mono)}
+  .t input{height:30px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal .card{max-width:520px;width:100%}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+  .tile{padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  .tile .k{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)} .tile .v{font-family:var(--mono);font-size:22px;font-weight:600}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.3);line-height:1.5}
+  .toast.err{border-color:var(--late)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a class="on" href="dock.html">Dock</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar">
+      <h1>Dock</h1>
+      <div class="tabs" id="tabs"><button data-t="load">Load-out</button><button data-t="ret">Returns</button><button data-t="follow">To follow</button><button data-t="num">Numbers</button><button data-t="setup" id="tab-setup" hidden>Setup</button></div>
+      <span class="sp"></span>
+      <span class="mini" id="as"></span>
+    </div>
+    <div id="off" hidden></div>
+
+    <!-- who's scanning -->
+    <div class="card" id="pick" hidden><header><h2>Who's scanning?</h2><span class="sp"></span><span class="mini">Tap your name. It stays picked on this device until someone else taps theirs.</span></header>
+      <div class="pad who-pick" id="workers"></div></div>
+
+    <!-- Load-out -->
+    <div data-pane="load" style="display:flex;flex-direction:column;gap:12px">
+      <div id="load-list-wrap" style="display:flex;flex-direction:column;gap:12px">
+        <div class="card pad row"><label>Day<input type="date" id="day"></label><button class="btn small" id="today">Today</button><button class="btn small" id="tomorrow">Tomorrow</button>
+          <span class="sp"></span><span class="mini" id="req"></span></div>
+        <div class="loads" id="loads"></div>
+      </div>
+      <div id="load-view" hidden style="display:flex;flex-direction:column;gap:12px">
+        <div class="card pad bar"><button class="btn small" id="back">← All loads</button><h1 id="lv-title" style="font-size:17px"></h1><span class="sp"></span><span id="lv-rule" class="mini"></span></div>
+        <div id="lv-released"></div>
+        <div id="lv-scan" class="card pad" style="display:flex;flex-direction:column;gap:10px">
+          <div class="scan"><input id="code" placeholder="Scan a label…" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <div class="mode"><button id="m-on" class="on">Load on</button><button id="m-off" class="off">Scan off</button></div></div>
+          <div class="fb dim" id="fb">Ready — scan each piece as it goes on the truck.</div>
+        </div>
+        <div class="card"><header><h2 id="lv-count"></h2><span class="sp"></span><button class="btn primary" id="release">Release load</button><button class="btn" id="reopen" hidden>Reopen</button></header>
+          <div id="lv-problems"></div>
+          <div class="pad stops" id="lv-stops"></div></div>
+      </div>
+    </div>
+
+    <!-- Returns -->
+    <div data-pane="ret" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card pad" style="display:flex;flex-direction:column;gap:10px">
+        <div class="scan"><input id="r-code" placeholder="Scan a return…" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <label>Condition<select id="r-cond"><option value="good">Good</option><option value="damaged">Damaged</option><option value="wrong_item">Wrong item</option></select></label>
+          <label>Note<input id="r-note" placeholder="optional"></label></div>
+        <div class="fb dim" id="r-fb">Scan returns as they come off the trucks.</div>
+      </div>
+      <div class="card"><header><h2>Received today</h2></header><div id="r-in"></div></div>
+      <div class="card"><header><h2>Picked up by drivers but not received</h2><span class="sp"></span><span class="mini">Picked up more than 12 hours ago, last 14 days</span></header><div id="r-out"></div></div>
+    </div>
+
+    <!-- To follow -->
+    <div data-pane="follow" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card"><header><h2>Pieces that didn't make the truck</h2><span class="sp"></span>
+        <label style="flex-direction:row;align-items:center;gap:6px">Add the ticked ones to<select id="f-load"></select></label><button class="btn small primary" id="f-send">Add to load</button>
+        <button class="btn small" id="f-cancel">Cancel ticked…</button></header>
+        <div class="pad mini">Each piece goes onto the chosen load's stop at the same store, so its driver and the dock expect it. Loads for the next 3 days that haven't started are listed.</div>
+        <div id="f-list"></div></div>
+    </div>
+
+    <!-- Numbers -->
+    <div data-pane="num" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card pad row"><label>Period<select id="n-range"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label></div>
+      <div class="tiles" id="n-tiles"></div>
+      <div class="card"><header><h2>By worker</h2></header><div id="n-workers"></div></div>
+    </div>
+
+    <!-- Setup -->
+    <div data-pane="setup" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card"><header><h2>Load-out</h2></header><div class="pad">
+        <label class="chk"><input type="checkbox" id="s-req"> A load with a manifest can't start until the dock releases it (and the driver acknowledges any shortage)</label>
+        <div class="mini" style="margin-top:6px">Off: dock scanning still works, but trips can start without it.</div></div></div>
+      <div class="card"><header><h2>Dock workers</h2><span class="sp"></span><input id="w-name" placeholder="Name" style="width:180px"><label class="chk"><input type="checkbox" id="w-sup"> Supervisor</label><button class="btn small primary" id="w-add">Add</button></header>
+        <div class="pad mini">Supervisors approve loads leaving short or with a wrong piece that can't be found, with their PIN (4–8 digits). Five wrong PINs lock it for 15 minutes.</div>
+        <div id="w-list"></div></div>
+      <div class="card"><header><h2>When pieces are missing at load-out</h2></header>
+        <div class="pad mini"><b>Block</b>: a supervisor approves it leaving short. <b>Tolerance</b>: fine up to the pieces or percent set, beyond that a supervisor approves. <b>To follow</b>: it leaves; the missing pieces go on the To follow list. In every case missing pieces go on the To follow list and the driver acknowledges the shortage. Wrong-truck pieces always have to be scanned off.</div>
+        <div id="c-list"></div></div>
+    </div>
+  </section>
+</main>
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const tm = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+const RULE = { block: 'Block — supervisor approves a short load', tolerance: 'Tolerance', to_follow: 'To follow — leaves short, pieces follow' };
+let HOME = null, TAB = 'load', WORKER = null, LOAD = null, MODE = 'on', busy = false, tt = null;
+function toast(h, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 5000); }
+const fail = (e) => toast(esc(e.message || e), true);
+try { WORKER = localStorage.getItem('rc-dock-worker'); } catch (_) {}
+
+// short beeps: one high = good, two low = stop and look
+let AC = null;
+function beep(good) {
+  try { AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const tone = (f, t0, d) => { const o = AC.createOscillator(), g = AC.createGain(); o.frequency.value = f; o.connect(g); g.connect(AC.destination); g.gain.value = .15; o.start(AC.currentTime + t0); o.stop(AC.currentTime + t0 + d); };
+    if (good) tone(1250, 0, .09); else { tone(330, 0, .18); tone(330, .25, .18); }
+  } catch (_) {}
+}
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('dock')) return;
+  $('app').hidden = false;
+  $('day').value = iso(new Date());
+  await loadHome();
+  tab('load');
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => tab(b.dataset.t));
+function tab(t) {
+  TAB = t;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t);
+  $('pick').hidden = !(['load', 'ret'].includes(t)) || (!!WORKER && !!(HOME?.workers || []).find(w => w.id === WORKER) && $('pick').dataset.open !== '1');
+  if (t === 'load') { LOAD ? openLoad(LOAD.id) : drawLoads(); }
+  if (t === 'ret') loadReturns();
+  if (t === 'follow') loadFollow();
+  if (t === 'num') loadNumbers();
+  if (t === 'setup') drawSetup();
+}
+
+async function loadHome() {
+  const { data, error } = await sb.rpc('dock_home', { p_day: $('day').value });
+  if (error) {
+    $('off').hidden = false; document.querySelectorAll('[data-pane]').forEach(p => p.hidden = true); $('tabs').hidden = true;
+    $('off').innerHTML = `<div class="card empty ${/add-on/.test(error.message) ? '' : 'error'}">${esc(error.message)}${/dock_home|schema cache/.test(error.message) ? ' — run 88_dock_scanning.sql in the SQL Editor.' : ''}</div>`;
+    return false;
+  }
+  HOME = data; $('tab-setup').hidden = !data.can_edit;
+  drawWorkers();
+  $('req').textContent = data.require ? 'Loads with a manifest can\'t start until released here.' : 'Release isn\'t required to start a trip (Setup).';
+  return true;
+}
+function drawWorkers() {
+  const ws = HOME.workers || [];
+  if (WORKER && !ws.find(w => w.id === WORKER)) WORKER = null;
+  const me = ws.find(w => w.id === WORKER);
+  $('as').innerHTML = me ? `Scanning as <b>${esc(me.name)}</b> · <a href="#" id="chg">change</a>` : '';
+  if ($('chg')) $('chg').onclick = (e) => { e.preventDefault(); $('pick').dataset.open = '1'; $('pick').hidden = false; };
+  $('workers').innerHTML = ws.length ? ws.map(w => `<button data-w="${w.id}" class="${w.id === WORKER ? 'on' : ''}">${esc(w.name)}</button>`).join('')
+    : `<div class="mini">No dock workers yet. ${HOME.can_edit ? 'Add them under Setup.' : 'Ask the office to add them (Dock › Setup).'}</div>`;
+  document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => {
+    WORKER = b.dataset.w; try { localStorage.setItem('rc-dock-worker', WORKER); } catch (_) {}
+    $('pick').dataset.open = ''; drawWorkers(); $('pick').hidden = true;
+    const c = LOAD ? $('code') : TAB === 'ret' ? $('r-code') : null; if (c) c.focus();
+  });
+  if (!me && ['load', 'ret'].includes(TAB)) $('pick').hidden = false;
+}
+const needWorker = () => { if (WORKER) return true; $('pick').hidden = false; $('pick').scrollIntoView({ behavior: 'smooth' }); toast('Tap your name first.'); return false; };
+
+// ---------------------------------------------------------------- Load-out
+$('day').onchange = async () => { await loadHome(); drawLoads(); };
+$('today').onclick = () => { $('day').value = iso(new Date()); $('day').onchange(); };
+$('tomorrow').onclick = () => { const d = new Date(); d.setDate(d.getDate() + 1); $('day').value = iso(d); $('day').onchange(); };
+function drawLoads() {
+  $('load-list-wrap').hidden = false; $('load-view').hidden = true;
+  const ls = HOME?.loads || [];
+  $('loads').innerHTML = ls.length ? ls.map(l => {
+    const o = l.loadout, pct = l.expected ? Math.round(l.loaded / l.expected * 100) : 0;
+    const st = !o ? '<span class="tag">Not started</span>' : o.status === 'released'
+      ? (o.short ? `<span class="tag amber">Released · ${o.short} short</span>` : '<span class="tag ok">Released</span>') + (o.override ? '<span class="tag red">Override</span>' : '') + (o.short || o.override ? (o.ack ? '<span class="tag">Driver OK\'d</span>' : '<span class="tag">Driver to acknowledge</span>') : '')
+      : '<span class="tag">Loading</span>';
+    return `<button class="ld" data-l="${l.id}"><b>${esc(l.load_no)}</b> · ${esc(l.truck || 'no truck')}${l.trailer ? ' / ' + esc(l.trailer) : ''}
+      <div class="mini">${esc(l.driver || 'no driver')} · ${esc(l.customer || '')} · ${l.stops} stops</div>
+      <div class="meter"><i style="width:${pct}%"></i></div>
+      <div class="mini"><b>${l.loaded}</b> of ${l.expected} pieces${l.wrong ? ` · <span class="error"><b>${l.wrong} wrong truck</b></span>` : ''}</div>
+      <div style="margin-top:6px">${st}</div></button>`; }).join('')
+    : '<div class="card empty">No loads with a manifest on this day. Import the manifest on Dispatch first.</div>';
+  document.querySelectorAll('[data-l]').forEach(b => b.onclick = () => openLoad(b.dataset.l));
+}
+$('back').onclick = async () => { LOAD = null; await loadHome(); drawLoads(); };
+
+async function openLoad(id) {
+  const { data, error } = await sb.rpc('dock_load', { p_load: id });
+  if (error) return fail(error);
+  LOAD = data; drawLoad();
+  if (!(LOAD.loadout && LOAD.loadout.status === 'released')) setTimeout(() => $('code').focus(), 50);
+}
+function drawLoad() {
+  const L = LOAD, o = L.loadout, released = o && o.status === 'released';
+  $('load-list-wrap').hidden = true; $('load-view').hidden = false;
+  $('lv-title').textContent = `Load ${L.load_no} · ${L.truck || 'no truck'}${L.trailer ? ' / ' + L.trailer : ''} · ${L.driver || 'no driver'}`;
+  $('lv-rule').textContent = `${L.customer || ''} — missing pieces: ${L.rule === 'tolerance' ? `tolerance ${L.tol_pieces} piece${L.tol_pieces === 1 ? '' : 's'} or ${L.tol_pct}%` : RULE[L.rule]}`;
+  const labels = L.stops.flatMap(s => s.labels), loaded = labels.filter(x => x.loaded).length;
+  $('lv-count').textContent = `${loaded} of ${labels.length} pieces on`;
+  $('lv-scan').hidden = released; $('release').hidden = released; $('reopen').hidden = !released || L.status !== 'planned';
+  $('lv-released').innerHTML = released ? `<div class="fb ${o.short || o.override_by ? 'warn' : 'ok'}">Released ${tm(o.released_at)} — ${o.loaded} of ${o.expected} on${o.short ? `, <b>${o.short} to follow</b>` : ''}.
+    <small>${o.override_by ? `Supervisor override by ${esc(o.override_name || '')}: “${esc(o.override_reason || '')}”. ` : ''}${o.short || o.override_by ? (o.driver_ack_at ? `Driver acknowledged ${tm(o.driver_ack_at)}.` : 'The driver acknowledges this in the app before starting.') : 'The driver can start.'}</small></div>` : '';
+  $('lv-problems').innerHTML = L.problems.length ? `<div class="pad" style="border-bottom:1px solid var(--line-soft)">${L.problems.map(p => p.result === 'wrong_truck'
+      ? `<div class="error" style="padding:3px 0"><b>WRONG TRUCK:</b> <span style="font-family:var(--mono)">${esc(p.barcode)}</span> belongs on ${esc(p.other_truck || '')} (Load ${esc(p.other_load || '')}) for ${esc(p.other_stop || '')} — take it off and scan it off.</div>`
+      : `<div style="padding:3px 0"><b>Not on any manifest:</b> <span style="font-family:var(--mono)">${esc(p.barcode)}</span> — check it with the office.</div>`).join('')}</div>` : '';
+  $('lv-stops').innerHTML = L.stops.map(s => {
+    const on = s.labels.filter(x => x.loaded).length;
+    return `<div class="stop"><h3>${s.seq}. ${esc(s.name)} <span class="mini">${on} of ${s.labels.length}</span></h3>
+      ${s.labels.map(x => `<div class="lbl ${x.loaded ? 'done' : x.follow === 'to_follow' ? 'follow' : 'miss'}"><span>${x.loaded ? '✓' : x.follow === 'to_follow' ? '→' : '○'} ${esc(x.barcode)}</span><span class="mini">${esc(x.description || '')}${!x.loaded && x.follow === 'to_follow' ? ' · to follow' : ''}</span></div>`).join('') || '<div class="mini">Nothing on the manifest.</div>'}</div>`; }).join('');
+}
+$('m-on').onclick = () => { MODE = 'on'; $('m-on').classList.add('on'); $('m-off').classList.remove('on'); $('fb').className = 'fb dim'; $('fb').textContent = 'Load on: scan each piece as it goes on the truck.'; $('code').focus(); };
+$('m-off').onclick = () => { MODE = 'off'; $('m-off').classList.add('on'); $('m-on').classList.remove('on'); $('fb').className = 'fb warn'; $('fb').textContent = 'Scan off: scan each piece you take back off the truck.'; $('code').focus(); };
+$('code').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const code = $('code').value.trim(); $('code').value = '';
+  if (!code || busy || !LOAD || !needWorker()) return;
+  busy = true;
+  try {
+    if (MODE === 'off') {
+      const { data, error } = await sb.rpc('loadout_remove', { p_load: LOAD.id, p_code: code, p_worker: WORKER });
+      if (error) throw error;
+      beep(data === 'removed');
+      $('fb').className = 'fb ' + (data === 'removed' ? 'warn' : 'dim');
+      $('fb').innerHTML = data === 'removed' ? `Scanned off <span style="font-family:var(--mono)">${esc(code)}</span>` : `<span style="font-family:var(--mono)">${esc(code)}</span> wasn't scanned onto this truck.`;
+    } else {
+      const { data: r, error } = await sb.rpc('loadout_scan', { p_load: LOAD.id, p_code: code, p_worker: WORKER });
+      if (error) throw error;
+      const total = LOAD.stops.flatMap(s => s.labels).length;
+      if (r.result === 'ok') { beep(true); $('fb').className = 'fb ok'; $('fb').innerHTML = `✓ ${esc(r.barcode)}<small>Stop ${r.stop?.seq}: ${esc(r.stop?.name || '')} · ${r.loaded} of ${total} on</small>`; }
+      else if (r.result === 'wrong_truck') { beep(false); $('fb').className = 'fb bad'; $('fb').innerHTML = `WRONG TRUCK — take it off<small><span style="font-family:var(--mono)">${esc(r.barcode)}</span> belongs on <b>${esc(r.belongs?.truck || '')}</b> (Load ${esc(r.belongs?.load_no || '')}) for ${esc(r.belongs?.stop || '')}. Switch to Scan off and scan it as you take it off.</small>`; }
+      else if (r.result === 'not_on_manifest') { beep(false); $('fb').className = 'fb warn'; $('fb').innerHTML = `Not on any manifest<small><span style="font-family:var(--mono)">${esc(r.barcode)}</span> — set it aside and check with the office.</small>`; }
+      else { beep(true); $('fb').className = 'fb dim'; $('fb').innerHTML = `Already scanned<small><span style="font-family:var(--mono)">${esc(r.barcode)}</span> is on this truck.</small>`; }
+    }
+    const { data } = await sb.rpc('dock_load', { p_load: LOAD.id }); if (data) { LOAD = data; drawLoad(); }
+  } catch (err) { beep(false); $('fb').className = 'fb bad'; $('fb').innerHTML = esc(err.message || err) + (/fetch|network/i.test(err.message || '') ? '<small>No connection — scan that piece again once it\'s back.</small>' : ''); }
+  finally { busy = false; $('code').focus(); }
+});
+
+$('release').onclick = () => release();
+async function release(sup) {
+  if (!needWorker()) return;
+  const { data: r, error } = await sb.rpc('loadout_release', { p_load: LOAD.id, p_worker: WORKER, ...(sup || {}) });
+  if (error) { if (sup) { $('o-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; } return fail(error); }
+  if (r.ok) {
+    $('modal').hidden = true;
+    toast(r.missing ? `Released with <b>${r.missing} to follow</b>. The driver acknowledges the shortage in the app.` : 'Released — every piece is on.');
+    return openLoad(LOAD.id);
+  }
+  if (sup && r.wrong_pin) { $('o-msg').innerHTML = '<span class="error">Wrong PIN.</span>'; $('o-pin').value = ''; $('o-pin').focus(); return; }
+  const sups = (HOME.workers || []).filter(w => w.supervisor && w.has_pin);
+  $('modal').hidden = false;
+  $('modal').innerHTML = `<div class="card"><header><h2>A supervisor needs to approve this</h2></header><div class="pad" style="display:flex;flex-direction:column;gap:10px">
+    ${r.needs.map(n => `<div class="error"><b>${esc(n)}</b></div>`).join('')}
+    <div class="mini">${r.loaded} of ${r.expected} pieces on. Or go back, find the pieces, and release again.</div>
+    ${sups.length ? `<label>Supervisor<select id="o-sup">${sups.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('')}</select></label>
+    <label>PIN<input id="o-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></label>
+    <label>Why it's leaving this way<input id="o-why" placeholder="e.g. two cases not on the dock — sending tomorrow"></label>
+    <div class="row"><button class="btn primary" id="o-go">Approve and release</button><button class="btn" id="o-x">Go back</button><span class="mini" id="o-msg"></span></div>`
+    : `<div class="mini">No supervisor has a PIN yet (Dock › Setup).</div><div><button class="btn" id="o-x">Go back</button></div>`}</div></div>`;
+  $('o-x').onclick = () => { $('modal').hidden = true; $('code').focus(); };
+  if ($('o-go')) { $('o-pin').focus(); $('o-go').onclick = () => release({ p_supervisor: $('o-sup').value, p_pin: $('o-pin').value, p_reason: $('o-why').value }); }
+}
+$('reopen').onclick = async () => {
+  if (!needWorker() || !confirm('Reopen this load for scanning? Pieces marked to follow go back on its list.')) return;
+  const { error } = await sb.rpc('loadout_reopen', { p_load: LOAD.id, p_worker: WORKER }); if (error) return fail(error);
+  await openLoad(LOAD.id);
+};
+
+// ---------------------------------------------------------------- Returns
+async function loadReturns() {
+  const { data, error } = await sb.rpc('dock_returns_day', { p_day: iso(new Date()) });
+  if (error) return fail(error);
+  const C = { good: 'Good', damaged: 'Damaged', wrong_item: 'Wrong item' };
+  $('r-in').innerHTML = data.received.length ? `<table class="t"><thead><tr><th>Label</th><th>Condition</th><th>From</th><th>By</th><th>When</th></tr></thead><tbody>${data.received.map(r => `<tr>
+    <td style="font-family:var(--mono)">${esc(r.barcode)}</td><td>${r.condition === 'good' ? C.good : `<span class="tag amber">${C[r.condition]}</span>`}${r.note ? ` ${esc(r.note)}` : ''}</td>
+    <td>${r.matched ? `Load ${esc(r.load_no)} · ${esc(r.stop)}` : '<span class="mini">no driver pickup found</span>'}</td><td>${esc(r.worker || '')}</td><td>${tm(r.at)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nothing received today yet.</div>';
+  $('r-out').innerHTML = data.outstanding.length ? `<table class="t"><thead><tr><th>Label</th><th>Picked up</th><th>At</th><th>Driver</th></tr></thead><tbody>${data.outstanding.map(r => `<tr>
+    <td style="font-family:var(--mono)">${esc(r.barcode)}</td><td>${tm(r.picked_up)}</td><td>Load ${esc(r.load_no)} · ${esc(r.stop)}</td><td>${esc(r.driver || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Everything drivers picked up has been received.</div>';
+  setTimeout(() => $('r-code').focus(), 50);
+}
+$('r-code').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return; e.preventDefault();
+  const code = $('r-code').value.trim(); $('r-code').value = '';
+  if (!code || busy || !needWorker()) return; busy = true;
+  try {
+    const { data: r, error } = await sb.rpc('dock_return_scan', { p_code: code, p_worker: WORKER, p_condition: $('r-cond').value, p_note: $('r-note').value });
+    if (error) throw error;
+    if (r.result === 'matched') { beep(true); $('r-fb').className = 'fb ok'; $('r-fb').innerHTML = `✓ ${esc(r.barcode)}<small>Picked up by ${esc(r.from.driver || 'the driver')} at ${esc(r.from.stop)} (Load ${esc(r.from.load_no)})</small>`; }
+    else if (r.result === 'duplicate') { beep(false); $('r-fb').className = 'fb dim'; $('r-fb').innerHTML = `Already received ${tm(r.received_at)}<small>${esc(r.barcode)}</small>`; }
+    else { beep(false); $('r-fb').className = 'fb warn'; $('r-fb').innerHTML = `Received — no driver pickup found<small>${esc(r.barcode)} is logged; the office can check where it came from.</small>`; }
+    $('r-note').value = ''; $('r-cond').value = 'good';
+    await loadReturns();
+  } catch (err) { beep(false); $('r-fb').className = 'fb bad'; $('r-fb').textContent = err.message || String(err); }
+  finally { busy = false; $('r-code').focus(); }
+});
+
+// ---------------------------------------------------------------- To follow
+let FOL = [];
+async function loadFollow() {
+  const { data, error } = await sb.rpc('follow_list'); if (error) return fail(error);
+  FOL = data || [];
+  const days = [0, 1, 2, 3].map(k => { const d = new Date(); d.setDate(d.getDate() + k); return iso(d); });
+  const res = await Promise.all(days.map(d => sb.rpc('dock_home', { p_day: d })));
+  const loads = res.flatMap((r, k) => (r.data?.loads || []).filter(l => l.status === 'planned').map(l => ({ ...l, day: days[k] })));
+  $('f-load').innerHTML = loads.length ? loads.map(l => `<option value="${l.id}">${l.day.slice(5)} · Load ${esc(l.load_no)} · ${esc(l.truck || '')} · ${esc(l.customer || '')}</option>`).join('') : '<option value="">No loads to add to</option>';
+  const ed = HOME?.can_edit;
+  $('f-send').hidden = $('f-cancel').hidden = $('f-load').closest('label').hidden = !ed;
+  $('f-list').innerHTML = FOL.length ? `<table class="t"><thead><tr>${ed ? '<th><input type="checkbox" id="f-all"></th>' : ''}<th>Label</th><th>What</th><th>Store</th><th>Left short on</th><th>Customer</th></tr></thead><tbody>${FOL.map(f => `<tr>
+    ${ed ? `<td><input type="checkbox" data-f="${f.id}"></td>` : ''}<td style="font-family:var(--mono)">${esc(f.barcode)}</td><td>${esc(f.description || '')}</td><td>${esc(f.stop)}</td>
+    <td>Load ${esc(f.load_no)} · ${esc(String(f.day))}</td><td>${esc(f.customer || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nothing waiting — every piece made its truck.</div>';
+  if ($('f-all')) $('f-all').onchange = () => document.querySelectorAll('[data-f]').forEach(c => c.checked = $('f-all').checked);
+}
+const ticked = () => [...document.querySelectorAll('[data-f]:checked')].map(c => c.dataset.f);
+$('f-send').onclick = async () => {
+  const ids = ticked(); if (!ids.length) return toast('Tick the pieces to send.');
+  if (!$('f-load').value) return toast('There\'s no load to add them to yet.');
+  const { data, error } = await sb.rpc('follow_send', { p_labels: ids, p_load: $('f-load').value }); if (error) return fail(error);
+  toast(`${data.sent} piece${data.sent === 1 ? '' : 's'} added to that load.${data.no_stop.length ? `<br>No stop at the same store on that load for: ${data.no_stop.map(esc).join(', ')}.` : ''}`);
+  loadFollow();
+};
+$('f-cancel').onclick = async () => {
+  const ids = ticked(); if (!ids.length) return toast('Tick the pieces first.');
+  const why = prompt('Why are these no longer to follow? (delivered another way, customer cancelled…)'); if (!why) return;
+  const { data, error } = await sb.rpc('follow_cancel', { p_labels: ids, p_note: why }); if (error) return fail(error);
+  toast(`${data} taken off the list.`); loadFollow();
+};
+
+// ---------------------------------------------------------------- Numbers
+$('n-range').onchange = () => loadNumbers();
+async function loadNumbers() {
+  const to = new Date(), from = new Date(); from.setDate(from.getDate() - (+$('n-range').value - 1));
+  const { data: s, error } = await sb.rpc('dock_summary', { p_from: iso(from), p_to: iso(to) }); if (error) return fail(error);
+  const t = (k, v, sub) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="mini">${sub || ''}</div></div>`;
+  const rate = s.pieces_expected ? Math.round(s.pieces_loaded / s.pieces_expected * 1000) / 10 : null;
+  $('n-tiles').innerHTML = [t('Loads released', s.loads_released), t('Pieces verified on', s.pieces_loaded.toLocaleString(), rate == null ? '' : `${rate}% of the manifests`),
+    t('Wrong-truck pieces caught', s.wrong_caught, 'each one a mis-delivery avoided'), t('Pieces left to follow', s.pieces_short), t('Supervisor overrides', s.overrides),
+    t('Returns received', s.returns, s.returns_damaged ? `${s.returns_damaged} damaged` : '')].join('');
+  $('n-workers').innerHTML = s.by_worker.length ? `<table class="t"><thead><tr><th>Worker</th><th class="n">Scans</th><th class="n">Wrong truck caught</th></tr></thead><tbody>${s.by_worker.map(w => `<tr><td>${esc(w.name)}</td><td class="n">${w.scans}</td><td class="n">${w.wrong}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No scans in this period.</div>';
+}
+
+// ---------------------------------------------------------------- Setup
+async function drawSetup() {
+  await loadHome();
+  $('s-req').checked = !!HOME.require;
+  const { data: ws } = await sb.from('dock_workers').select('id, name, is_supervisor, active').order('name');
+  const pin = Object.fromEntries((HOME.workers || []).map(w => [w.id, w.has_pin]));
+  $('w-list').innerHTML = (ws || []).length ? `<table class="t"><thead><tr><th>Name</th><th>Supervisor</th><th>PIN</th><th>Active</th><th></th></tr></thead><tbody>${ws.map(w => `<tr>
+    <td>${esc(w.name)}</td><td><input type="checkbox" data-sup="${w.id}"${w.is_supervisor ? ' checked' : ''}></td>
+    <td>${w.is_supervisor ? (pin[w.id] ? 'Set' : '<span class="error">Not set</span>') : '—'}</td><td><input type="checkbox" data-act="${w.id}"${w.active ? ' checked' : ''}></td>
+    <td>${w.is_supervisor ? `<button class="btn small" data-pin="${w.id}">${pin[w.id] ? 'Change PIN' : 'Set PIN'}</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No dock workers yet.</div>';
+  document.querySelectorAll('[data-sup]').forEach(c => c.onchange = async () => { const { error } = await sb.from('dock_workers').update({ is_supervisor: c.checked }).eq('id', c.dataset.sup); if (error) fail(error); drawSetup(); });
+  document.querySelectorAll('[data-act]').forEach(c => c.onchange = async () => { const { error } = await sb.from('dock_workers').update({ active: c.checked }).eq('id', c.dataset.act); if (error) fail(error); drawSetup(); });
+  document.querySelectorAll('[data-pin]').forEach(b => b.onclick = async () => {
+    const p = prompt('New PIN, 4 to 8 digits. Tell it only to this supervisor.'); if (!p) return;
+    const { error } = await sb.rpc('set_dock_pin', { p_worker: b.dataset.pin, p_pin: p }); if (error) return fail(error); toast('PIN set.'); drawSetup(); });
+  $('c-list').innerHTML = (HOME.customers || []).length ? `<table class="t"><thead><tr><th>Customer</th><th>Missing pieces</th><th>Tolerance: pieces</th><th>or %</th><th></th></tr></thead><tbody>${HOME.customers.map(c => `<tr>
+    <td>${esc(c.name)}</td><td><select data-rule="${c.id}">${Object.keys(RULE).map(k => `<option value="${k}"${c.rule === k ? ' selected' : ''}>${{ block: 'Block', tolerance: 'Tolerance', to_follow: 'To follow' }[k]}</option>`).join('')}</select></td>
+    <td><input type="number" min="0" max="1000" data-tp="${c.id}" value="${c.pieces}" style="width:80px"></td><td><input type="number" min="0" max="100" step="0.5" data-tpct="${c.id}" value="${c.pct}" style="width:80px"></td>
+    <td><button class="btn small" data-save="${c.id}">Save</button></td></tr>`).join('')}</tbody></table>` : '<div class="empty">No customers.</div>';
+  document.querySelectorAll('[data-save]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.save;
+    const { error } = await sb.rpc('set_short_rule', { p_customer: id, p_rule: document.querySelector(`[data-rule="${id}"]`).value,
+      p_pieces: +document.querySelector(`[data-tp="${id}"]`).value, p_pct: +document.querySelector(`[data-tpct="${id}"]`).value });
+    if (error) return fail(error); toast('Saved.'); });
+}
+$('s-req').onchange = async () => { const { error } = await sb.rpc('set_dock_settings', { p_require: $('s-req').checked }); if (error) fail(error); else toast('Saved.'); };
+$('w-add').onclick = async () => {
+  const name = $('w-name').value.trim(); if (!name) return;
+  const { error } = await sb.from('dock_workers').insert({ name, is_supervisor: $('w-sup').checked }); if (error) return fail(error);
+  $('w-name').value = ''; $('w-sup').checked = false; drawSetup();
+};
+
+start();
+</script>
+</body>
+</html>
