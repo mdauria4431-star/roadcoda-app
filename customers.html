@@ -694,7 +694,7 @@ async function pdfRows(buf) {
   const lib = window['pdfjs-dist/build/pdf'];
   if (!lib) throw new Error('The PDF reader did not load. Check your internet connection and refresh.');
   lib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-  const pdf = await lib.getDocument({ data: buf }).promise;
+  const pdf = await lib.getDocument({ data: buf, isEvalSupported: false })   /* CVE-2024-4367: never evaluate code from a PDF */.promise;
   const lines = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const tc = await (await pdf.getPage(p)).getTextContent();
