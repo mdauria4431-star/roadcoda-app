@@ -270,6 +270,10 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    docs: await (async () => {    // documents on this load (79); nothing if not installed
+      const { data, error } = await sb.from('load_documents').select('id, kind, path, file_name, note, stop_id, shared, source, uploaded_at').eq('load_id', LOAD).order('uploaded_at');
+      return error ? null : (data || []);
+    })(),
     guestIds: await (async () => { const g = await sb.from('drivers').select('id').eq('is_guest', true).eq('active', true); return g.error ? [] : (g.data || []).map(x => x.id); })(),
     guest: await (async () => {   // guest driver on this load (77); nothing if not installed
       if (!L.data.driver_id) return { none: true };
@@ -527,7 +531,24 @@ function stopsHtml(edit) {
   const gpsFill = edit && T.gps && T.l.stops.some(x => { const g = T.gps.by[x.id]; return g && ((!x.arrived_at && g.eld_arrived_at) || (!x.departed_at && g.eld_departed_at)); });
   return `<div class="card"><header><h2>Stops</h2>${gpsFill ? '<button class="btn small" id="gps-fill" title="Fill empty arrival / departure times from the truck\'s GPS. Each is logged and can be undone.">Use GPS times</button>' : ''}<span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + guestHtml(edit) + sheetHtml(edit);
+    <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + guestHtml(edit) + docsHtml(edit) + sheetHtml(edit);
+}
+
+// ── Documents (79): BOLs, receipts, tickets — from the driver's phone or uploaded here ──
+const DOCK = { bol: 'BOL', fuel_receipt: 'Fuel receipt', lumper: 'Lumper receipt', scale: 'Scale ticket', toll: 'Toll receipt', trip_sheet: 'Trip sheet', other: 'Other' };
+function docsHtml(edit) {
+  if (T.docs == null) return '';
+  const seq = Object.fromEntries(T.l.stops.map(x => [x.id, x.seq]));
+  const rows = T.docs.map(d => `<tr><td><b>${DOCK[d.kind] || esc(d.kind)}</b>${d.note ? `<div class="mini">${esc(d.note)}</div>` : ''}</td><td>${d.stop_id ? 'Stop ' + (seq[d.stop_id] || '?') : 'Load'}</td>
+      <td class="mini">${d.source === 'driver' ? 'Driver' : 'Office'} · ${when(d.uploaded_at)}</td>
+      <td><a href="#" data-docview="${esc(d.path)}">View</a></td>
+      <td><label class="mini" style="display:flex;gap:5px;align-items:center"><input type="checkbox" data-docshare="${d.id}" ${d.shared ? 'checked' : ''} ${edit ? '' : 'disabled'} style="height:auto"> Shared with customer</label></td>
+      <td>${edit && d.kind === 'fuel_receipt' && T.sheet ? `<button class="btn small" data-docfuel="${d.id}">Add to fuel</button>` : ''}${edit ? ` <button class="btn small" data-docdel="${d.id}">Remove</button>` : ''}</td></tr>`).join('');
+  return `<div class="card"><header><h2>Documents</h2><span class="sp"></span><span class="mini">From the driver's phone or uploaded here. Tick "Shared" to show one in the customer portal.</span></header>
+    ${T.docs.length ? `<table class="stops"><tbody>${rows}</tbody></table>` : '<div class="mini" style="padding:10px 16px">No documents yet — the driver adds them with Documents in the app.</div>'}
+    ${edit ? `<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="doc-kind" style="height:30px">${Object.entries(DOCK).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+      <select id="doc-stop" style="height:30px"><option value="">Whole load</option>${T.l.stops.map(x => `<option value="${x.id}">Stop ${x.seq} · ${esc(x.consignee)}</option>`).join('')}</select>
+      <label class="btn small" style="flex-direction:row;height:30px">Upload scan / photo / PDF<input type="file" id="doc-file" accept="image/*,application/pdf" multiple hidden></label></div>` : ''}</div>`;
 }
 
 // ── Guest driver (77): one load, one link, switched off after delivery ──
@@ -790,6 +811,30 @@ function wire(edit) {
     if (error) return fail(error);
     toast('OS&amp;D resolved'); load();
   });
+
+  // Documents (79)
+  document.querySelectorAll('[data-docview]').forEach(a => a.onclick = async (e) => { e.preventDefault(); const { data, error } = await sb.storage.from('scan-photos').createSignedUrl(a.dataset.docview, 600); if (error) return fail(error); window.open(data.signedUrl, '_blank', 'noopener'); });
+  document.querySelectorAll('[data-docshare]').forEach(c => c.onchange = async () => { const { error } = await sb.from('load_documents').update({ shared: c.checked }).eq('id', c.dataset.docshare); if (error) { c.checked = !c.checked; return fail(error); } toast(c.checked ? 'Shared with the customer' : 'No longer shared'); });
+  document.querySelectorAll('[data-docdel]').forEach(b => b.onclick = async () => { if (!confirm('Remove this document from the load?')) return; const { error } = await sb.from('load_documents').delete().eq('id', b.dataset.docdel); if (error) return fail(error); load(); });
+  document.querySelectorAll('[data-docfuel]').forEach(b => b.onclick = () => {
+    const d = T.docs.find(x => x.id === b.dataset.docfuel);
+    if ($('fu-date')) { $('fu-date').value = (d.uploaded_at || '').slice(0, 10); $('fu-state').focus(); $('fu-state').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    sb.storage.from('scan-photos').createSignedUrl(d.path, 600).then(({ data }) => { if (data) window.open(data.signedUrl, '_blank', 'noopener'); });
+    toast('Read the state and gallons off the receipt and add them under Fuel bought.');
+  });
+  if ($('doc-file')) $('doc-file').onchange = async () => {
+    const files = [...$('doc-file').files]; $('doc-file').value = ''; let n = 0;
+    for (const f of files) {
+      if (f.size > 15 * 1024 * 1024) { fail(`${f.name} is over 15 MB.`); continue; }
+      const ext = (f.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const path = `${profile.carrier_id}/${T.l.id}/docs/${Date.now()}-${n}.${ext}`;
+      const up = await sb.storage.from('scan-photos').upload(path, f, { contentType: f.type || undefined }); if (up.error) { fail(up.error); continue; }
+      const { error } = await sb.from('load_documents').insert({ load_id: T.l.id, kind: $('doc-kind').value, path, file_name: f.name, stop_id: $('doc-stop').value || null, source: 'office' });
+      if (error) { await sb.storage.from('scan-photos').remove([path]); fail(error); continue; }
+      n++;
+    }
+    if (n) { toast(`${n} document${n > 1 ? 's' : ''} added`); load(); }
+  };
 
   // Guest driver (77)
   if ($('gl-make')) $('gl-make').onclick = async () => {

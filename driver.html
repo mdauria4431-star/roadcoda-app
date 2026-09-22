@@ -370,6 +370,17 @@
     <div class="card inc-sec" id="inc-recent" hidden></div>
   </section>
 
+  <section id="dc-view" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1 id="dc-h">Documents</h1>
+    <div class="meta" style="font-size:15px">BOLs, fuel receipts, lumper and scale tickets, tolls — take a clear photo of each page.</div>
+    <label>What is it<select id="dc-kind"><option value="bol">BOL</option><option value="fuel_receipt">Fuel receipt</option><option value="lumper">Lumper receipt</option><option value="scale">Scale ticket</option><option value="toll">Toll receipt</option><option value="trip_sheet">Trip sheet</option><option value="other">Other</option></select></label>
+    <label>Stop (if it's for one)<select id="dc-stop"></select></label>
+    <label>Note (optional)<input id="dc-note" placeholder="e.g. 2 pages, fuel at Pilot exit 8"></label>
+    <label class="btn primary" style="min-height:56px;font-size:18px;justify-content:center">Take / choose photos<input type="file" id="dc-file" accept="image/*" capture="environment" multiple hidden></label>
+    <div id="dc-msg" class="meta"></div>
+    <div id="dc-list" class="card" style="padding:10px 12px"></div>
+    <button class="btn" id="dc-back" style="min-height:44px">Back</button>
+  </section>
   <section id="sg-view" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1>Receiver signature</h1>
     <div class="meta" id="sg-where" style="font-size:16px"></div>
@@ -772,6 +783,7 @@ async function loadStops() {
   if (devL) { elsewhere = loads.filter(l => l.truck_id && l.truck_id !== devL.equipment_id && l.status !== 'delivered').length;
               loads = loads.filter(l => !l.truck_id || l.truck_id === devL.equipment_id); }
   STOPMAP = Object.fromEntries((loads || []).flatMap(l => l.stops || []).map(x => [x.id, x]));   // for the signature screen (75)
+  STOPLOAD = Object.fromEntries((loads || []).flatMap(l => (l.stops || []).map(x => [x.id, l.id]))); LOADNO = Object.fromEntries((loads || []).map(l => [l.id, l.load_no]));   // documents (79)
   // Delivered loads drop off; the driver sees one open load at a time
   const all = loads;
   loads = loads.filter(l => l.status !== 'delivered');
@@ -813,7 +825,7 @@ async function loadStops() {
 
   let openHtml = '';
   for (const l of loads) {
-    let html = `<div class="load-head">Load ${esc(l.load_no)}</div>`;
+    let html = `<div class="load-head" style="display:flex;align-items:center;gap:8px">Load ${esc(l.load_no)}<span style="flex:1"></span><button class="btn" data-docs="${l.id}" style="min-height:40px;font-size:15px">Documents</button></div>`;
     if (l.ask_odometer) {
       const allDone = (l.stops || []).length && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
       const ask = l.hub_start == null ? 'start' : (allDone && l.hub_end == null ? 'end' : null);
@@ -899,6 +911,7 @@ async function loadStops() {
     loadStops(); window.scrollTo({ top: 0 });
   });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b));
+  document.querySelectorAll('[data-docs]').forEach(b => b.onclick = () => openDocs(b.dataset.docs));
   document.querySelectorAll('[data-hub]').forEach(b => b.onclick = async () => {
     const v = parseFloat($('hub-' + b.dataset.hub).value);
     if (isNaN(v)) { alert('Enter the odometer reading.'); return; }
@@ -1070,7 +1083,7 @@ const YN = [
 const SHOTS = [['scene', 'The scene'], ['our_vehicle', 'Our truck damage'], ['other_vehicle', 'Other vehicle'], ['plate', 'Their plate'],
   ['insurance_card', 'Their insurance card'], ['license', 'Their licence'], ['cargo', 'Cargo'], ['police', 'Police / report card'], ['injury', 'Injury'], ['other', 'Anything else']];
 let INC = null, INCF = {}, incTimer = null;
-function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view', 'hb-view', 'sg-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
+function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view', 'hb-view', 'sg-view', 'dc-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
 async function openIncident(existing) {
   incShow('inc-view');
   $('inc-call').href = officePhone ? 'tel:' + officePhone.replace(/[^\d+]/g, '') : '#';
@@ -1222,9 +1235,46 @@ $('yard-btn').onclick = async () => {
   SHIFT = data; paintShift();
 };
 
+// ---------- Documents on a load (79): photos of BOLs, receipts, tickets ----------
+const DOCK = { bol: 'BOL', fuel_receipt: 'Fuel receipt', lumper: 'Lumper receipt', scale: 'Scale ticket', toll: 'Toll receipt', trip_sheet: 'Trip sheet', other: 'Other' };
+let DCLOAD = null;
+async function drawDocs() {
+  const { data, error } = await sb.rpc('driver_documents', { p_load: DCLOAD });
+  if (error) { $('dc-list').innerHTML = `<div class="meta">${esc(error.message)}</div>`; return; }
+  const seq = Object.fromEntries(Object.values(STOPMAP).map(x => [x.id, x.seq]));
+  $('dc-list').innerHTML = (data || []).length ? `<b>Added on this load</b>${data.map(d => `<div style="padding:4px 0;border-top:1px solid var(--line)">${DOCK[d.kind] || d.kind}${d.stop_id && seq[d.stop_id] ? ' · stop ' + seq[d.stop_id] : ''} · ${time(d.uploaded_at)}${d.note ? `<div class="meta">${esc(d.note)}</div>` : ''}</div>`).join('')}` : '<div class="meta">Nothing added yet.</div>';
+}
+function openDocs(loadId) {
+  DCLOAD = loadId;
+  const stops = Object.values(STOPMAP).filter(x => STOPLOAD[x.id] === loadId).sort((a, b) => a.seq - b.seq);
+  $('dc-stop').innerHTML = '<option value="">— the whole load —</option>' + stops.map(x => `<option value="${x.id}">Stop ${x.seq} · ${esc(x.consignee || '')}</option>`).join('');
+  $('dc-h').textContent = 'Documents · Load ' + (LOADNO[loadId] || '');
+  $('dc-msg').textContent = ''; $('dc-note').value = '';
+  incShow('dc-view'); drawDocs();
+}
+$('dc-back').onclick = () => incShow('app');
+$('dc-file').onchange = async () => {
+  const files = [...$('dc-file').files]; $('dc-file').value = ''; if (!files.length) return;
+  let ok = 0;
+  for (const f of files) {
+    $('dc-msg').textContent = `Uploading ${ok + 1} of ${files.length}…`;
+    try {
+      const blob = await shrink(f);
+      const path = `${me.carrier_id}/${DCLOAD}/docs/${Date.now()}-${ok}.jpg`;
+      const up = await sb.storage.from('scan-photos').upload(path, blob, { contentType: 'image/jpeg' });
+      if (up.error) throw up.error;
+      const { error } = await sb.rpc('driver_add_document', { p_load: DCLOAD, p_stop: $('dc-stop').value || null, p_kind: $('dc-kind').value, p_path: path, p_note: $('dc-note').value.trim() || null });
+      if (error) { await sb.storage.from('scan-photos').remove([path]); throw error; }
+      ok++;
+    } catch (e) { alert('Photo not saved: ' + (e.message || e)); break; }
+  }
+  $('dc-msg').textContent = ok ? `${ok} photo${ok > 1 ? 's' : ''} saved.` : '';
+  drawDocs();
+};
+
 // ---------- Receiver signature before "Delivered" (74) ----------
 // The customer's rule decides: off (nothing), optional (Skip allowed), required (sign, or say why not).
-let sgDrawn = false, STOPMAP = {};
+let sgDrawn = false, STOPMAP = {}, STOPLOAD = {}, LOADNO = {};
 function sgPad() {
   const c = $('sg-sig'), r = c.getBoundingClientRect(); c.width = r.width * 2 || 600; c.height = r.height * 2 || 340;
   const g = c.getContext && c.getContext('2d'); if (!g) return; g.lineWidth = 5; g.lineCap = 'round'; g.strokeStyle = '#111'; g.clearRect(0, 0, c.width, c.height); sgDrawn = false;

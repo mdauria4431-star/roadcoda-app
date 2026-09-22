@@ -224,11 +224,17 @@ async function showLoad(id) {
   if (error) { $('detail').innerHTML = `<div class="card empty err">${esc(error.message)}</div>`; return; }
   const paths = l.stops.flatMap(s => s.photos || []);
   const urls = {};
-  if (paths.length) { const r = await sb.storage.from('scan-photos').createSignedUrls(paths, 3600); (r.data || []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); }
+  if (paths.length) { try { const r = await sb.storage.from('scan-photos').createSignedUrls(paths, 3600); (Array.isArray(r.data) ? r.data : []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); } catch (_) { /* shown without photos */ } }
   // Signed POD (76): who signed, when, BOL #, the signature, what they noted — nothing before 76
   const sg = await sb.rpc('portal_signatures', { p_load: id });
   const SIG = Object.fromEntries((sg.error ? [] : sg.data || []).map(x => [x.stop_id, x]));
   LAST = { l, urls, SIG };
+  // Documents the carrier shared (79): BOLs, lumper / scale receipts…
+  const dq = await sb.rpc('portal_documents', { p_load: id }), DOCS = dq.error ? [] : (dq.data || []);
+  const durls = {};
+  if (DOCS.length) { try { const r = await sb.storage.from('scan-photos').createSignedUrls(DOCS.map(d => d.path), 3600); (Array.isArray(r.data) ? r.data : []).forEach(x => { if (x.signedUrl) durls[x.path] = x.signedUrl; }); } catch (_) { /* listed without links */ } }
+  const DOCN = { bol: 'BOL', fuel_receipt: 'Fuel receipt', lumper: 'Lumper receipt', scale: 'Scale ticket', toll: 'Toll receipt', trip_sheet: 'Trip sheet', other: 'Document' };
+  const seqOf = Object.fromEntries(l.stops.map(x => [x.id, x.seq]));
   $('detail').innerHTML = `<div class="card"><div class="bar"><h2>Load ${esc(l.load_no)} · ${day(l.service_date)}</h2>${STATUS(l.status)}${ME.kind === 'billing' && (ME.accounts || []).length > 1 ? `<span class="hint">${esc(l.account)}</span>` : ''}<span class="sp"></span><button class="btn noprint" onclick="window.print()">Print</button></div>
     ${l.stops.map(s => `<div class="stop">
       <div><div class="k">${s.type === 'pickup' ? 'Pickup' : 'Stop ' + s.seq}</div><b>${esc(s.name)}</b><div class="hint">${esc(s.address || '')}</div>
@@ -238,7 +244,8 @@ async function showLoad(id) {
       <div><div class="k">Counts</div>${(s.items || []).map(i => `${esc(i.unit)}: <b style="display:inline">${qty(i.delivered)}</b> of ${qty(i.ordered)}`).join('<br>') || '—'}
         ${(s.photos || []).length ? `<div class="pods">${s.photos.map(p => urls[p] ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="Proof of delivery"></a>` : '').join('')}</div>` : ''}</div>
       ${s.type !== 'pickup' ? `<div class="sigrow">${sigHtml(SIG[s.id])}${['delivered', 'exception'].includes(s.status) ? `<button class="btn noprint" data-receipt="${s.id}">Delivery receipt</button>` : ''}</div>` : ''}
-    </div>`).join('')}</div>`;
+    </div>`).join('')}
+    ${DOCS.length ? `<div class="stop" style="display:block"><div class="k">Documents</div>${DOCS.map(d => `<div style="padding:3px 0">${durls[d.path] ? `<a href="${durls[d.path]}" target="_blank" rel="noopener">${DOCN[d.kind] || 'Document'}</a>` : (DOCN[d.kind] || 'Document')}${d.stop_id && seqOf[d.stop_id] ? ` · stop ${seqOf[d.stop_id]}` : ''}${d.note ? ` <span class="hint">${esc(d.note)}</span>` : ''}</div>`).join('')}</div>` : ''}</div>`;
   document.querySelectorAll('[data-receipt]').forEach(b => b.onclick = () => receipt(b.dataset.receipt));
   $('detail').scrollIntoView({ behavior: 'smooth' });
 }
