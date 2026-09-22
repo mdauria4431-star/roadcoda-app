@@ -270,6 +270,10 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    labels: await (async () => {  // manifest labels per stop (81); nothing if not installed / no manifest
+      const { data, error } = await sb.from('stop_label_status').select('stop_id, expected, scanned, missing, extra').eq('load_id', LOAD);
+      return error ? null : Object.fromEntries((data || []).map(x => [x.stop_id, x]));
+    })(),
     docs: await (async () => {    // documents on this load (79); nothing if not installed
       const { data, error } = await sb.from('load_documents').select('id, kind, path, file_name, note, stop_id, shared, source, uploaded_at').eq('load_id', LOAD).order('uploaded_at');
       return error ? null : (data || []);
@@ -516,7 +520,7 @@ function stopsHtml(edit) {
     const done = ['delivered', 'exception'].includes(s.status);
     return `<tr id="s-${s.id}">
       <td class="n">${s.seq}</td>
-      <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}${routeLine(s)}${boxLine(s)}${sigLine(s)}</td>
+      <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}${routeLine(s)}${boxLine(s)}${labelLine(s)}${sigLine(s)}</td>
       <td class="n dim">${s.window_start ? hm(s.window_start) + '–' + hm(s.window_end) : hm(s.window_end) || '—'}</td>
       <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}>${gpsLine(s, 'arrived')}</td>
       <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}>${gpsLine(s, 'departed')}</td>
@@ -577,6 +581,14 @@ async function guestLink(driverId, deliver) {
   if (error) { try { msg = (await error.context.json()).error || msg; } catch (_) {} }
   if (msg || (data && data.ok === false)) throw new Error(msg || data.error || 'Could not make the link — is the driver-login server function deployed?');
   return data;
+}
+
+// ── Manifest labels (81): scanned / missing / not on the list ──
+function labelLine(s) {
+  const t = T.labels && T.labels[s.id]; if (!t) return '';
+  const miss = t.missing || [], extra = t.extra || [];
+  const done = ['delivered', 'exception'].includes(s.status);
+  return `<div class="mini">Labels <b>${t.scanned} of ${t.expected}</b>${miss.length ? ` · <span style="color:${done ? 'var(--late)' : 'var(--warn)'}" title="${esc(miss.join(', '))}">missing ${miss.length}: ${esc(miss.slice(0, 6).join(', '))}${miss.length > 6 ? '…' : ''}</span>` : ' · <span class="ok">all scanned</span>'}${extra.length ? ` · <span style="color:var(--warn)" title="${esc(extra.join(', '))}">not on list: ${esc(extra.slice(0, 4).join(', '))}${extra.length > 4 ? '…' : ''}</span>` : ''}</div>`;
 }
 
 // ── Receiver signature (74): who signed, BOL #, or why there's none ──

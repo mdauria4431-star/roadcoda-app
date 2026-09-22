@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devices for your drivers · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;line-height:1.55}
+  main{padding:18px 16px 60px;max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  h1{margin:0;font-size:24px} h2{font-size:17px;margin:0 0 6px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
+  .mini{font-size:13px;color:var(--ink-3)}
+  table{width:100%;border-collapse:collapse;font-size:14px} th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);background:var(--panel-2)}
+  .tag{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 8px;border-radius:999px;border:1px solid var(--line)}
+  .ok{color:var(--ok);border-color:var(--ok)} .warn{color:var(--warn);border-color:var(--warn)}
+  ul,ol{margin:6px 0 0 18px;padding:0} li{margin:3px 0}
+  .top{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:18px} .brand span{color:var(--accent)}
+  a.back{margin-left:auto}
+</style>
+<link rel="stylesheet" href="app.css">
+<style>body{padding:0!important;margin:0!important} main{margin:0 auto!important}</style>
+</head>
+<body>
+<div class="top"><div class="brand">Road<span>Coda</span></div><a class="back" href="getting-started.html">← Getting started</a></div>
+<main>
+  <h1>Devices for your drivers</h1>
+  <div class="mini">Two kinds of device, depending on how much your drivers scan: <a href="#phones">without a scanner</a> (any good phone — the camera reads barcodes) or <a href="#scanners">with full scanning</a> (a built-in or Bluetooth scanner for label-heavy work). Every piece scanned? See <a href="#autoparts">auto-parts routes</a>.</div>
+  <div class="mini">Updated September 2026. RoadCoda doesn't sell devices and isn't paid to recommend any of these — prices and models change, so check before you buy.</div>
+
+  <div class="card">
+    <h2>Start here: one device per truck, not per driver</h2>
+    If your ELD's tablet is mounted and locked to the ELD, you don't have to touch it. Put <b>one inexpensive phone or tablet in each truck</b>, pair it once to that truck (Equipment › the truck › <i>Pair a device</i>), and every driver who takes the truck taps their name and signs in with the last 4 of their CDL. When a driver leaves, nothing needs collecting.
+    <ul>
+      <li><b>Drivers' own phones work too.</b> The driver app runs in any phone's web browser — nothing to install. Some carriers pay a small monthly phone stipend instead of buying devices.</li>
+      <li><b>Guest drivers</b> (owner-operators, subs) always use their own phone from the link you send.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>What any device needs</h2>
+    <ul>
+      <li>A current Android or iPhone that still gets security updates, with a working <b>GPS</b> and <b>camera</b> (PODs, BOLs, damage photos).</li>
+      <li><b>Chrome</b> (Android) or <b>Safari</b> (iPhone), and a data plan — any carrier; a basic prepaid line is plenty.</li>
+      <li>A screen lock (PIN or fingerprint). It holds customer addresses and door codes.</li>
+    </ul>
+  </div>
+
+  <div class="card" id="phones">
+    <h2>Without a scanner: phones and tablets (camera scanning)</h2>
+    <div class="mini" style="margin-bottom:6px">Fine when drivers scan a few labels per stop — the driver app reads barcodes with the camera. Too slow for dozens of labels at every stop: see <a href="#scanners">With full scanning</a> below.</div>
+    <table>
+      <thead><tr><th>Choice</th><th>Why</th><th>Watch out for</th></tr></thead>
+      <tbody>
+        <tr><td><b>Samsung Galaxy XCover7 Pro</b> <span class="tag ok">best for fleets</span></td>
+          <td>Built for work: IP68 water / dust and MIL-STD-810H drop rated, a battery you can swap, glove-friendly screen, and Samsung promises <b>7 years</b> of updates — buy once.</td>
+          <td>Costs more up front than a regular phone. Buy through Samsung Business or a business reseller.</td></tr>
+        <tr><td><b>Moto G Power</b> (current model) <span class="tag ok">best value</span></td>
+          <td>Big-brand phone with MIL-STD-810H toughness and IP68/IP69 water rating, usually <b>under $300</b>, long battery.</td>
+          <td>Fewer years of updates than Samsung's rugged line. Add a case and screen protector.</td></tr>
+        <tr><td><b>Samsung Galaxy A-series</b> (e.g. A26 5G) + a rugged case</td>
+          <td>Around $200 with deals, <b>6 years</b> of updates, easy to replace at any store.</td>
+          <td>Not rugged on its own — the case (OtterBox Defender-style or similar) does the work.</td></tr>
+        <tr><td><b>Samsung Galaxy Tab Active5 / Active5 Pro</b> <span class="tag ok">truck tablet</span></td>
+          <td>Rugged 8-inch tablet for a truck device: bigger screen for scans and signatures, IP68, swappable battery; the Pro gets <b>8 years</b> of updates.</td>
+          <td>Needs a solid mount and a cellular (LTE / 5G) model or a hotspot.</td></tr>
+        <tr><td>Budget rugged brands (Ulefone, Oukitel, Blackview, Doogee…) <span class="tag warn">be careful</span></td>
+          <td>Very cheap, huge batteries, tough cases.</td>
+          <td>Many get few or <b>no security updates</b> — not a good fit for a phone holding your customers' data and codes.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" id="scanners">
+    <h2>With full scanning: a real scanner</h2>
+    If drivers scan many labels at every stop (auto parts, totes, cages, parcels), a real scan engine reads each label instantly, in bad light and off a curved tote, where a phone camera struggles. Two ways to get one:
+    <table style="margin-top:8px">
+      <thead><tr><th>Choice</th><th>Why</th><th>Watch out for</th></tr></thead>
+      <tbody>
+        <tr><td><b>Zebra TC27</b> (or TC22) <span class="tag ok">best for scanning fleets</span></td>
+          <td>An Android phone with a professional scanner built in (trigger buttons on the sides), IP68, removable battery, and Zebra supports it for <b>6 years</b>. The <b>TC27</b> has 5G / LTE for the truck.</td>
+          <td>The <b>TC22 is Wi-Fi only</b> — in a truck it needs a phone hotspot. New units cost well above a regular phone; <b>certified refurbished</b> units with a 1-year warranty cost much less.</td></tr>
+        <tr><td><b>Honeywell CT30 XP / CT45</b></td>
+          <td>Same idea from Honeywell — rugged Android with a built-in scanner, long support.</td>
+          <td>Price is similar to Zebra; pick one brand and stick with it.</td></tr>
+        <tr><td>Budget Android scanners (Urovo, Chainway, Newland…) <span class="tag warn">be careful</span></td>
+          <td>Built-in scanner for much less.</td>
+          <td>Check how long they get Android security updates before buying a fleet of them.</td></tr>
+        <tr><td><b>A Bluetooth scanner</b> + any phone above <span class="tag ok">cheapest upgrade</span></td>
+          <td>A pocket or ring scanner (Socket Mobile, Zebra CS60 and similar; budget brands too) pairs to the phone you already have. Keeps the phone in a pocket or mount while the driver scans.</td>
+          <td>One more thing to charge and lose. Get a 2D model (reads QR codes as well as barcodes).</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:10px"><b>Setting a scanner up for RoadCoda</b>
+      <ol>
+        <li>Set the scanner to <b>keyboard (keystroke / HID) output with Enter after each scan</b> — usually how they come. (Zebra: DataWedge; Honeywell: keyboard wedge; Bluetooth scanners: "HID" mode.)</li>
+        <li>In the driver app, open <b>Scan labels</b> on a stop and tick <b>Using a scanner</b>. It skips the camera, keeps the cursor ready and hides the on-screen keyboard — each trigger pull adds a label. The device remembers it.</li>
+      </ol></div>
+  </div>
+
+  <div class="card" id="autoparts">
+    <h2>Auto-parts routes: every box, cage, tote and bumper cover scanned</h2>
+    When a driver scans every piece at every stop — often hundreds of scans a shift — buy a <b>scanner that happens to be a phone</b>, not a phone that can scan.
+    <table style="margin-top:8px">
+      <thead><tr><th>Setup</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><b>Zebra TC58 (5G), SE55 advanced-range scanner, trigger handle</b> <span class="tag ok">the workhorse</span></td>
+          <td>Reads a label in hand or from across a trailer (labels high on a cage, bumper covers in a rack), first try, even dirty or under shrink wrap. The trigger handle turns it into a pistol grip for hundreds of scans a shift. Rugged, removable battery. New units are pricey; certified refurbished and open-box units are common.</td></tr>
+        <tr><td><b>Zebra TC27 (5G) + trigger handle and rugged boot</b> <span class="tag ok">the value pick</span></td>
+          <td>Same workflow for less, with a standard-range scanner — right when labels are scanned within arm's reach.</td></tr>
+        <tr><td><b>Add a Zebra RS5100 ring scanner</b> <span class="tag ok">hands-free</span></td>
+          <td>For drivers carrying totes and bumper covers with both hands: scans from the finger while the handheld stays holstered; swap its battery to run back-to-back shifts.</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:10px"><b>Insist on:</b> a trigger (not the camera) · cellular 5G / LTE, not Wi-Fi only · a spare or swappable battery · a rugged boot and a charging cradle in the cab · long security support.</div>
+    <div style="margin-top:10px"><b>What RoadCoda does for these routes</b>
+      <ul>
+        <li><b>No signal? Keep scanning.</b> Every scan is saved on the device the instant it's read and sent when there's signal — the driver never waits, nothing is lost ("12 scans waiting for signal").</li>
+        <li><b>Scan against the manifest.</b> Load the customer's label list on Dispatch (<i>Import manifest</i>); the driver sees "18 of 20 — 2 missing" as they scan, labels not on the list are flagged, and anything missing is filled in as a shortage on the receiver's signature screen.</li>
+      </ul></div>
+  </div>
+
+  <div class="card">
+    <h2>In the truck</h2>
+    <ul>
+      <li><b>Power:</b> a 12-volt USB-C charger and a good cable in every truck. A dead phone is the most common failure, not a broken one.</li>
+      <li><b>Mount:</b> a vent, dash or cup-holder mount rated for trucks (RAM Mounts and similar). Keep it out of the driver's line of sight and follow FMCSA rules for anything mounted on the windshield.</li>
+      <li><b>While driving:</b> the RoadCoda driver app locks while the truck is moving — federal rules only allow one-touch, hands-free phone use for commercial drivers.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Setting up a truck device</h2>
+    <ol>
+      <li>In the office: <b>Equipment › the truck › Pair a device</b> — a QR code (and an 8-character code) appears for 15 minutes.</li>
+      <li>On the truck's device: open the camera and <b>scan the QR code</b>. The driver app opens, paired to that truck. Then use the browser menu › <b>Add to Home screen</b>.</li>
+      <li>At each shift the driver <b>taps their name</b> and enters the <b>last 4 of their CDL</b>, and sees only their loads on that truck. <b>Switch driver</b> hands it over.</li>
+    </ol>
+    <div class="mini" style="margin-top:6px">Lost or replaced a device? <b>Unpair</b> it on the truck (Equipment) and pair the new one — nothing else changes.</div>
+  </div>
+</main>
+</body>
+</html>

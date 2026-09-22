@@ -11,6 +11,7 @@
 <meta name="theme-color" content="#070c14">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
@@ -125,6 +126,7 @@
       <a class="btn small" href="messages.html" id="msgs-btn">Messages</a>
       <a class="btn small" href="templates.html">Templates</a>
       <button class="btn small" id="ts-btn" title="Print a trip sheet for every load on this day">Trip sheets</button>
+      <button class="btn small" id="mf-btn" title="Load the customer's label list so drivers can scan against it">Import manifest</button>
       <button class="btn small" id="nc-btn">+ New customer</button>
       <a class="btn small primary" href="loads.html?new=1">New load</a>
     </div>
@@ -430,6 +432,69 @@ async function loadBoard(quiet) {
 start();
 // Printable trip sheets for the day on the board (67)
 document.getElementById('ts-btn').onclick = () => window.open('trip-sheet.html?day=' + (document.getElementById('day').value || ''), '_blank', 'noopener');
+
+// ── Import a manifest (81): the customer's label list per store, for the board's day ──
+(function () {
+  const F = [['barcode', 'Label / barcode', /label|barcode|bar code|tag|lpn|container|carton|serial/i], ['store', 'Store code or name', /store|location|ship.?to|dest|dealer|account|customer|branch/i],
+             ['load_no', 'Load # (optional)', /load/i], ['route', 'Route # (optional)', /route|run/i], ['stop_seq', 'Stop # (optional)', /^stop|seq/i],
+             ['description', 'Description (optional)', /desc|part|item|sku|type|content/i]];
+  let UP = null, LAY = {};
+  try { LAY = JSON.parse(localStorage.getItem('rc-mf-layout') || '{}'); } catch (_) {}
+  const box = document.createElement('div');
+  box.id = 'mf-box'; box.hidden = true;
+  box.style.cssText = 'position:fixed;inset:5% 5% auto 5%;max-height:88vh;overflow:auto;z-index:80;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 10px 40px rgba(0,0,0,.4)';
+  document.body.appendChild(box);
+  const E = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const day = () => document.getElementById('day').value;
+  function drawStart() {
+    box.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><b style="font-size:16px">Import manifest — ${E(day())}</b><span style="flex:1"></span><button class="btn small" id="mf-x">Close</button></div>
+      <p class="mini" style="margin:6px 0">The customer's label list: one row per label (box, cage, tote, bumper cover…) with the store it goes to. Each label is matched to that store's stop on this day's loads. Add a load # or route # column when a store gets more than one load a day.</p>
+      <label class="btn small primary" style="display:inline-flex">Choose file (CSV or Excel)<input type="file" id="mf-file" accept=".csv,.txt,.xlsx,.xls" hidden></label>
+      <div id="mf-body" style="margin-top:10px"></div>`;
+    document.getElementById('mf-x').onclick = () => { box.hidden = true; };
+    document.getElementById('mf-file').onchange = read;
+  }
+  async function read() {
+    const f = document.getElementById('mf-file').files[0]; if (!f) return;
+    if (!window.XLSX) { document.getElementById('mf-body').innerHTML = '<span class="error">The spreadsheet reader did not load — check your connection and refresh.</span>'; return; }
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', raw: /\.(csv|txt)$/i.test(f.name) });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' }).filter(r => r.some(c => String(c).trim() !== ''));
+    if (!rows.length) return;
+    const header = Math.max(0, rows.slice(0, 15).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
+    UP = { name: f.name, rows, header, map: {} }; guess(); drawMap();
+  }
+  function guess() {
+    const head = UP.rows[UP.header].map(h => String(h).trim()), used = new Set(); UP.map = {};
+    F.forEach(([k]) => { const i = LAY[k] != null ? head.indexOf(LAY[k]) : -1; if (i >= 0) { UP.map[k] = i; used.add(i); } });
+    F.forEach(([k, , re]) => { if (UP.map[k] != null) return; const i = head.findIndex((h, j) => h && !used.has(j) && re.test(h)); if (i >= 0) { UP.map[k] = i; used.add(i); } });
+  }
+  const parsed = () => UP.rows.slice(UP.header + 1).map((r, i) => { const o = { row: UP.header + i + 2 }; F.forEach(([k]) => { o[k] = UP.map[k] != null ? String(r[UP.map[k]] ?? '').trim() : ''; }); return o; }).filter(o => o.barcode);
+  function drawMap() {
+    const head = UP.rows[UP.header].map(h => String(h).trim()), P = parsed();
+    const opts = (sel) => '<option value="">(not in file)</option>' + head.map((h, j) => `<option value="${j}" ${sel === j ? 'selected' : ''}>${E(h || 'Column ' + (j + 1))}</option>`).join('');
+    const ready = UP.map.barcode != null && (UP.map.store != null || UP.map.stop_seq != null);
+    document.getElementById('mf-body').innerHTML = `<div><b>${E(UP.name)}</b> · ${P.length} labels</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:8px">${F.map(([k, l]) => `<label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:600">${l}<select data-mf="${k}" style="height:30px">${opts(UP.map[k])}</select></label>`).join('')}</div>
+      <div style="max-height:180px;overflow:auto;margin-top:8px;font-size:12.5px">${P.slice(0, 8).map(o => `<div>${E(o.barcode)} → ${E(o.store || ('stop ' + o.stop_seq))}${o.load_no ? ' · load ' + E(o.load_no) : ''}${o.route ? ' · route ' + E(o.route) : ''}${o.description ? ' · ' + E(o.description) : ''}</div>`).join('')}</div>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center">${ready ? `<button class="btn primary small" id="mf-go">Load ${P.length} labels for ${E(day())}</button>` : '<span class="error">Match the label column and the store (or stop #) column.</span>'}<span id="mf-msg" class="mini"></span></div>`;
+    box.querySelectorAll('[data-mf]').forEach(sel => sel.onchange = () => { if (sel.value === '') delete UP.map[sel.dataset.mf]; else UP.map[sel.dataset.mf] = +sel.value; drawMap(); });
+    const go = document.getElementById('mf-go'); if (go) go.onclick = load;
+  }
+  async function load() {
+    const head = UP.rows[UP.header].map(h => String(h).trim()); LAY = Object.fromEntries(Object.entries(UP.map).map(([k, i]) => [k, head[i]]));
+    try { localStorage.setItem('rc-mf-layout', JSON.stringify(LAY)); } catch (_) {}
+    const btn = document.getElementById('mf-go'); btn.disabled = true;
+    const P = parsed(); let tot = { loaded: 0, already_loaded: 0, skipped: 0, problems: [] };
+    for (let i = 0; i < P.length; i += 5000) {
+      const { data, error } = await sb.rpc('manifest_import', { p_day: day(), p_file: UP.name, p_rows: P.slice(i, i + 5000) });
+      if (error) { document.getElementById('mf-msg').innerHTML = `<span class="error">${E(error.message)}</span>`; btn.disabled = false; return; }
+      tot.loaded += data.loaded; tot.already_loaded += data.already_loaded; tot.skipped += data.skipped; tot.problems.push(...data.problems);
+    }
+    document.getElementById('mf-body').innerHTML = `<b class="ok">${tot.loaded} labels loaded.</b> ${tot.already_loaded ? tot.already_loaded + ' were already loaded. ' : ''}${tot.skipped ? `<span class="warn">${tot.skipped} not matched:</span><div class="mini" style="max-height:160px;overflow:auto">${tot.problems.map(p => `row ${E(p.row)} — ${E(p.why)}`).join('<br>')}</div>` : ''}
+      <p class="mini">Drivers see each stop's list when they open Scan labels.</p>`;
+  }
+  document.getElementById('mf-btn').onclick = () => { box.hidden = false; drawStart(); };
+})();
 </script>
 </body>
 </html>

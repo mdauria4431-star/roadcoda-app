@@ -441,11 +441,15 @@
   </section>
 </main>
 
+<div id="queue-top" hidden style="position:fixed;left:8px;right:8px;bottom:8px;z-index:40;background:#3a2f10;color:#f0c674;border:1px solid #8a6d1d;border-radius:10px;padding:8px 12px;font-size:14px;text-align:center"></div>
 <div class="scanner" id="scanner" hidden role="dialog" aria-label="Scan labels">
   <div id="scan-title" style="font-family:Archivo,sans-serif;font-size:20px"></div>
   <div id="reader"></div>
   <div id="scan-status" aria-live="polite">Point the camera at a label</div>
+  <div id="scan-list" style="font-size:15px" hidden></div>
+  <div id="scan-queue" style="font-size:14px;color:#f0c674" hidden></div>
   <div class="row" style="margin-top:0"><input id="manual-code" placeholder="Or type the label number" autocomplete="off"><button class="btn" id="manual-add" style="flex:0 0 auto">Add</button></div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:15px;margin:2px 0"><input type="checkbox" id="hw-scan" style="width:22px;height:22px"> Using a scanner (built-in or Bluetooth) — no camera</label>
   <button class="btn primary" id="scan-done">Done scanning</button>
 </div>
 
@@ -940,7 +944,15 @@ async function act(btn) {
   let evSend = ev;
   if (ev === 'deliver') {
     counts = readCounts();
-    const res = await askSignature(id, { counts });   // receiver signature (74) — false if the driver backs out
+    if (!EXP[id]) await loadExpected(id);
+    const t = labelTally(id), pre = { counts };
+    if (t.total && (t.missing.length || t.extra.length)) {           // manifest (81): short / not-on-list labels go on the signature screen
+      pre.issueType = t.missing.length ? 'short' : 'over';
+      pre.note = [t.missing.length ? `Missing ${t.missing.length} of ${t.total}: ${t.missing.slice(0, 12).map(e => e.barcode).join(', ')}${t.missing.length > 12 ? '…' : ''}` : '',
+                  t.extra.length ? `Not on list: ${t.extra.slice(0, 8).join(', ')}` : ''].filter(Boolean).join(' · ');
+    }
+    if (qGet().some(x => x.stop_id === id)) await qFlush();
+    const res = await askSignature(id, pre);   // receiver signature (74) — false if the driver backs out
     if (!res) return;
     if (res.exceptions) {                            // the receiver noted shortage / damage / overage (75): record it as OS&D
       evSend = 'exception'; type = res.exceptions.includes('damaged') ? 'damaged' : res.exceptions[0]; note = 'Receiver noted: ' + res.notes;
@@ -976,28 +988,114 @@ async function act(btn) {
 let scanner = null, scanStop = null, lastCode = '', lastAt = 0, scanCount = 0;
 const where = () => lastPos ? { lat: +lastPos.latitude.toFixed(6), lng: +lastPos.longitude.toFixed(6) } : {};
 
+// ---------- Scans: saved on the phone first, sent when there's signal (81) ----------
+// Every scan goes into a queue kept on the phone, so a dock or basement with no signal never loses one.
+// The queue sends in the background; "already scanned" from the server means it got there earlier.
+const QKEY = 'rc-scan-queue';
+const qGet = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch (_) { return []; } };
+const qSet = (a) => { try { localStorage.setItem(QKEY, JSON.stringify(a)); } catch (_) {} };
+const lkey = (b) => String(b || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+let qBusy = false, qFailed = [];
+function qPaint() {
+  const n = qGet().length;
+  const el = $('scan-queue'); if (el) { el.hidden = !n && !qFailed.length; el.textContent = (n ? `${n} scan${n > 1 ? 's' : ''} waiting for signal — they'll send by themselves.` : '') + (qFailed.length ? ` ${qFailed.length} couldn't be saved: ${qFailed.slice(0, 3).map(f => f.barcode + ' (' + f.why + ')').join(', ')}` : ''); }
+  const top = $('queue-top'); if (top) { top.hidden = !n; top.textContent = `${n} scan${n > 1 ? 's' : ''} waiting for signal`; }
+}
+async function qFlush() {
+  if (qBusy) return; qBusy = true;
+  try {
+    let q = qGet();
+    while (q.length) {
+      const it = q[0];
+      const { error } = await sb.from('scans').insert(it);
+      if (error && error.code !== '23505') {
+        const net = !navigator.onLine || /fetch|network|Failed|timeout|load failed/i.test(error.message || '') || !error.code;
+        if (net) break;                                            // no signal: keep it, try again later
+        qFailed.push({ barcode: it.barcode, why: error.message }); // a real refusal (e.g. the stop was removed): don't retry forever
+      }
+      q = qGet().filter(x => x.id !== it.id); qSet(q);
+    }
+  } catch (_) { /* offline: try again later */ }
+  qBusy = false; qPaint(); if (!$('scanner').hidden) paintList();
+}
+setInterval(qFlush, 8000); window.addEventListener('online', qFlush); setTimeout(qFlush, 1500);
+
+// The stop's manifest (the customer's label list), kept on the phone for no-signal scanning
+let EXP = {};                     // stopId -> [{barcode, key, description}]
+async function loadExpected(stopId) {
+  const ck = 'rc-exp-' + stopId;
+  try { const { data, error } = await sb.rpc('driver_expected_labels', { p_stop: stopId }); if (!error) { EXP[stopId] = data || []; try { localStorage.setItem(ck, JSON.stringify(EXP[stopId])); } catch (_) {} return; } } catch (_) {}
+  try { EXP[stopId] = JSON.parse(localStorage.getItem(ck) || '[]'); } catch (_) { EXP[stopId] = []; }
+}
+// every label scanned at a stop: matching key -> the label as scanned
+function scannedMap(stopId) {
+  const m = new Map();
+  ((STOPMAP[stopId] || {}).scans || []).forEach(x => x.barcode && m.set(lkey(x.barcode), x.barcode));
+  qGet().filter(x => x.stop_id === stopId).forEach(x => m.set(lkey(x.barcode), x.barcode));
+  (SESSION[stopId] || []).forEach(x => m.set(lkey(x), x));
+  return m;
+}
+const scannedKeys = (stopId) => new Set(scannedMap(stopId).keys());
+function labelTally(stopId) {
+  const exp = EXP[stopId] || [], got = scannedMap(stopId), expKeys = new Set(exp.map(e => e.key));
+  return { total: exp.length, done: exp.filter(e => got.has(e.key)).length, missing: exp.filter(e => !got.has(e.key)), extra: [...got.entries()].filter(([k]) => k && !expKeys.has(k)).map(([, raw]) => raw) };
+}
+function paintList() {
+  const t = labelTally(scanStop), el = $('scan-list');
+  if (!t.total) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `<b>${t.done} of ${t.total}</b> on this stop's list${t.missing.length ? ` — <span style="color:#f0a89b">${t.missing.length} missing</span> <a href="#" id="miss-show" style="color:inherit">show</a>` : ' — <span style="color:#9be3a8">all scanned</span>'}${t.extra.length ? ` · <span style="color:#f0c674">${t.extra.length} not on the list</span>` : ''}
+    <div id="miss-list" hidden style="max-height:160px;overflow:auto;margin-top:4px">${t.missing.map(e => `<div>${esc(e.barcode)}${e.description ? ' · ' + esc(e.description) : ''}</div>`).join('')}</div>`;
+  const a = $('miss-show'); if (a) a.onclick = (e) => { e.preventDefault(); $('miss-list').hidden = !$('miss-list').hidden; };
+}
+let SESSION = {};                 // labels scanned this session (before the queue sends them)
+
 async function saveCode(code) {
   code = String(code || '').trim();
   if (!code) return;
   if (code === lastCode && Date.now() - lastAt < 2500) return;   // same label still in view
   lastCode = code; lastAt = Date.now();
-  const { error } = await sb.from('scans').insert({ stop_id: scanStop, barcode: code, scan_type: 'delivery', ...where() });
-  if (error) {
-    $('scan-status').textContent = error.code === '23505' ? `Already scanned: ${code}` : error.message;
-    $('scan-status').style.color = '#f0a89b';
-    return;
+  const k = lkey(code);
+  if (scannedKeys(scanStop).has(k)) {
+    $('scan-status').textContent = `Already scanned: ${code}`; $('scan-status').style.color = '#f0a89b'; return;
   }
+  const item = { id: uuid(), stop_id: scanStop, barcode: code, scan_type: 'delivery', scanned_at: new Date().toISOString(), ...where() };
+  const q = qGet(); q.push(item); qSet(q);
+  (SESSION[scanStop] ||= []).push(code);
   scanCount++;
   if (navigator.vibrate) navigator.vibrate(80);
-  $('scan-status').style.color = '#9be3a8';
-  $('scan-status').textContent = `✓ ${code}  ·  ${scanCount} scanned this time`;
+  const exp = EXP[scanStop] || [], onList = !exp.length || exp.some(e => e.key === k);
+  $('scan-status').style.color = onList ? '#9be3a8' : '#f0c674';
+  $('scan-status').textContent = onList ? `✓ ${code}  ·  ${scanCount} scanned this time` : `⚠ ${code} is not on this stop's list — saved anyway`;
+  if (!onList && navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  paintList(); qPaint(); qFlush();
 }
 
+// Hardware scanners (a scanner built into the device, or a Bluetooth one) type the label and press Enter,
+// so "Using a scanner" skips the camera, keeps the cursor in the label box and hides the on-screen keyboard.
+const HWKEY = 'rc-hw-scan';
+const hwOn = () => { try { return localStorage.getItem(HWKEY) === '1'; } catch (_) { return false; } };
+function hwFocus() { if (!$('scanner').hidden && hwOn()) { $('manual-code').setAttribute('inputmode', 'none'); $('manual-code').focus(); } }
+$('hw-scan').onchange = async () => {
+  try { localStorage.setItem(HWKEY, $('hw-scan').checked ? '1' : '0'); } catch (_) {}
+  const stop = scanStop, label = $('scan-title').textContent;
+  if (scanner) { try { await scanner.stop(); scanner.clear(); } catch (_) {} scanner = null; }
+  openScanner(stop, label);
+};
+$('manual-code').addEventListener('blur', () => setTimeout(hwFocus, 150));   // a scanner needs the cursor in the box
 async function openScanner(stopId, label) {
   scanStop = stopId; scanCount = 0; lastCode = '';
   $('scan-title').textContent = label;
   $('scan-status').textContent = 'Point the camera at a label'; $('scan-status').style.color = '';
   $('scanner').hidden = false;
+  $('hw-scan').checked = hwOn();
+  loadExpected(stopId).then(paintList); qPaint();
+  if (hwOn()) {
+    $('scan-status').textContent = 'Ready — pull the scanner trigger on each label.';
+    hwFocus(); return;
+  }
+  $('manual-code').removeAttribute('inputmode');
   if (!window.Html5Qrcode) { $('scan-status').textContent = 'Camera scanner did not load. Type label numbers instead.'; return; }
   try {
     scanner = new Html5Qrcode('reader');
