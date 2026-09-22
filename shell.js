@@ -54,10 +54,10 @@
     { name: 'Daily', items: ['index.html', 'dispatch.html', 'map.html', 'dock.html', 'planner.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'office-payroll.html', 'profit.html', 'tolls.html', 'ifta.html', 'qb-export.html'] },
     { name: 'Safety', items: ['safety.html', 'incidents.html', 'claims.html', 'compliance.html', 'retention.html', 'handbooks.html'] },
-    { name: 'Setup', items: ['getting-started.html', 'customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'texts.html', 'users.html', 'features.html', 'devices.html'], fold: true },
+    { name: 'Setup', items: ['getting-started.html', 'company.html', 'customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'texts.html', 'users.html', 'features.html', 'devices.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'dock.html': '▣', 'texts.html': '✉', 'devices.html': '▯', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'dock.html': '▣', 'texts.html': '✉', 'company.html': '⌂', 'devices.html': '▯', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
@@ -67,7 +67,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages', 'company.html': 'Company' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -175,6 +175,12 @@
       rt.href = 'retention.html'; rt.textContent = 'Retention';
       if (here === 'retention.html') rt.className = 'on';
       nav.appendChild(rt); links['retention.html'] = rt;
+    }
+    if (!links['company.html']) {
+      var co = document.createElement('a');
+      co.href = 'company.html'; co.textContent = 'Company';
+      if (here === 'company.html') co.className = 'on';
+      nav.appendChild(co); links['company.html'] = co;
     }
     if (!links['getting-started.html'] && (!acc || (acc.can && acc.can('users')))) {
       var gs = document.createElement('a');
@@ -343,4 +349,47 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
+
+  // ---- Day arrows (93): a < and > either side of the working-date box, on every page that has one.
+  // The native calendar button stays; these just step a day at a time without typing.
+  function dayArrows() {
+    var boxes = document.querySelectorAll('input[type="date"]#day, input[type="date"]#date, input[type="date"][data-daynav]');
+    for (var i = 0; i < boxes.length; i++) {
+      (function (box) {
+        if (!box || box.dataset.dayArrows) return;
+        box.dataset.dayArrows = '1';
+        var wrap = document.createElement('span');
+        wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px';
+        box.parentNode.insertBefore(wrap, box);
+        function step(days) {
+          var d = box.value ? new Date(box.value + 'T12:00:00') : new Date();
+          d.setDate(d.getDate() + days);
+          box.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+          box.dispatchEvent(new Event('change', { bubbles: true }));   // the page reloads itself
+        }
+        function arrow(label, days, title) {
+          var b = document.createElement('button');
+          b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title);
+          b.style.cssText = 'height:32px;min-width:30px;padding:0 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-weight:700;cursor:pointer';
+          b.onclick = function () { step(days); };
+          return b;
+        }
+        wrap.appendChild(arrow('‹', -1, 'Previous day'));
+        wrap.appendChild(box);
+        wrap.appendChild(arrow('›', 1, 'Next day'));
+      })(boxes[i]);
+    }
+  }
+  // ---- Clicking a date (or month) box opens the calendar, not just the little icon.
+  // One listener on the document, so boxes drawn later work too.
+  document.addEventListener('click', function (e) {
+    var el = e.target;
+    if (!el || el.tagName !== 'INPUT' || (el.type !== 'date' && el.type !== 'month') || el.disabled || el.readOnly) return;
+    try { if (typeof el.showPicker === 'function') el.showPicker(); } catch (_) { /* older browsers: the icon still works */ }
+  });
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', dayArrows);
+  else dayArrows();
+  window.RC_DAY_ARROWS = dayArrows;   // pages that draw their toolbar later can call this again
+
 })();

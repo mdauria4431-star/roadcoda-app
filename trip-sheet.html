@@ -145,6 +145,41 @@ function sheet(l, logo) {
 }
 $('print').onclick = () => window.print();
 start();
+
+// 93: previous / next day either side of the date box (this page has no shared menu)
+(function () {
+  function arrows() {
+    var box = document.getElementById('day');
+    if (!box || box.dataset.dayArrows) return;
+    box.dataset.dayArrows = '1';
+    var wrap = document.createElement('span');
+    wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px';
+    box.parentNode.insertBefore(wrap, box);
+    function step(days) {
+      var d = box.value ? new Date(box.value + 'T12:00:00') : new Date();
+      d.setDate(d.getDate() + days);
+      box.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    function arrow(label, days, title) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title);
+      b.style.cssText = 'height:32px;min-width:30px;padding:0 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-weight:700;cursor:pointer';
+      b.onclick = function () { step(days); };
+      return b;
+    }
+    wrap.appendChild(arrow('\u2039', -1, 'Previous day'));
+    wrap.appendChild(box);
+    wrap.appendChild(arrow('\u203a', 1, 'Next day'));
+  }
+  document.addEventListener('click', function (e) {
+    var el = e.target;
+    if (el && el.tagName === 'INPUT' && (el.type === 'date' || el.type === 'month') && !el.disabled && !el.readOnly) {
+      try { if (typeof el.showPicker === 'function') el.showPicker(); } catch (_) {}
+    }
+  });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrows); else arrows();
+})();
 </script>
 </body>
 </html>

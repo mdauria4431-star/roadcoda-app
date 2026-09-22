@@ -123,6 +123,7 @@ $('refresh').onclick = () => load();
 $('find').oninput = $('onload').onchange = () => draw();
 
 async function load() {
+  if (!map || !window.L) return;        // the map library didn't load — the note on the page says so
   const { data, error } = await sb.rpc('live_map');
   if (error) {
     $('off').hidden = false; $('wrap').hidden = true;

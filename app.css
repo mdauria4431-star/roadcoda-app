@@ -433,3 +433,15 @@ main header, .card > header, section > header{
   border-right:0!important;background:none!important;box-shadow:none!important;overflow:visible!important;z-index:auto!important;
   inset:auto!important;text-align:left!important;
 }
+
+/* 93: the browser's little calendar icon is nearly invisible on dark; lift it (and make the whole box clickable) */
+input[type="date"], input[type="month"], input[type="datetime-local"], input[type="time"] { cursor: pointer; }
+html[data-rc-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+html[data-rc-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator,
+html[data-rc-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+html[data-rc-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.6);
+  opacity: .85;
+  cursor: pointer;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
