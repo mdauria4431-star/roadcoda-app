@@ -97,7 +97,7 @@ async function load() {
       ${list.map(r => `<div class="step ${r.done ? 'done' : ''}">
         ${r.auto || r.section === 'Set up' ? `<span class="tick">${r.done ? '✓' : ''}</span>` : `<input type="checkbox" data-step="${esc(r.step)}" ${r.done ? 'checked' : ''} ${canTick() ? '' : 'disabled'} aria-label="${esc(r.title)}">`}
         <div class="w"><div class="t">${esc(r.title)}</div>${r.detail ? `<div class="mini">${esc(r.detail)}</div>` : ''}</div>
-        ${r.link && !r.done ? `<a class="btn small" href="${esc(r.link)}">Go</a>` : ''}</div>`).join('')}</div>`;
+        ${r.link ? `<a class="btn small" href="${esc(r.link)}"${r.done ? ' style="opacity:.75"' : ''}>${r.done ? 'Open' : 'Go'}</a>` : ''}</div>`).join('')}</div>`;
   }).join('');
   document.querySelectorAll('[data-step]').forEach(cb => cb.onchange = async () => {
     const q = cb.checked ? sb.from('carrier_setup_ticks').insert({ step: cb.dataset.step }) : sb.from('carrier_setup_ticks').delete().eq('step', cb.dataset.step);

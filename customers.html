@@ -210,6 +210,7 @@
           <label for="dl-sort">Sort code<input id="dl-sort" placeholder="e.g. B3"></label>
           <label for="dl-kind">Type<select id="dl-kind"><option value="delivery">Delivery point</option><option value="pickup">Pickup point (supplier)</option><option value="both">Both</option></select></label>
           <label for="dl-addr" style="grid-column:span 2">Address<input id="dl-addr" placeholder="Street, Town, ST 00000"></label>
+          <div style="grid-column:span 2;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="btn" id="dl-check" type="button">Check address</button><span class="hint" id="dl-chk"></span></div>
           <label for="dl-ws">Window opens<input id="dl-ws" type="time"></label>
           <label for="dl-we">Window closes<input id="dl-we" type="time"></label>
           <label for="dl-contact">Contact name<input id="dl-contact"></label>
@@ -673,6 +674,26 @@ function clearDl() {
   $('dl-active').checked = true; $('dl-title').textContent = 'Add a stop customer'; $('dl-used').hidden = true; $('dl-geo').hidden = true;
 }
 $('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; $('dl-edit').open = false; };
+// 93: check a stop address against Google — and keep the map point, so miles, maps and tracking work from day one
+let dlPoint = null;
+$('dl-check').onclick = async () => {
+  const typed = $('dl-addr').value.trim(), out = $('dl-chk');
+  if (!typed) { out.innerHTML = '<span class="error">Type an address first.</span>'; return; }
+  out.textContent = 'Checking…'; dlPoint = null;
+  try {
+    const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'geocode', addresses: [typed] } });
+    if (error) throw error;
+    const hit = data && data.points && data.points[0];
+    if (!hit) { out.innerHTML = '<span class="error">Google couldn\'t find that address.</span>'; return; }
+    dlPoint = { lat: hit.lat, lon: hit.lng };
+    const same = (hit.formatted || '').toLowerCase().replace(/[.,]/g, '') === typed.toLowerCase().replace(/[.,]/g, '');
+    out.innerHTML = same ? '<span class="ok">Found — map point saved with this stop.</span>'
+      : `Google matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not exact)</span>' : ''} <button class="btn" type="button" id="dl-use">Use this</button>`;
+    const use = document.getElementById('dl-use');
+    if (use) use.onclick = () => { $('dl-addr').value = hit.formatted; out.innerHTML = '<span class="ok">Updated — save to keep it.</span>'; };
+  } catch (e) { out.innerHTML = `<span class="error">${esc((e && e.message) || 'Address check unavailable')}</span>`; }
+};
+
 $('dl-save').onclick = async () => {
   if (!$('dl-name').value.trim()) { $('dl-msg').innerHTML = '<span class="error">Enter the name.</span>'; return; }
   const row = { name: $('dl-name').value.trim(), code: $('dl-code').value.trim() || null,
@@ -694,9 +715,17 @@ $('dl-save').onclick = async () => {
   if (row.other_code && !row.other_code_name) { $('dl-msg').innerHTML = '<span class="error">Give the other code a name (Alarm, Lock box…) so the driver knows what it opens.</span>'; return; }
   if (row.notify && !row.email && !row.notify_email) { $('dl-msg').innerHTML = '<span class="error">Add an email to send notifications to.</span>'; return; }
   if (dlEditing && row.address) await fillOpenStops(dlEditing, row.address);
-  const { error } = dlEditing ? await sb.from('delivery_locations').update(row).eq('id', dlEditing)
-                              : await sb.from('delivery_locations').insert({ ...row, customer_id: $('cust').value });
+  const saved = dlEditing ? await sb.from('delivery_locations').update(row).eq('id', dlEditing).select('id')
+                          : await sb.from('delivery_locations').insert({ ...row, customer_id: $('cust').value }).select('id');
+  const error = saved.error;
   if (error) { $('dl-msg').innerHTML = `<span class="error">${esc(/email_check/i.test(error.message) ? 'That email address does not look right.' : /duplicate|unique/i.test(error.message) ? 'A delivery customer with that name or code already exists for this customer.' : error.message)}</span>`; return; }
+  // 93: keep the checked map point with the stop (never overwrites one learned from driver scans)
+  const savedId = (saved.data && saved.data[0] && saved.data[0].id) || dlEditing;
+  if (dlPoint && savedId) {
+    const g = await sb.rpc('save_geocode', { p_location: savedId, p_customer: null, p_lat: dlPoint.lat, p_lon: dlPoint.lon });
+    if (g.error) $('dl-chk').innerHTML = `<span class="error">Saved, but the map point wasn't: ${esc(g.error.message)}</span>`;
+    dlPoint = null;
+  }
   const wasEditing = !!dlEditing; await loadDl(); $('dl-edit').open = false; flash(wasEditing ? 'Saved.' : 'Stop customer added.');
 };
 

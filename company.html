@@ -73,7 +73,9 @@
       <header><h2>2 · Where you are</h2></header>
       <div class="pad">
         <label>Office address <span class="mini">shown on invoices</span><textarea id="f-office_address" placeholder="100 Main St, Hartford, CT 06103"></textarea></label>
+        <div class="bar"><button class="btn small" data-check="f-office_address">Check address</button><span class="mini" id="chk-f-office_address"></span></div>
         <label>Yard address <span class="mini">where trucks start and finish — miles and deadhead are measured from here</span><textarea id="f-yard_address" placeholder="Blank = same as the office"></textarea></label>
+        <div class="bar"><button class="btn small" data-check="f-yard_address">Check address</button><span class="mini" id="chk-f-yard_address"></span></div>
         <label style="max-width:320px">Time zone <span class="mini">used for load days, ETAs and reports</span>
           <select id="f-time_zone">
             <option value="America/New_York">Eastern (New York)</option>
@@ -229,6 +231,28 @@ $('logo-rm').onclick = async () => {
   carrier = data[0]; drawLogo(); $('logo-msg').innerHTML = '<span class="ok">Logo removed.</span>';
   if (old) sb.storage.from('brand-logos').remove([old]);
 };
+
+// 93: "Check address" — asks Google what it matches, so typos show up before miles are measured from it
+async function checkAddress(fieldId) {
+  const box = $(fieldId), out = $('chk-' + fieldId), typed = box.value.trim();
+  if (!typed) { out.innerHTML = '<span class="error">Type an address first.</span>'; return; }
+  out.textContent = 'Checking…';
+  try {
+    const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'geocode', addresses: [typed] } });
+    if (error) throw error;
+    const hit = data && data.points && data.points[0];
+    if (!hit) { out.innerHTML = '<span class="error">Google couldn\'t find that address. Check the street, town and ZIP.</span>'; return; }
+    const same = (hit.formatted || '').toLowerCase().replace(/[.,]/g, '') === typed.toLowerCase().replace(/[.,]/g, '');
+    if (same) { out.innerHTML = '<span class="ok">Found — the address looks right.</span>'; return; }
+    out.innerHTML = `Google matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not an exact match)</span>' : ''}
+      <button class="btn small" style="margin-left:6px">Use this</button>`;
+    const btn = out.querySelector('button');
+    if (btn) btn.onclick = () => { box.value = hit.formatted; out.innerHTML = '<span class="ok">Updated — remember to save.</span>'; };
+  } catch (e) {
+    out.innerHTML = `<span class="error">${esc((e && e.message) || 'Address check unavailable')}${/not set|Geocoding/.test((e && e.message) || '') ? '' : ' — needs the route-miles function and a Google key with Geocoding.'}</span>`;
+  }
+}
+document.querySelectorAll('[data-check]').forEach(b => b.onclick = () => checkAddress(b.dataset.check));
 
 start();
 </script>
