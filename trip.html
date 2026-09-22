@@ -11,6 +11,7 @@
 <meta name="theme-color" content="#070c14">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="config.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
@@ -269,6 +270,12 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    guestIds: await (async () => { const g = await sb.from('drivers').select('id').eq('is_guest', true).eq('active', true); return g.error ? [] : (g.data || []).map(x => x.id); })(),
+    guest: await (async () => {   // guest driver on this load (77); nothing if not installed
+      if (!L.data.driver_id) return { none: true };
+      const { data, error } = await sb.from('drivers').select('id, full_name, is_guest, guest_company, guest_until, active, guest_ended_why, email, phone').eq('id', L.data.driver_id).maybeSingle();
+      return error ? null : (data || { none: true });
+    })(),
     sigs: await (async () => {    // receiver signatures (74); nothing if not installed
       if (!stopIds.length) return null;
       const { data, error } = await sb.from('stop_signatures').select('stop_id, receiver_name, bol_no, refused, refused_reason, signed_at, receiver_notes, exceptions').in('stop_id', stopIds);
@@ -345,7 +352,8 @@ function draw() {
   const opt = (list, cur, blank) => `<option value="">${blank}</option>` + list.map(x => `<option value="${x.id}"${x.id === cur ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
   const hmm = (m) => m == null ? '–' : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
   const lowOf = (h) => { const x = [h?.drive_left_min, h?.shift_left_min, h?.cycle_left_min].filter(v => v != null); return x.length ? Math.min(...x) : null; };
-  const drvList = T.drivers.filter(d => d.active || d.id === l.driver_id).map(d => {
+  const guestIds = new Set((T.guestIds || []));   // guest drivers (77) belong to one load each
+  const drvList = T.drivers.filter(d => (d.active && !guestIds.has(d.id)) || d.id === l.driver_id).map(d => {
     const h = T.hos[d.id], low = lowOf(h);
     return { id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') + (low != null ? ` — ${hmm(low)} left${h.stale ? ' (old reading)' : ''}` : '') };
   });
@@ -519,7 +527,35 @@ function stopsHtml(edit) {
   const gpsFill = edit && T.gps && T.l.stops.some(x => { const g = T.gps.by[x.id]; return g && ((!x.arrived_at && g.eld_arrived_at) || (!x.departed_at && g.eld_departed_at)); });
   return `<div class="card"><header><h2>Stops</h2>${gpsFill ? '<button class="btn small" id="gps-fill" title="Fill empty arrival / departure times from the truck\'s GPS. Each is logged and can be undone.">Use GPS times</button>' : ''}<span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + sheetHtml(edit);
+    <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + guestHtml(edit) + sheetHtml(edit);
+}
+
+// ── Guest driver (77): one load, one link, switched off after delivery ──
+function guestHtml(edit) {
+  const g = T.guest; if (!g) return '';
+  const done = T.l.stops.every(x => ['delivered', 'exception'].includes(x.status));
+  const until = g.guest_until ? new Date(g.guest_until).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  if (g.is_guest) return `<div class="card"><header><h2>Guest driver</h2><span class="sp"></span>${g.active ? '<span class="mini ok">link works</span>' : `<span class="mini">ended — ${esc(g.guest_ended_why || '')}</span>`}</header>
+    <div style="padding:10px 16px;display:flex;flex-direction:column;gap:8px">
+      <div><b>${esc(g.full_name)}</b>${g.guest_company ? ` · ${esc(g.guest_company)}` : ''}${g.phone ? ` · ${esc(g.phone)}` : ''}${g.email ? ` · ${esc(g.email)}` : ''}</div>
+      <div class="mini">Sees only this load in the driver app — arrivals, scans, POD photos, signatures. Switched off 1 hour after delivery, if you give the load to someone else${until ? `, or at ${until}` : ''}.</div>
+      ${g.active && edit ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" id="gl-qr">Show QR code</button><button class="btn small" id="gl-copy">Copy link (to text it)</button>${g.email ? '<button class="btn small" id="gl-mail">Email the link</button>' : ''}<button class="btn small" id="gl-end">End guest access</button></div><div id="gl-out"></div>` : ''}
+    </div></div>`;
+  if (done || !edit || T.l.status === 'cancelled') return '';
+  return `<div class="card"><header><h2>Guest driver</h2><span class="sp"></span><span class="mini">An owner-operator, subcontractor or temp driver runs this one load from a link — no account.</span></header>
+    <div style="padding:10px 16px"><details id="gl-new"><summary style="cursor:pointer;font-weight:600">Give this load to a guest driver…</summary>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:end">
+        <label class="mini">Name<input id="gl-name" style="height:30px"></label><label class="mini">Company<input id="gl-co" style="height:30px"></label>
+        <label class="mini">Phone<input id="gl-ph" type="tel" style="height:30px"></label><label class="mini">Email (optional)<input id="gl-em" type="email" style="height:30px"></label>
+        <button class="btn small primary" id="gl-make">Give the load and make the link</button></div>
+      <div class="mini" style="margin-top:6px">${T.l.driver_id ? 'The current driver comes off this load. ' : ''}The guest isn't an employee: they're left out of payroll, driver files, handbooks and check-ins.</div></details></div></div>`;
+}
+async function guestLink(driverId, deliver) {
+  const { data, error } = await sb.functions.invoke('driver-login', { body: { action: 'link', driver_id: driverId, deliver } });
+  let msg = error ? error.message : null;
+  if (error) { try { msg = (await error.context.json()).error || msg; } catch (_) {} }
+  if (msg || (data && data.ok === false)) throw new Error(msg || data.error || 'Could not make the link — is the driver-login server function deployed?');
+  return data;
 }
 
 // ── Receiver signature (74): who signed, BOL #, or why there's none ──
@@ -754,6 +790,25 @@ function wire(edit) {
     if (error) return fail(error);
     toast('OS&amp;D resolved'); load();
   });
+
+  // Guest driver (77)
+  if ($('gl-make')) $('gl-make').onclick = async () => {
+    $('gl-make').disabled = true;
+    const { data: gid, error } = await sb.rpc('guest_driver_create', { p_load: T.l.id, p_name: $('gl-name').value, p_company: $('gl-co').value, p_phone: $('gl-ph').value, p_email: $('gl-em').value });
+    if (error) { $('gl-make').disabled = false; return fail(error); }
+    toast('Load given to the guest — now send them the link'); await load();
+  };
+  const gOut = (html) => { $('gl-out').innerHTML = html; };
+  if ($('gl-qr')) $('gl-qr').onclick = async () => {
+    try { const d = await guestLink(T.guest.id, 'qr'); gOut('<div id="gl-qrbox" style="background:#fff;padding:10px;display:inline-block;border-radius:8px;margin-top:6px"></div><div class="mini">The guest scans this with their phone camera. It signs them in once.</div>');
+      if (window.QRCode) new QRCode($('gl-qrbox'), { text: d.link, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M }); } catch (e) { fail(e); }
+  };
+  if ($('gl-copy')) $('gl-copy').onclick = async () => {
+    try { const d = await guestLink(T.guest.id, 'copy'); try { await navigator.clipboard.writeText(d.link); } catch (_) {}
+      gOut(`<div class="mini" style="margin-top:6px">Copied — paste it into a text to ${esc(T.guest.full_name)}${T.guest.phone ? ' (' + esc(T.guest.phone) + ')' : ''}. It signs them in once.</div><input readonly value="${esc(d.link)}" style="width:100%;margin-top:4px">`); } catch (e) { fail(e); }
+  };
+  if ($('gl-mail')) $('gl-mail').onclick = async () => { try { const d = await guestLink(T.guest.id, 'email'); gOut(`<div class="mini ok" style="margin-top:6px">Emailed to ${esc(d.sent_to || T.guest.email)}${d.test_mode ? ' (test mode)' : ''}.</div>`); } catch (e) { fail(e); } };
+  if ($('gl-end')) $('gl-end').onclick = async () => { if (!confirm(`End ${T.guest.full_name}'s access now?`)) return; const { error } = await sb.rpc('guest_driver_end', { p_driver: T.guest.id }); if (error) return fail(error); toast('Guest access ended'); load(); };
 
   // Receiver signature (74): view it; the office can correct the name / BOL # (never the signature itself)
   document.querySelectorAll('[data-sigview]').forEach(a => a.onclick = async (e) => {

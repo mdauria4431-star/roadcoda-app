@@ -333,7 +333,9 @@ async function loadLists() {
     sb.from('drivers').select('id, full_name').eq('active', true).order('full_name'),
     sb.from('equipment').select('id, unit_no').eq('active', true).order('unit_no')
   ]);
-  lists = { customers: c.data || [], drivers: d.data || [], equipment: e.data || [] };
+  // guest drivers (77) run one load from a link — not offered for new loads
+  const g = await sb.from('drivers').select('id').eq('is_guest', true); const guests = new Set((g.error ? [] : g.data || []).map(x => x.id));
+  lists = { customers: c.data || [], drivers: (d.data || []).filter(x => !guests.has(x.id)), equipment: e.data || [] };
   const opts = (rows, label) => '<option value="">Choose…</option>' + rows.map(r => `<option value="${r.id}">${esc(r[label])}</option>`).join('');
   $('f-customer').innerHTML = opts(lists.customers, 'name') + NEW_OPT;
   $('f-driver').innerHTML = opts(lists.drivers, 'full_name');

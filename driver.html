@@ -550,6 +550,8 @@ async function start() {
   startMessages();
   checkCheckin();
   checkHandbook();
+  // A guest driver (77) runs one load from a link: no pay screen (they aren't on payroll)
+  sb.rpc('driver_is_guest').then(({ data }) => { if (data === true) $('pay-btn').hidden = true; }).catch(() => {});
   checkShift();
 }
 $('login-btn').onclick = async () => {

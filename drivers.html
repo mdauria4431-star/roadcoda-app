@@ -96,7 +96,7 @@
       <h1 style="flex-grow:1">Drivers</h1>
       <input id="q" type="search" placeholder="Search name, phone, CDL…" aria-label="Search drivers" style="width:240px">
       <select id="acct" aria-label="Home account"><option value="">All accounts</option></select>
-      <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option></select>
+      <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option><option value="guests">Guest drivers</option></select>
       <button class="btn primary" id="new-btn" type="button">+ New driver</button>
     </div>
 
@@ -351,10 +351,11 @@ function paySummary(d) {
 }
 function render() {
   const show = $('show').value, q = $('q').value.trim().toLowerCase(), acct = $('acct').value;
-  const list = drivers.filter(d => (show === 'all' || (show === 'active') === d.active) &&
+  // Guest drivers (77) only show under "Guest drivers"; they aren't employees
+  const list = drivers.filter(d => (show === 'guests' ? d.is_guest : !d.is_guest && (show === 'all' || (show === 'active') === d.active)) &&
     (!acct || (acct === 'none' ? !d.home_customer_id : d.home_customer_id === acct || customers.find(c => c.id === d.home_customer_id)?.parent_customer_id === acct)) &&
     (!q || [d.full_name, d.phone, d.email, d.employee_no, d.cdl_number].some(v => String(v || '').toLowerCase().includes(q))));
-  const active = drivers.filter(d => d.active);
+  const active = drivers.filter(d => d.active && !d.is_guest);
   const flagged = active.filter(d => expiry(d.cdl_expires).level || expiry(d.med_card_expires).level).length;
   $('count').innerHTML = `${active.length} active driver${active.length === 1 ? '' : 's'}${flagged ? ` · <span class="exp-warn">${flagged} with a CDL or medical card expired or due within ${SOON_DAYS} days</span>` : ''}`;
   $('list').innerHTML = list.map(d => {

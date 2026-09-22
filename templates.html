@@ -199,7 +199,8 @@ async function start() {
     sb.from('drivers').select('id, full_name, active').order('full_name'),
     sb.from('equipment').select('id, unit_no, unit_type, active').order('unit_no'),
   ]);
-  drivers = d.data || []; units = u.data || [];
+  const g = await sb.from('drivers').select('id').eq('is_guest', true); const guests = new Set((g.error ? [] : g.data || []).map(x => x.id));   // 77
+  drivers = (d.data || []).filter(x => !guests.has(x.id)); units = u.data || [];
   await load();
 }
 $('login-btn').onclick = async () => {
