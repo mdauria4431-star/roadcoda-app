@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Company · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 96px!important;display:flex;flex-direction:column;gap:12px;max-width:820px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select,textarea{height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-family:inherit;font-size:14px;color:var(--ink);width:100%}
+  textarea{height:64px;padding:8px 10px;resize:vertical}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft)}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:640px){.two{grid-template-columns:1fr}}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:12px;color:var(--ink-3);font-weight:400}
+  .error{color:var(--late)} .ok{color:var(--ok)}
+  .step{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3)}
+  .step b{color:var(--ink)}
+  #logo-box{min-height:70px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:10px;padding:8px;background:var(--panel-2)}
+  .bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .sp{flex:1}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="getting-started.html">Getting started</a><a class="on" href="company.html">Company</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar"><h1>Your company</h1><span class="sp"></span><a class="btn small" href="getting-started.html">Getting started</a></div>
+    <div class="mini">These details print on your invoices, delivery notices and the customer portal. You can change them any time.</div>
+    <div id="readonly" class="mini" hidden></div>
+
+    <div class="card">
+      <header><h2>1 · Who you are</h2></header>
+      <div class="pad">
+        <label>Company name <span class="mini">as your customers know you</span><input id="f-name" placeholder="Acme Trucking LLC" autocomplete="organization"></label>
+        <label>Name on invoices <span class="mini">leave blank to use the company name — set this if you bill under a different legal name</span><input id="f-remit_name" placeholder="Blank = company name"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>2 · Where you are</h2></header>
+      <div class="pad">
+        <label>Office address <span class="mini">shown on invoices</span><textarea id="f-office_address" placeholder="100 Main St, Hartford, CT 06103"></textarea></label>
+        <label>Yard address <span class="mini">where trucks start and finish — miles and deadhead are measured from here</span><textarea id="f-yard_address" placeholder="Blank = same as the office"></textarea></label>
+        <label style="max-width:320px">Time zone <span class="mini">used for load days, ETAs and reports</span>
+          <select id="f-time_zone">
+            <option value="America/New_York">Eastern (New York)</option>
+            <option value="America/Chicago">Central (Chicago)</option>
+            <option value="America/Denver">Mountain (Denver)</option>
+            <option value="America/Phoenix">Arizona (no daylight saving)</option>
+            <option value="America/Los_Angeles">Pacific (Los Angeles)</option>
+            <option value="America/Anchorage">Alaska</option>
+            <option value="Pacific/Honolulu">Hawaii</option>
+          </select></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>3 · How to reach you</h2></header>
+      <div class="pad two">
+        <label>Office phone<input id="f-office_phone" type="tel" placeholder="(860) 555-0123" autocomplete="tel"></label>
+        <label>Billing email <span class="mini">where customers reply about invoices</span><input id="f-remit_email" type="email" placeholder="billing@yourcompany.com"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>4 · Getting paid</h2></header>
+      <div class="pad">
+        <label>Remit-to address <span class="mini">where cheques go, if it isn't the office</span><textarea id="f-remit_address" placeholder="Blank = office address"></textarea></label>
+        <label style="max-width:260px">Payment terms (days)<input id="f-terms_days" type="number" min="0" max="180" placeholder="30"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>5 · Your look</h2></header>
+      <div class="pad two">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="mini"><b>Logo</b> — shown on invoices, delivery notices and the customer portal</div>
+          <div id="logo-box"><span class="mini">No logo yet</span></div>
+          <div class="bar"><input id="f-logo" type="file" accept="image/*" style="height:auto;border:0;padding:0;width:auto">
+            <button class="btn small" id="logo-rm" hidden>Remove</button></div>
+          <span class="mini" id="logo-msg"></span>
+        </div>
+        <label style="max-width:220px">Colour <span class="mini">used on notices and the portal</span><input id="f-brand_color" type="color" style="height:42px;padding:2px"></label>
+      </div>
+    </div>
+
+    <div class="bar" style="position:sticky;bottom:0;padding:12px 0;background:var(--bg);border-top:1px solid var(--line-soft)">
+      <button class="btn primary" id="save">Save company details</button>
+      <span id="msg"></span><span class="sp"></span>
+      <span class="step" id="next"></span>
+    </div>
+  </section>
+</main>
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const FIELDS = ['name', 'remit_name', 'office_address', 'yard_address', 'time_zone', 'office_phone', 'remit_email', 'remit_address', 'terms_days', 'brand_color'];
+let me = null, carrier = null, canEdit = false;
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('user_id, carrier_id, role, full_name, carriers(*)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  me = data; carrier = data.carriers || {};
+  $('who').textContent = `${data.full_name || session.user.email} · ${carrier.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  const a = window.RC_ACCESS;
+  canEdit = !a || a.owner || (a.can && (a.can('invoices', 'edit') || a.can('rates', 'edit')));
+  $('app').hidden = false;
+  fill();
+  if (!canEdit) {
+    $('readonly').hidden = false;
+    $('readonly').innerHTML = '<b>View only.</b> Ask the owner to change these.';
+    FIELDS.forEach(f => $('f-' + f).disabled = true);
+    $('f-logo').disabled = true; $('save').disabled = true;
+  }
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+function fill() {
+  FIELDS.forEach(f => { const el = $('f-' + f); if (el) el.value = carrier[f] ?? ''; });
+  if (!carrier.time_zone) $('f-time_zone').value = 'America/New_York';
+  if (!carrier.brand_color) $('f-brand_color').value = '#0f5e63';
+  if (carrier.terms_days == null) $('f-terms_days').value = 30;
+  drawLogo();
+  whatsNext();
+}
+const logoUrl = () => carrier.logo_path ? `${RC_CONFIG.SUPABASE_URL}/storage/v1/object/public/brand-logos/${carrier.logo_path}` : '';
+function drawLogo() {
+  $('logo-box').innerHTML = carrier.logo_path ? `<img src="${esc(logoUrl())}" alt="Company logo" style="max-width:220px;max-height:70px">` : '<span class="mini">No logo yet</span>';
+  $('logo-rm').hidden = !carrier.logo_path || !canEdit;
+}
+// what's still missing, so the page says what to do next
+function whatsNext() {
+  const missing = [['name', 'company name'], ['office_address', 'office address'], ['office_phone', 'office phone']]
+    .filter(([f]) => !String(carrier[f] || '').trim()).map(([, label]) => label);
+  $('next').innerHTML = missing.length
+    ? `Still needed: <b>${missing.join(', ')}</b>`
+    : 'Company details are done — next on <a href="getting-started.html">Getting started</a>: your customers.';
+}
+
+$('save').onclick = async () => {
+  const upd = {};
+  FIELDS.forEach(f => {
+    const v = $('f-' + f).value;
+    upd[f] = f === 'terms_days' ? (v === '' ? 30 : parseInt(v, 10)) : (String(v).trim() || null);
+  });
+  if (!upd.name) { $('msg').innerHTML = '<span class="error">Your company name is needed — it goes on every invoice.</span>'; $('f-name').focus(); return; }
+  $('msg').textContent = 'Saving…';
+  const { data, error } = await sb.from('carriers').update(upd).eq('id', me.carrier_id).select('*');
+  if (error || !data || !data.length) { $('msg').innerHTML = `<span class="error">${esc(error?.message || 'Not saved. Only the owner can change these.')}</span>`; return; }
+  carrier = data[0]; fill();
+  $('msg').innerHTML = '<span class="ok">Saved.</span>';
+  setTimeout(() => $('msg').textContent = '', 4000);
+};
+
+// logo: same handling as the invoice settings card — shrunk to a sensible size and stored as PNG
+function toPng(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const w0 = img.naturalWidth || 600, h0 = img.naturalHeight || 240, k = Math.min(1, 800 / w0, 320 / h0);
+      const c = document.createElement('canvas'); c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); c.toBlob(b => b ? resolve(b) : reject(new Error('Could not read that image')), 'image/png');
+    };
+    img.onerror = () => reject(new Error('That file is not an image the browser can read. Try a PNG or JPG.'));
+    img.src = url;
+  });
+}
+$('f-logo').onchange = async () => {
+  const f = $('f-logo').files[0]; if (!f) return;
+  if (f.size > 5e6) { $('logo-msg').innerHTML = '<span class="error">That file is over 5 MB. Use a smaller logo.</span>'; return; }
+  $('logo-msg').innerHTML = 'Uploading…';
+  try {
+    const png = await toPng(f), path = `${me.carrier_id}/logo-${Date.now()}.png`, old = carrier.logo_path;
+    const up = await sb.storage.from('brand-logos').upload(path, png, { contentType: 'image/png', cacheControl: '31536000' });
+    if (up.error) throw up.error;
+    const { data, error } = await sb.from('carriers').update({ logo_path: path }).eq('id', me.carrier_id).select('*');
+    if (error || !data.length) throw error || new Error('Not saved. Only the owner can change these.');
+    carrier = data[0]; drawLogo(); $('logo-msg').innerHTML = '<span class="ok">Logo saved.</span>';
+    if (old) sb.storage.from('brand-logos').remove([old]);
+  } catch (e) { $('logo-msg').innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
+  $('f-logo').value = '';
+};
+$('logo-rm').onclick = async () => {
+  const old = carrier.logo_path;
+  const { data, error } = await sb.from('carriers').update({ logo_path: null }).eq('id', me.carrier_id).select('*');
+  if (error || !data.length) { $('logo-msg').innerHTML = `<span class="error">${esc(error?.message || 'Not removed.')}</span>`; return; }
+  carrier = data[0]; drawLogo(); $('logo-msg').innerHTML = '<span class="ok">Logo removed.</span>';
+  if (old) sb.storage.from('brand-logos').remove([old]);
+};
+
+start();
+</script>
+</body>
+</html>

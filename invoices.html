@@ -130,7 +130,8 @@
     <section class="card" id="detail" hidden></section>
 
     <section class="card">
-      <details><summary style="cursor:pointer;font-weight:600">Invoice settings (logo, our office, remit-to, default terms)</summary>
+      <details id="settings"><summary style="cursor:pointer;font-weight:600">Invoice settings (logo, our office, remit-to, default terms)</summary>
+        <div class="hint" style="margin:8px 0">These are your company details — the same fields are on <a href="company.html">Setup › Company</a>, where new carriers are walked through them in order.</div>
         <p class="hint">Printed on every invoice. Customer-specific terms, PO number and invoice number format are set per customer on the Rates page. Only the owner can change these.</p>
         <div class="grid">
           <label for="s-name" style="grid-column:span 2">Company name<input id="s-name"></label>
@@ -863,6 +864,16 @@ function buildInvoicePdf(jsPDF, inv) {
 }
 
 start();
+
+// 93: arriving from Getting started (invoices.html#settings) opens Invoice settings and scrolls to it
+function openSettingsFromLink() {
+  if (location.hash !== '#settings') return;
+  const d = document.getElementById('settings');
+  if (!d) return;
+  d.open = true;
+  setTimeout(() => d.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+}
+window.addEventListener('load', openSettingsFromLink);
 </script>
 </body>
 </html>
