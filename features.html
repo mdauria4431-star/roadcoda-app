@@ -95,8 +95,46 @@ if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let CAT = [], ON = {}, PRESET = null, CAN = false, tt = null;
+let CAT = [], ON = {}, ADDON = {}, PRESET = null, CAN = false, CARRIER = '', tt = null;
 const WELCOME = new URLSearchParams(location.search).get('welcome') === '1';
+// 91: how to ask RoadCoda for an add-on
+async function askPanel(key) {
+  const f = CAT.find(x => x.key === key) || { name: key };
+  const { data: c } = await sb.rpc('roadcoda_contact');
+  const asked = (ADDON[key] || {}).asked_at;
+  const carrier = CARRIER;
+  const subject = encodeURIComponent(`${f.name} for ${carrier}`.trim());
+  const body = encodeURIComponent(`Hello,\n\nWe'd like to add ${f.name} to our RoadCoda plan.\n\n${carrier}\n`);
+  const contact = (c && (c.phone || c.email)) ? `
+      ${c.phone ? `<div style="margin-top:6px">Call <a href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ''))}"><b>${esc(c.phone)}</b></a>${c.note ? ` <span class="mini">${esc(c.note)}</span>` : ''}</div>` : ''}
+      ${c.email ? `<div style="margin-top:6px"><a class="btn small" href="mailto:${esc(c.email)}?subject=${subject}&body=${body}">Email RoadCoda</a> <span class="mini">${esc(c.email)}</span></div>` : ''}`
+    : '<div class="mini" style="margin-top:6px">RoadCoda hasn\'t published contact details yet.</div>';
+  const el = document.createElement('div');
+  el.className = 'ask-back';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:60';
+  el.innerHTML = `<div class="card" style="max-width:460px;width:100%"><div class="pad">
+      <h2 style="margin:0 0 4px">${esc(f.name)}</h2>
+      <div class="mini">${esc(f.blurb || '')}</div>
+      <div style="margin-top:10px">It's a paid add-on. RoadCoda switches it on for your company.</div>
+      ${contact}
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${asked ? `<span class="mini">You asked on ${new Date(asked).toLocaleDateString()} — RoadCoda has it on their list.</span>`
+          : '<button class="btn primary" id="ask-go">Tell RoadCoda we\'re interested</button>'}
+        <span class="sp" style="flex:1"></span><button class="btn" id="ask-x">Close</button>
+      </div></div></div>`;
+  document.body.appendChild(el);
+  el.onclick = (e) => { if (e.target === el) el.remove(); };
+  el.querySelector('#ask-x').onclick = () => el.remove();
+  const go = el.querySelector('#ask-go');
+  if (go) go.onclick = async () => {
+    go.disabled = true;
+    const { data, error } = await sb.rpc('ask_roadcoda', { p_key: key });
+    if (error) { go.disabled = false; return toast(error.message); }
+    ADDON[key] = { ...(ADDON[key] || {}), asked_at: data.asked_at };
+    el.remove(); draw(); toast('RoadCoda will be in touch about ' + f.name + '.');
+  };
+}
+
 function toast(t) { $('toast').textContent = t; $('toast').hidden = false; clearTimeout(tt); tt = setTimeout(() => $('toast').hidden = true, 4000); }
 
 const CORE = ['Dispatch board & loads', 'Load templates', 'Customers & delivery locations', 'Route & sort codes', 'Rates, detention & trip types', 'Invoices', 'Driver payroll',
@@ -112,13 +150,16 @@ async function start() {
   const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
   if (!data) { $('login-view').hidden = false; return; }
   if (data.role === 'driver') { location.href = 'driver.html'; return; }
-  $('who').textContent = `${data.full_name || ''} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  CARRIER = data.carriers?.name || '';
+  $('who').textContent = `${data.full_name || ''} · ${CARRIER} · ${data.role}`; $('signout').hidden = false;
   await window.RC_ACCESS_READY;
   $('app').hidden = false;
   const [c, can] = await Promise.all([sb.from('feature_catalog').select('*').order('sort'), sb.rpc('feature_can_change')]);
   if (c.error) { $('groups').innerHTML = `<div class="card pad">${esc(c.error.message)} — run 82_feature_modules.sql in the SQL Editor.</div>`; return; }
   CAT = c.data || []; CAN = can.data === true;
   const a = window.RC_ACCESS || {}; ON = a.features || {}; PRESET = a.feature_preset || null;
+  // 90: which add-ons are in this carrier's plan (RoadCoda decides) — those get a real switch
+  try { const r = await sb.rpc('my_addons'); if (!r.error && r.data) ADDON = r.data; } catch (_) {}
   draw();
 }
 $('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
@@ -136,9 +177,11 @@ function draw() {
   $('groups').innerHTML = groups.map(g => {
     const mods = CAT.filter(f => f.grp === g), addon = mods[0].kind === 'addon';
     const on = mods.filter(f => ON[f.key]).length;
-    return `<div class="card"><div class="pad" style="padding-bottom:6px;display:flex;align-items:center;gap:10px"><h2>${esc(g)}</h2><span class="sp" style="flex:1"></span><span class="mini">${addon ? 'Switched on by RoadCoda' : `${on} of ${mods.length} on`}</span></div>
+    return `<div class="card"><div class="pad" style="padding-bottom:6px;display:flex;align-items:center;gap:10px"><h2>${esc(g)}</h2><span class="sp" style="flex:1"></span><span class="mini">${addon ? 'RoadCoda adds these to your plan — you switch them on and off' : `${on} of ${mods.length} on`}</span></div>
       ${mods.map(f => `<div class="mod"><div class="w"><div class="t">${esc(f.name)}</div><div class="mini">${esc(f.blurb)}</div></div>
-        ${f.kind === 'addon' ? (ON[f.key] ? '<span class="tag ok">On</span>' : '<span class="tag">Available — ask RoadCoda</span>')
+        ${f.kind === 'addon' ? ((ADDON[f.key] || {}).entitled
+            ? `<span class="mini" style="margin-right:8px">In your plan</span><label class="sw" title="${ON[f.key] ? 'On' : 'Off'}"><input type="checkbox" data-f="${f.key}" ${ON[f.key] ? 'checked' : ''} ${CAN ? '' : 'disabled'} aria-label="${esc(f.name)}"><span></span></label>`
+            : `<button class="btn small" data-ask="${f.key}">${(ADDON[f.key] || {}).asked_at ? 'Asked — details' : 'Available — ask RoadCoda'}</button>`)
           : `<label class="sw" title="${ON[f.key] ? 'On' : 'Off'}"><input type="checkbox" data-f="${f.key}" ${ON[f.key] ? 'checked' : ''} ${CAN ? '' : 'disabled'} aria-label="${esc(f.name)}"><span></span></label>`}</div>`).join('')}</div>`;
   }).join('') + (CAN ? '' : '<div class="mini">Only the owner (or someone with Edit on Users) can switch modules.</div>');
   document.querySelectorAll('[data-f]').forEach(c => c.onchange = async () => {
@@ -146,6 +189,7 @@ function draw() {
     if (error) { c.checked = !c.checked; return toast(error.message); }
     ON = data; PRESET = 'custom'; toast(`${CAT.find(f => f.key === c.dataset.f).name} ${c.checked ? 'switched on' : 'switched off'} — the menu updates on the next page.`); draw();
   });
+  document.querySelectorAll('[data-ask]').forEach(b => b.onclick = () => askPanel(b.dataset.ask));
   document.querySelectorAll('[data-preset]').forEach(b => b.onclick = async () => {
     const k = b.dataset.preset; if (PRESET === k) return;
     if (!first && !confirm(`Switch to ${PRESETS.find(p => p[0] === k)[1]}? Modules not in it are switched off (their data is kept).`)) return;
