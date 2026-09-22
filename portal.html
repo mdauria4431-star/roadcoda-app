@@ -28,6 +28,8 @@
   .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
   .tabs button{height:38px;padding:0 16px;border-radius:9px;border:1px solid var(--line);background:#fff;font-weight:600;color:var(--muted)}
   .tabs button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .sigrow{grid-column:1/-1;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;border-top:1px dashed var(--line);padding-top:8px;margin-top:4px}
+  .sigimg{max-height:70px;max-width:240px;background:#fff;border:1px solid var(--line);border-radius:6px}
   .bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line)}
   .sp{flex:1}
   table{width:100%;border-collapse:collapse;font-size:14px}
@@ -223,6 +225,10 @@ async function showLoad(id) {
   const paths = l.stops.flatMap(s => s.photos || []);
   const urls = {};
   if (paths.length) { const r = await sb.storage.from('scan-photos').createSignedUrls(paths, 3600); (r.data || []).forEach(x => { if (x.signedUrl) urls[x.path] = x.signedUrl; }); }
+  // Signed POD (76): who signed, when, BOL #, the signature, what they noted — nothing before 76
+  const sg = await sb.rpc('portal_signatures', { p_load: id });
+  const SIG = Object.fromEntries((sg.error ? [] : sg.data || []).map(x => [x.stop_id, x]));
+  LAST = { l, urls, SIG };
   $('detail').innerHTML = `<div class="card"><div class="bar"><h2>Load ${esc(l.load_no)} · ${day(l.service_date)}</h2>${STATUS(l.status)}${ME.kind === 'billing' && (ME.accounts || []).length > 1 ? `<span class="hint">${esc(l.account)}</span>` : ''}<span class="sp"></span><button class="btn noprint" onclick="window.print()">Print</button></div>
     ${l.stops.map(s => `<div class="stop">
       <div><div class="k">${s.type === 'pickup' ? 'Pickup' : 'Stop ' + s.seq}</div><b>${esc(s.name)}</b><div class="hint">${esc(s.address || '')}</div>
@@ -231,8 +237,41 @@ async function showLoad(id) {
       <div><div class="k">Times</div>Window ${hm(s.window_start)}–${hm(s.window_end)}<br>Arrived <b style="display:inline">${hm(s.arrived_at)}</b>${!s.arrived_at && s.eta ? ` <span class="hint">(ETA ${hm(s.eta)})</span>` : ''}<br>Departed <b style="display:inline">${hm(s.departed_at)}</b></div>
       <div><div class="k">Counts</div>${(s.items || []).map(i => `${esc(i.unit)}: <b style="display:inline">${qty(i.delivered)}</b> of ${qty(i.ordered)}`).join('<br>') || '—'}
         ${(s.photos || []).length ? `<div class="pods">${s.photos.map(p => urls[p] ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="Proof of delivery"></a>` : '').join('')}</div>` : ''}</div>
+      ${s.type !== 'pickup' ? `<div class="sigrow">${sigHtml(SIG[s.id])}${['delivered', 'exception'].includes(s.status) ? `<button class="btn noprint" data-receipt="${s.id}">Delivery receipt</button>` : ''}</div>` : ''}
     </div>`).join('')}</div>`;
+  document.querySelectorAll('[data-receipt]').forEach(b => b.onclick = () => receipt(b.dataset.receipt));
   $('detail').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Signed POD (76) ────────────────────────────────────────────────────
+let LAST = null;
+const bolLabel = (b) => (/^bol/i.test(b) ? '' : 'BOL ') + esc(b);
+const sigImg = (g) => g && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(g.signature || '') ? `<img class="sigimg" src="${g.signature}" alt="Receiver's signature">` : '';
+const when = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+function sigHtml(g) {
+  if (!g) return '<div class="hint">No signature on file.</div>';
+  if (g.refused) return `<div><div class="k">Proof of delivery</div>Not signed — ${esc(g.refused_reason || '')}${g.bol_no ? ` · ${bolLabel(g.bol_no)}` : ''}</div>`;
+  return `<div><div class="k">Received by</div><b style="display:inline">${esc(g.receiver_name || '')}</b> · ${when(g.signed_at)}${g.bol_no ? ` · ${bolLabel(g.bol_no)}` : ''}
+    ${g.receiver_notes ? `<div style="color:#b3261e;margin-top:4px"><b style="display:inline">Noted at delivery:</b> ${esc(g.receiver_notes)}</div>` : ''}</div>${sigImg(g)}`;
+}
+// One printable page per stop — for accounts payable, or to save as PDF
+function receipt(stopId) {
+  const { l, urls, SIG } = LAST, s = l.stops.find(x => x.id === stopId), g = SIG[stopId];
+  const w = window.open('', '_blank'); if (!w) return alert('Allow pop-ups for this site to open the receipt.');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Delivery receipt — Load ${esc(l.load_no)} stop ${s.seq}</title>
+    <style>body{font-family:Arial,sans-serif;color:#111;max-width:7.5in;margin:24px auto;padding:0 16px}h1{font-size:20px;margin:0}.sub{color:#555;margin:2px 0 16px}
+      table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #bbb;padding:6px 8px;text-align:left;font-size:13px}th{background:#f2f2f2}
+      .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#666}.sig{border:1px solid #bbb;max-width:320px;background:#fff}.note{color:#b3261e}
+      .pods img{max-width:220px;margin:6px 6px 0 0;border:1px solid #ccc}@media print{button{display:none}}</style></head><body>
+    <button onclick="print()" style="float:right;padding:6px 12px">Print / Save as PDF</button>
+    <h1>Delivery receipt</h1><div class="sub">${esc(ME.carrier || '')} · Load ${esc(l.load_no)} · ${day(l.service_date)}</div>
+    <div class="k">Delivered to</div><b>${esc(s.name)}</b><div>${esc(s.address || '')}</div>
+    <table><tr><th>Arrived</th><th>Departed</th><th>Status</th></tr><tr><td>${when(s.arrived_at)}</td><td>${when(s.departed_at)}</td><td>${s.issue ? esc(ISSUE[s.issue] || s.issue) : 'Delivered'}</td></tr></table>
+    <table><tr><th>Item</th><th>Ordered</th><th>Delivered</th></tr>${(s.items || []).map(i => `<tr><td>${esc(i.unit)}</td><td>${qty(i.ordered)}</td><td>${qty(i.delivered)}</td></tr>`).join('')}</table>
+    ${g ? (g.refused ? `<p><b>Not signed:</b> ${esc(g.refused_reason || '')}</p>` : `<div class="k">Received by</div><b>${esc(g.receiver_name || '')}</b> · ${when(g.signed_at)}${g.bol_no ? ` · ${bolLabel(g.bol_no)}` : ''}<br>${sigImg(g).replace('class="sigimg"', 'class="sig"')}`) + (g.receiver_notes ? `<p class="note"><b>Noted at delivery:</b> ${esc(g.receiver_notes)}</p>` : '') : '<p>No signature on file.</p>'}
+    ${(s.photos || []).length ? `<div class="k" style="margin-top:12px">Photos</div><div class="pods">${s.photos.map(p => urls[p] ? `<img src="${urls[p]}" alt="Proof of delivery photo">` : '').join('')}</div>` : ''}
+    </body></html>`);
+  w.document.close();
 }
 
 // ── Containers held at your stores ────────────────────────────────────
