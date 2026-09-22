@@ -170,6 +170,11 @@
       <div id="dc-msg" class="hint"></div>
       </details>
     </section>
+    <section class="card" id="tol-card" hidden>
+      <h2>Close-out tolerances</h2>
+      <div class="hint" style="margin:0 0 8px">How far a trip may be off before close-out flags it for this customer. Blank = the main customer's, else your default.</div>
+      <div id="tol-box"></div>
+    </section>
     <section class="card" id="sign-card" hidden>
       <h2>Delivery signature &amp; invoicing</h2>
       <div class="hint" style="margin:0 0 8px">What the driver collects at delivery, and whether the invoice draft is made as soon as the load is delivered. Nothing is ever sent automatically — the draft waits on Invoices for the right person to approve.</div>
@@ -331,7 +336,7 @@ function pickCustomer() {
     const extra = par ? `Account under <a href="#" data-go="${par.id}">${esc(par.name)}</a>; anything not set here uses the settings on ${esc(par.name)}`
       : kids.length ? `Accounts under it: ${kids.map(k => `<a href="#" data-go="${k.id}">${esc(k.name)}</a>`).join(', ')}` : '';
     if (extra) $('cust-info').innerHTML += (($('cust-info').innerHTML ? '<br>' : '') + extra);
-    loadDl(); loadAct(); loadDelays(); loadPortalTabs(); loadSignRules();
+    loadDl(); loadAct(); loadDelays(); loadPortalTabs(); loadSignRules(); loadTolerances();
   }
 }
 $('cust-info').onclick = (e) => { const a = e.target.closest('a[data-go]'); if (!a) return; e.preventDefault(); $('cust').value = a.dataset.go; $('cust').onchange(); };
@@ -371,6 +376,38 @@ async function loadDelayCodes() {
   $('cdc-maps').innerHTML = delayCodes.map(d => `<option value="${d.id}">${esc(d.code)} — ${esc(d.name)}</option>`).join('');
 }
 
+// Close-out tolerances (78): this customer's, else its main customer's, else the carrier's
+const TOL = [['close_miles_pct', 'Miles off plan (MI)', '%', 0.5], ['geofence_flag_minutes', 'Driver times vs GPS (GT)', 'minutes', 1],
+             ['close_pod_days', 'POD missing turns urgent after (PD)', 'days', 1], ['close_max_dwell_hours', 'Longest believable time on site (AT)', 'hours', 0.5],
+             ['close_move_miles', 'Truck may move during a stop (AT)', 'miles', 0.5]];
+async function loadTolerances() {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const cols = TOL.map(t => t[0]).join(', ');
+  const [me, car] = await Promise.all([sb.from('customers').select(cols + ', parent_customer_id').eq('id', c.id).maybeSingle(), sb.from('carriers').select(cols).maybeSingle()]);
+  if (me.error) { $('tol-card').hidden = true; return; }          // before 78
+  $('tol-card').hidden = false;
+  const m = me.data, par = m.parent_customer_id ? (await sb.from('customers').select('name, ' + cols).eq('id', m.parent_customer_id).maybeSingle()).data : null, k = car.data || {};
+  const ed = !window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit'), dis = ed ? '' : ' disabled';
+  const fallback = (key) => par && par[key] != null ? { v: par[key], from: par.name } : { v: k[key], from: 'your default' };
+  $('tol-box').innerHTML = `<div class="grid">${TOL.map(([key, label, unit, step]) => { const f = fallback(key);
+      return `<label>${label}<span style="display:flex;gap:6px;align-items:center"><input type="number" step="${step}" min="0" data-tol="${key}" value="${m[key] ?? ''}" placeholder="${f.v ?? ''}" style="width:90px"${dis}><span class="hint" style="margin:0">${unit}${m[key] == null ? ` · ${esc(f.from)}` : ''}</span></span></label>`; }).join('')}</div>
+    ${ed ? `<div class="row" style="margin-top:8px"><button class="btn" id="tol-save" type="button">Save for ${esc(c.name)}</button><span id="tol-msg" class="hint" style="margin:0"></span></div>` : ''}
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Your defaults (every customer without its own)</summary>
+      <div class="grid" style="margin-top:6px">${TOL.map(([key, label, unit, step]) => `<label>${label}<span style="display:flex;gap:6px;align-items:center"><input type="number" step="${step}" min="0" data-def="${key}" value="${k[key] ?? ''}" style="width:90px"${dis}><span class="hint" style="margin:0">${unit}</span></span></label>`).join('')}</div>
+      ${ed ? '<div class="row" style="margin-top:8px"><button class="btn" id="def-save" type="button">Save defaults</button><span id="def-msg" class="hint" style="margin:0"></span></div>' : ''}</details>`;
+  if ($('tol-save')) $('tol-save').onclick = async () => {
+    const upd = {}; document.querySelectorAll('[data-tol]').forEach(i => upd[i.dataset.tol] = i.value === '' ? null : +i.value);
+    const { error } = await sb.from('customers').update(upd).eq('id', c.id);
+    $('tol-msg').innerHTML = error ? `<span class="err">${esc(/tolerances_check/.test(error.message) ? 'A value is out of range.' : error.message)}</span>` : 'Saved.';
+    if (!error) loadTolerances();
+  };
+  if ($('def-save')) $('def-save').onclick = async () => {
+    const v = (key) => { const i = document.querySelector(`[data-def="${key}"]`); return i.value === '' ? null : +i.value; };
+    const { error } = await sb.rpc('set_close_defaults', { p_miles_pct: v('close_miles_pct'), p_pod_days: v('close_pod_days'), p_max_dwell: v('close_max_dwell_hours'), p_move_miles: v('close_move_miles'), p_gps_minutes: v('geofence_flag_minutes') });
+    $('def-msg').innerHTML = error ? `<span class="err">${esc(error.message)}</span>` : 'Defaults saved.';
+    if (!error) loadTolerances();
+  };
+}
 // Delivery signature & invoicing (74): this customer's own choice, else its main customer's, else the defaults
 const REQ = [['signature', 'Receiver signature'], ['receiver_name', 'Receiver name'], ['bol', 'BOL #'], ['pod', 'POD photo'], ['times', 'Arrival / departure times'],
              ['counts', 'Delivered counts'], ['po', 'Customer PO #'], ['closeout', 'Trip closed out']];
