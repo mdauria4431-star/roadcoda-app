@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safety · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<script src="safety-core.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  label.chk{flex-direction:row;align-items:center;gap:6px;font-weight:500}
+  label.chk input{height:auto}
+  input,select,textarea{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .sp{flex:1}
+  .bar,.row{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .scroll{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .t th.s{cursor:pointer} .t th.s:hover{color:var(--ink)}
+  .t td{padding:6px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .t td.n,.t th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .t tr.r{cursor:pointer} .t tr.r:hover{background:var(--row-hover)}
+  .t tfoot td{font-weight:700;border-top:2px solid var(--line)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:24px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .s{font-size:12px;color:var(--ink-3);margin-top:2px}
+  .tile .d{font-size:11.5px;margin-top:4px;font-family:var(--mono)}
+  .up{color:var(--late)} .down{color:var(--ok)} .flat{color:var(--ink-3)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 4px 0 10px;border-radius:13px;background:color-mix(in srgb,var(--accent) 16%,transparent);border:1px solid var(--accent);font-size:12.5px;font-weight:600}
+  .chip button{border:0;background:none;color:inherit;font-size:14px;line-height:1;padding:0 6px}
+  .alert{padding:10px 14px;border-radius:10px;border:1px solid var(--late-line, var(--late));background:var(--late-bg, transparent);line-height:1.5}
+  .note{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);line-height:1.5;font-size:13px}
+  .hbar{height:8px;border-radius:4px;background:var(--panel-2);min-width:60px;overflow:hidden} .hbar i{display:block;height:100%;background:var(--accent)}
+  .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;border:1px solid var(--line);margin-right:4px;white-space:nowrap}
+  .tag.red{color:#fff;background:var(--late);border-color:var(--late)} .tag.amber{color:#000;background:var(--warn);border-color:var(--warn)}
+  svg.chart{width:100%;height:auto;display:block}
+  svg.chart text{font-family:var(--mono);font-size:11px;fill:var(--ink-3)}
+  svg.chart .m{cursor:pointer}
+  svg.chart .m:hover rect{opacity:.8}
+  .legend{display:flex;gap:14px;font-size:12px;color:var(--ink-3);flex-wrap:wrap}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .box{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .box .v{font-family:var(--mono);font-size:22px;font-weight:600}
+  .f301{max-width:900px;display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;padding:16px}
+  .f301 div b{display:block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:2px}
+  .f301 h3{grid-column:1/-1;margin:10px 0 0;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:4px}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.3);line-height:1.5}
+  .toast.err{border-color:var(--late)}
+  @media print {
+    body{background:#fff!important;color:#000!important} header,nav,.rc-rail,.no-print,.toast{display:none!important}
+    main{padding:0!important} .card,.tile{border-color:#bbb!important;break-inside:avoid} .t th{background:#eee!important;color:#000!important}
+    body[data-print] [data-sec]{display:none!important} body[data-print="dash"] [data-sec~="dash"],body[data-print="log"] [data-sec~="log"],
+    body[data-print="a300"] [data-sec~="a300"],body[data-print="f301"] [data-sec~="f301"]{display:block!important}
+  }
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a class="on" href="safety.html">Safety</a><a href="incidents.html">Incidents</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar no-print">
+      <h1>Safety</h1>
+      <div class="tabs" id="tabs"><button data-t="dash">Dashboard</button><button data-t="osha">OSHA logs</button></div>
+      <span class="sp"></span>
+      <a class="btn small" href="incidents.html">Incidents</a>
+    </div>
+
+    <!-- ================= DASHBOARD ================= -->
+    <div data-pane="dash" data-sec="dash" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card pad no-print">
+        <div class="row">
+          <label>Period<select id="range">
+            <option value="12">Last 12 months</option><option value="ytd">This year</option><option value="ly">Last year</option>
+            <option value="3">Last 3 months</option><option value="1">This month</option><option value="custom">Pick months…</option></select></label>
+          <label>From<input type="month" id="from"></label>
+          <label>To<input type="month" id="to"></label>
+          <label>What happened<select id="f-kind"><option value="">Everything</option><option value="collision">Collisions</option><option value="injury">Injuries</option>
+            <option value="cargo">Cargo damage</option><option value="property">Property damage</option><option value="other">Other</option></select></label>
+          <label>Preventable<select id="f-prev"><option value="">Any</option><option value="preventable">Preventable</option><option value="non_preventable">Non-preventable</option><option value="undecided">Not decided yet</option></select></label>
+          <label class="chk"><input type="checkbox" id="f-dot"> DOT recordable only</label>
+          <label class="chk"><input type="checkbox" id="f-hurt"> Someone hurt</label>
+          <label class="chk"><input type="checkbox" id="f-open"> Not closed</label>
+          <span class="sp"></span>
+          <button class="btn small" id="csv">Download CSV</button>
+          <button class="btn small" id="pdf">Print / PDF</button>
+        </div>
+        <div class="chips" id="chips" style="margin-top:10px"></div>
+      </div>
+      <div class="mini" id="basis"></div>
+      <div id="alerts" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="card"><header><h2 id="trend-h">Incidents by month</h2><span class="sp"></span>
+        <div class="legend"><span><i style="background:var(--accent)"></i>Collisions</span><span><i style="background:var(--late)"></i>Injuries</span><span><i style="background:var(--muted)"></i>Other</span><span><i style="background:var(--warn);height:3px"></i>Per million miles</span></div></header>
+        <div class="pad" id="trend"></div></div>
+      <div class="card"><header><h2>Break it down</h2><span class="sp"></span><div class="tabs no-print" id="dims"></div></header>
+        <div class="scroll" id="breakdown"></div>
+        <div class="pad mini">Click a row to look at just that one; everything on the page follows. Rates are per million miles, from delivered loads' miles (plus deadhead) — shown where miles exist. Few miles make a rate jumpy: read it with the miles beside it.</div></div>
+      <div class="card"><header><h2 id="list-h">Incidents</h2></header><div class="scroll" id="list"></div></div>
+    </div>
+
+    <!-- ================= OSHA ================= -->
+    <div data-pane="osha" style="display:flex;flex-direction:column;gap:12px">
+      <div class="card pad row no-print">
+        <label>Year<select id="o-year"></select></label>
+        <label>Establishment<select id="o-est"><option value="">Whole company</option></select></label>
+        <span class="sp"></span>
+        <button class="btn small" id="o-csv">300 log (CSV)</button>
+        <button class="btn small" id="o-print-log">Print 300 log</button>
+        <button class="btn small" id="o-print-a">Print 300A summary</button>
+      </div>
+      <div class="note no-print">OSHA's injury logs are separate from DOT: they cover <b>employees</b> hurt at work — on the road, at a dock, in the yard — whose injury needed more than first aid, time off, light duty, or was a significant diagnosis.
+        Add the people hurt on each incident (Incidents › the incident › People hurt). Keep one log per establishment — if everyone reports to one place, use <i>Whole company</i>. Logs are kept 5 years;
+        post last year's 300A summary from <b>February 1 to April 30</b>; if OSHA requires your establishment to file electronically (Injury Tracking Application), it's due <b>March 2</b>.
+        These printouts are equivalent forms (29 CFR 1904.29(a)); take close calls on what counts to your safety advisor.</div>
+      <div id="o-alerts" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div class="card" data-sec="log"><header><h2 id="log-h">OSHA 300 — Log of work-related injuries and illnesses</h2></header><div class="scroll" id="log"></div></div>
+      <div class="card" data-sec="a300"><header><h2 id="a-h">OSHA 300A — Summary</h2></header><div id="a300"></div></div>
+    </div>
+
+    <!-- 301, printed one case at a time -->
+    <div data-pane="f301" data-sec="f301"><div class="card"><header><h2>OSHA 301 — Injury and illness incident report</h2><span class="sp"></span>
+      <button class="btn small no-print" id="f301-print">Print</button><button class="btn small no-print" id="f301-back">Back</button></header><div id="f301"></div></div></div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const S = window.RC_SAFETY;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = (n, d = 0) => n == null ? '—' : Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+const money = (n) => n == null ? '—' : '$' + Math.round(n).toLocaleString();
+const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+const mname = (m) => new Date(+m.slice(0, 4), +m.slice(5, 7) - 1, 1).toLocaleString([], { month: 'short', year: '2-digit' });
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('safety', 'edit');
+const OCLASS = { death: 'Death', days_away: 'Days away', restricted: 'Job transfer / restriction', other: 'Other recordable' };
+const OTYPE = { injury: 'Injury', skin: 'Skin disorder', respiratory: 'Respiratory', poisoning: 'Poisoning', hearing: 'Hearing loss', other_illness: 'Other illness' };
+let TAB = 'dash', DATA = null, LOADED = null, F = {}, DIM = 'driver', SORT = null, CUR = null, TERMS = [], tt = null;
+function toast(h, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 5000); }
+const fail = (e) => toast(esc(e.message || e), true);
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('safety')) return;
+  $('app').hidden = false;
+  const t = await sb.from('terminals').select('id, name').order('name'); TERMS = t.data || [];
+  $('o-est').innerHTML = '<option value="">Whole company</option>' + TERMS.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+  const y = new Date().getFullYear(); $('o-year').innerHTML = [0, 1, 2, 3, 4].map(k => `<option>${y - k}</option>`).join('');
+  // links in: ?driver= ?truck= ?tab=osha ?f301=<injury id>
+  const q = new URLSearchParams(location.search);
+  for (const d of ['driver', 'truck', 'trailer', 'terminal', 'customer']) if (q.get(d)) F[d] = q.get(d);
+  if (q.get('year')) $('o-year').value = q.get('year');
+  setRange('12');
+  if (q.get('f301')) return show301(q.get('f301'));
+  tab(q.get('tab') === 'osha' ? 'osha' : 'dash');
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+function tab(t) {
+  TAB = t;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t);
+  if (t === 'dash') loadDash(); else if (t === 'osha') loadOsha();
+}
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { history.replaceState(null, '', b.dataset.t === 'osha' ? '?tab=osha' : location.pathname); tab(b.dataset.t); });
+
+// ---------------------------------------------------------------- dashboard
+function setRange(v) {
+  const now = new Date(), cur = ym(now);
+  const r = { '12': [S.shift(cur, -11), cur], ytd: [`${now.getFullYear()}-01`, cur], ly: [`${now.getFullYear() - 1}-01`, `${now.getFullYear() - 1}-12`],
+    '3': [S.shift(cur, -2), cur], '1': [cur, cur] }[v];
+  $('range').value = v;
+  if (r) { $('from').value = r[0]; $('to').value = r[1]; }
+}
+$('range').onchange = () => { setRange($('range').value); loadDash(); };
+$('from').onchange = $('to').onchange = () => { $('range').value = 'custom'; loadDash(); };
+['f-kind', 'f-prev', 'f-dot', 'f-hurt', 'f-open'].forEach(id => $(id).onchange = () => draw());
+
+async function loadDash() {
+  let a = $('from').value, b = $('to').value;
+  if (!a || !b) return;
+  if (a > b) [a, b] = [b, a];
+  if (S.months(a, b).length > 18) { a = S.shift(b, -17); $('from').value = a; toast('Up to 18 months at a time — showing the last 18.'); }
+  $('from').value = a; $('to').value = b;
+  const n = S.months(a, b).length, pa = S.shift(a, -n);
+  const key = pa + b;
+  if (LOADED !== key) {
+    const [y2, m2] = b.split('-').map(Number);
+    const last = new Date(y2, m2, 0).getDate();
+    const { data, error } = await sb.rpc('safety_data', { p_from: pa + '-01', p_to: `${b}-${String(last).padStart(2, '0')}` });
+    if (error) { $('tiles').innerHTML = `<div class="empty error">${esc(error.message)}${/safety_data|schema cache/.test(error.message) ? ' — run 86_safety_dashboard.sql in the SQL Editor.' : ''}</div>`; return; }
+    DATA = data; LOADED = key;
+  }
+  draw();
+}
+
+function filters() {
+  return { ...F, from: $('from').value, to: $('to').value, kinds: $('f-kind').value ? [$('f-kind').value] : [], prev: $('f-prev').value || null,
+    dot: $('f-dot').checked, hurt: $('f-hurt').checked, status: $('f-open').checked ? 'open' : null };
+}
+const chipName = (d, v) => v === S.NONE ? S.label(d, null, DATA.names) : S.label(d, v, DATA.names);
+
+function draw() {
+  if (!DATA) return;
+  const f = filters(), R = S.summarize(DATA, f), k = R.kpis, p = R.prev;
+  CUR = { f, R };
+  // what's being looked at
+  $('chips').innerHTML = Object.keys(S.DIMS).filter(d => F[d] != null && F[d] !== '').map(d =>
+    `<span class="chip">${esc(S.DIMS[d].label)}: ${esc(chipName(d, F[d]))}<button data-x="${d}" title="Remove">×</button></span>`).join('')
+    + (Object.keys(F).length ? '<button class="btn small" id="clear">Clear</button>' : '');
+  document.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { delete F[b.dataset.x]; draw(); });
+  if ($('clear')) $('clear').onclick = () => { F = {}; draw(); };
+  $('basis').textContent = `${mname(f.from)} – ${mname(f.to)}, compared with ${mname(R.prevRange.from)} – ${mname(R.prevRange.to)}.`;
+
+  // alerts
+  const calls = R.list.filter(i => i.osha_call);
+  const al = [];
+  if (calls.length) al.push(`<div class="alert"><b>OSHA must be called</b> about ${calls.length === 1 ? 'incident' : 'incidents'} ${calls.map(i => `<a href="incidents.html?id=${i.id}">#${i.no}</a>`).join(', ')} — a work-related death (within 8 hours) or an in-patient hospitalisation, amputation or loss of an eye (within 24 hours), 29 CFR 1904.39. Record the call on the person hurt once it's made.</div>`);
+  const undecided = R.list.filter(i => i.status === 'closed' && i.preventable !== 'preventable' && i.preventable !== 'non_preventable');
+  if (undecided.length) al.push(`<div class="note">${undecided.length} closed ${undecided.length === 1 ? 'incident has' : 'incidents have'} no preventable decision — the preventable rate only counts decided ones.</div>`);
+  $('alerts').innerHTML = al.join('');
+
+  // tiles: lower is better for every one of these
+  const delta = (a, b, dec = 0) => {
+    if (a == null || b == null) return '<div class="d flat">no earlier figure</div>';
+    const d = Math.round((a - b) * 10 ** dec) / 10 ** dec;
+    return `<div class="d ${d > 0 ? 'up' : d < 0 ? 'down' : 'flat'}">${d > 0 ? '▲' : d < 0 ? '▼' : '='} ${num(Math.abs(d), dec)} vs before (${num(b, dec)})</div>`;
+  };
+  const tile = (key, v, s, d) => `<div class="tile"><div class="k">${key}</div><div class="v">${v}</div><div class="s">${s}</div>${d || ''}</div>`;
+  const mm = (x) => x == null ? 'no miles in this view' : `${num(x, 2)} per million miles`;
+  $('tiles').innerHTML = [
+    tile('Incidents', num(k.incidents), mm(k.perMM.incidents), delta(k.incidents, p.incidents)),
+    tile('Preventable rate', k.preventableRate == null ? '—' : num(k.preventableRate, 1) + '%', `${k.preventable} preventable of ${k.preventable + k.nonPreventable} decided`, delta(k.preventableRate, p.preventableRate, 1)),
+    tile('Preventable per million mi', k.perMM.preventable == null ? '—' : num(k.perMM.preventable, 2), `${num(k.miles)} miles`, delta(k.perMM.preventable, p.perMM.preventable, 2)),
+    tile('DOT recordable', num(k.dot), `${mm(k.perMM.dot)} · 49 CFR 390.5`, delta(k.dot, p.dot)),
+    tile('Post-accident tests', num(k.tests), '49 CFR 382.303', delta(k.tests, p.tests)),
+    tile('Someone hurt', num(k.injuries), `${k.osha} OSHA recordable${k.fatalities ? ` · <b class="error">${k.fatalities} fatal</b>` : ''}`, delta(k.injuries, p.injuries)),
+    tile('Days away / restricted', `${num(k.daysAway)} / ${num(k.daysRestricted)}`, `${k.dart} days-away-or-restricted cases`, delta(k.daysAway + k.daysRestricted, p.daysAway + p.daysRestricted)),
+    tile('Avg report delay', k.avgDelayH == null ? '—' : num(k.avgDelayH, 1) + ' h', `${k.late} reported more than 24 h later`, delta(k.avgDelayH, p.avgDelayH, 1)),
+    tile('Still open', num(k.open), 'not closed yet'),
+    ...(DATA.money ? [tile('Estimated cost', money(k.cost), 'from the office estimates', delta(k.cost == null ? null : Math.round(k.cost), p.cost == null ? null : Math.round(p.cost)))] : []),
+  ].join('');
+
+  drawTrend(R.months);
+  drawDims(); drawBreakdown();
+  drawList(R.list);
+}
+
+// Monthly bars (stacked by kind) with the per-million-mile rate as a line
+function drawTrend(ms) {
+  const W = 960, H = 260, L = 34, Rr = 44, T = 14, B = 34, iw = W - L - Rr, ih = H - T - B;
+  const now = ym(new Date()), full = (m) => m.m !== now;          // this month is still running: its rate would jump around
+  const step = Math.max(1, Math.ceil(Math.max(4, ...ms.map(m => m.total)) / 4)), max = step * 4;
+  const rmax = Math.max(1, ...ms.filter(full).map(m => m.rate || 0));
+  const bw = iw / ms.length, y = (v) => T + ih - (v / max) * ih, yr = (v) => T + ih - (v / rmax) * ih;
+  let g = '';
+  for (let t = 0; t <= 4; t++) { const v = step * t, yy = y(v); g += `<line x1="${L}" x2="${W - Rr}" y1="${yy}" y2="${yy}" stroke="var(--line-soft)"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${v}</text>`; }
+  for (let t = 0; t <= 2; t++) { const v = rmax * t / 2; g += `<text x="${W - Rr + 6}" y="${yr(v) + 4}">${num(v, v < 10 ? 1 : 0)}</text>`; }
+  ms.forEach((m, i) => {
+    const x = L + i * bw + bw * 0.18, w = bw * 0.64; let base = 0, bars = '';
+    for (const [key, col] of [['collision', 'var(--accent)'], ['injury', 'var(--late)'], ['other', 'var(--muted)']]) {
+      if (!m[key]) continue; const h = (m[key] / max) * ih; bars += `<rect x="${x}" y="${y(base + m[key])}" width="${w}" height="${h}" fill="${col}" rx="2"/>`; base += m[key];
+    }
+    g += `<g class="m" data-m="${m.m}"><rect x="${L + i * bw}" y="${T}" width="${bw}" height="${ih}" fill="transparent"/>${bars}
+      <title>${mname(m.m)}: ${m.total} incidents (${m.collision} collisions, ${m.injury} injuries, ${m.other} other) · ${m.preventable} preventable · ${m.dot} DOT recordable${m.miles != null ? ` · ${num(m.miles)} mi · ${m.rate == null ? '—' : num(m.rate, 2)} per million` : ''}</title>
+      ${m.total ? `<text x="${x + w / 2}" y="${y(m.total) - 4}" text-anchor="middle" style="fill:var(--ink)">${m.total}</text>` : ''}
+      <text x="${L + i * bw + bw / 2}" y="${H - B + 16}" text-anchor="middle">${mname(m.m)}${full(m) ? '' : '*'}</text></g>`;
+  });
+  const pts = ms.map((m, i) => m.rate == null || !full(m) ? null : [L + i * bw + bw / 2, yr(m.rate)]).filter(Boolean);
+  if (pts.length > 1) g += `<polyline points="${pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="var(--warn)" stroke-width="2"/>`;
+  g += pts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--warn)"/>`).join('');
+  $('trend').innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Incidents by month">${g}</svg><div class="mini no-print">Click a month to look at just that month.${ms.some(m => !full(m)) ? ' * This month so far — left off the rate line until it ends.' : ''}</div>`;
+  document.querySelectorAll('#trend .m').forEach(el => el.onclick = () => { $('from').value = $('to').value = el.dataset.m; $('range').value = 'custom'; loadDash(); });
+}
+
+function drawDims() {
+  $('dims').innerHTML = Object.entries(S.DIMS).map(([d, x]) => `<button data-d="${d}" class="${d === DIM ? 'on' : ''}">${x.label}</button>`).join('');
+  document.querySelectorAll('#dims button').forEach(b => b.onclick = () => { DIM = b.dataset.d; SORT = null; drawDims(); drawBreakdown(); });
+}
+function drawBreakdown() {
+  const { f, R } = CUR;
+  let rows = S.breakdown(R.list, DATA.miles, f, DIM, DATA.names);
+  if (F[DIM] != null && F[DIM] !== '') rows = rows.filter(r => (F[DIM] === S.NONE ? r.key == null : r.key === F[DIM]));
+  if (SORT) rows.sort((a, b) => ((b[SORT] ?? -1) - (a[SORT] ?? -1)));
+  const hasMiles = rows.some(r => r.miles != null), max = Math.max(1, ...rows.map(r => r.incidents));
+  const th = (key, t) => `<th class="n s" data-s="${key}">${t}${SORT === key ? ' ▼' : ''}</th>`;
+  $('breakdown').innerHTML = rows.length ? `<table class="t"><thead><tr><th>${esc(S.DIMS[DIM].label)}</th><th style="width:22%"></th>${th('incidents', 'Incidents')}${th('preventable', 'Preventable')}${th('dot', 'DOT rec.')}${th('hurt', 'Hurt')}${th('osha', 'OSHA')}${hasMiles ? th('miles', 'Miles') + th('rate', 'Per million mi') : ''}</tr></thead>
+    <tbody>${rows.map(r => `<tr class="r" data-k="${r.key == null ? S.NONE : esc(r.key)}"><td>${esc(r.label)}</td><td><div class="hbar"><i style="width:${(r.incidents / max) * 100}%"></i></div></td>
+      <td class="n">${r.incidents}</td><td class="n">${r.preventable}</td><td class="n">${r.dot}</td><td class="n">${r.hurt}</td><td class="n">${r.osha}</td>
+      ${hasMiles ? `<td class="n">${num(r.miles)}</td><td class="n">${r.rate == null ? '—' : num(r.rate, 2)}</td>` : ''}</tr>`).join('')}</tbody></table>` : '<div class="empty">Nothing here.</div>';
+  document.querySelectorAll('#breakdown th[data-s]').forEach(h => h.onclick = () => { SORT = h.dataset.s; drawBreakdown(); });
+  document.querySelectorAll('#breakdown tr[data-k]').forEach(tr => tr.onclick = () => {
+    const v = tr.dataset.k; F[DIM] = ['hour', 'dow'].includes(DIM) ? (v === S.NONE ? v : +v) : v;
+    // the next useful view: from a place or a time to the drivers; from a driver to the trucks
+    DIM = { driver: 'kind', truck: 'driver', trailer: 'driver', terminal: 'driver', customer: 'location', location: 'driver', kind: 'driver', hour: 'driver', dow: 'driver' }[DIM];
+    SORT = null; draw();
+  });
+}
+
+const KINDN = S.KIND;
+function drawList(list) {
+  const rows = [...list].reverse();
+  $('list-h').textContent = `Incidents (${rows.length})`;
+  const n = DATA.names;
+  $('list').innerHTML = rows.length ? `<table class="t"><thead><tr><th>#</th><th>When</th><th>What</th><th>Driver</th><th>Truck</th><th>Where</th><th>Preventable</th><th>Flags</th><th>Status</th>${DATA.money ? '<th class="n">Est. cost</th>' : ''}</tr></thead><tbody>
+    ${rows.slice(0, 300).map(i => `<tr class="r" data-id="${i.id}"><td class="n"><b>${i.no}</b></td><td>${esc(i.at.replace('T', ' '))}</td><td>${KINDN[i.kind]}</td><td>${esc(n.driver[i.driver] || '')}</td>
+      <td>${esc(n.truck[i.truck] || '')}${i.trailer ? ' / ' + esc(n.truck[i.trailer] || '') : ''}</td><td>${esc(i.location ? n.location[i.location] || '' : i.where || '')}</td>
+      <td>${{ preventable: 'Preventable', non_preventable: 'Non-preventable', pending: 'Pending' }[i.preventable] || '—'}</td>
+      <td>${i.dot ? '<span class="tag amber">DOT</span>' : ''}${i.test ? '<span class="tag red">TEST</span>' : ''}${i.osha ? `<span class="tag">OSHA ${i.osha}</span>` : ''}${i.osha_call ? '<span class="tag red">CALL OSHA</span>' : ''}${i.delay_h > 24 ? '<span class="tag">LATE REPORT</span>' : ''}</td>
+      <td>${esc(i.status)}</td>${DATA.money ? `<td class="n">${money(i.cost)}</td>` : ''}</tr>`).join('')}</tbody></table>${rows.length > 300 ? '<div class="pad mini">Showing the latest 300 — the CSV has them all.</div>' : ''}`
+    : '<div class="empty">No incidents in this view.</div>';
+  document.querySelectorAll('#list tr[data-id]').forEach(tr => tr.onclick = () => location.href = 'incidents.html?id=' + tr.dataset.id);
+}
+
+const csvq = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function download(name, head, rows) {
+  const text = [head.map(csvq).join(','), ...rows.map(r => r.map(csvq).join(','))].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' })); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
+$('csv').onclick = () => {
+  if (!CUR) return; const n = DATA.names;
+  download(`safety-${CUR.f.from}-to-${CUR.f.to}.csv`,
+    ['Incident #', 'Date', 'Hour', 'What', 'Driver', 'Truck', 'Trailer', 'Terminal', 'Customer', 'Delivery location', 'Where', 'Preventable', 'DOT recordable', 'Post-accident test', 'Someone hurt', 'OSHA cases', 'Days away', 'Days restricted', 'Report delay (h)', 'Status', ...(DATA.money ? ['Estimated cost'] : [])],
+    CUR.R.list.map(i => [i.no, i.at.slice(0, 10), i.hour, KINDN[i.kind], n.driver[i.driver] || '', n.truck[i.truck] || '', n.truck[i.trailer] || '', n.terminal[i.terminal] || '', n.customer[i.customer] || '',
+      n.location[i.location] || '', i.where || '', i.preventable || '', i.dot ? 'Yes' : 'No', i.test ? 'Yes' : 'No', i.hurt ? 'Yes' : 'No', i.osha, i.days_away, i.days_restricted, i.delay_h, i.status, ...(DATA.money ? [i.cost ?? ''] : [])]));
+};
+function printAs(what, landscape) {
+  document.body.dataset.print = what;
+  const st = document.createElement('style'); st.textContent = `@page{size:${landscape ? 'landscape' : 'portrait'};margin:12mm}`; document.head.appendChild(st);
+  setTimeout(() => { window.print(); delete document.body.dataset.print; st.remove(); }, 50);
+}
+$('pdf').onclick = () => printAs('dash', true);
+
+// ---------------------------------------------------------------- OSHA 300 / 300A
+let LOG = [], SUM = null;
+$('o-year').onchange = $('o-est').onchange = () => loadOsha();
+async function loadOsha() {
+  const y = +$('o-year').value, est = $('o-est').value || null;
+  const [l, s] = await Promise.all([sb.rpc('osha_log', { p_year: y, p_terminal: est }), sb.rpc('osha_summary', { p_year: y, p_terminal: est })]);
+  if (l.error || s.error) { $('log').innerHTML = `<div class="empty error">${esc((l.error || s.error).message)}${/osha_|schema cache/.test((l.error || s.error).message) ? ' — run 86_safety_dashboard.sql in the SQL Editor.' : ''}</div>`; return; }
+  LOG = l.data || []; SUM = s.data;
+  const estName = est ? (TERMS.find(t => t.id === est) || {}).name : (SUM.establishment?.establishment_name || 'Whole company');
+  $('log-h').textContent = `OSHA 300 — Log of work-related injuries and illnesses · ${y} · ${estName}`;
+  $('a-h').textContent = `OSHA 300A — Summary of work-related injuries and illnesses · ${y} · ${estName}`;
+  const due = LOG.filter(r => r.call_by && !r.reported);
+  $('o-alerts').innerHTML = due.map(r => `<div class="alert"><b>Call OSHA</b> about case ${r.case_no} (incident <a href="incidents.html?id=${r.incident_id}">#${r.incident_no}</a>) — due by ${new Date(r.call_by).toLocaleString()}. Call 1-800-321-6742 or report online, then record it on the person hurt.</div>`).join('');
+  const X = (on) => on ? '✔' : '';
+  $('log').innerHTML = LOG.length ? `<table class="t"><thead><tr><th>Case</th><th>Employee</th><th>Job title</th><th>Date</th><th>Where</th><th>Injury, body part, what caused it</th>
+      <th class="n">Death</th><th class="n">Days away</th><th class="n">Restricted</th><th class="n">Other</th><th class="n"># days away</th><th class="n"># days restricted</th><th>Type</th><th class="no-print"></th></tr></thead>
+    <tbody>${LOG.map(r => `<tr><td class="n">${r.case_no}</td><td>${esc(r.name)}</td><td>${esc(r.job_title || '')}</td><td>${esc(r.date)}</td><td>${esc(r.where || '')}</td><td>${esc(r.describe || '')}</td>
+      <td class="n">${X(r.class === 'death')}</td><td class="n">${X(r.class === 'days_away')}</td><td class="n">${X(r.class === 'restricted')}</td><td class="n">${X(r.class === 'other')}</td>
+      <td class="n">${r.days_away || ''}</td><td class="n">${r.days_restricted || ''}</td><td>${OTYPE[r.type] || r.type}</td>
+      <td class="no-print"><a href="?f301=${r.id}">301</a> · <a href="incidents.html?id=${r.incident_id}">#${r.incident_no}</a></td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="6">Totals</td><td class="n">${SUM.deaths}</td><td class="n">${SUM.days_away_cases}</td><td class="n">${SUM.restricted_cases}</td><td class="n">${SUM.other_cases}</td><td class="n">${SUM.days_away}</td><td class="n">${SUM.days_restricted}</td><td colspan="2"></td></tr></tfoot></table>`
+    : `<div class="empty">No recordable cases for ${y}${est ? ' at this establishment' : ''}. (Cases come from the people hurt added on each incident.)</div>`;
+  drawA300();
+}
+
+function drawA300() {
+  const s = SUM, e = s.establishment || {}, ed = canEdit() ? '' : ' disabled';
+  const f = (id, label, v, type = 'text', w = '') => `<label${w ? ` style="${w}"` : ''}>${label}<input id="${id}" type="${type}" value="${esc(v ?? '')}"${ed}></label>`;
+  $('a300').innerHTML = `
+    <div class="pad"><div class="grid2">
+      <div class="box"><div class="mini">Deaths</div><div class="v">${s.deaths}</div></div>
+      <div class="box"><div class="mini">Cases with days away</div><div class="v">${s.days_away_cases}</div></div>
+      <div class="box"><div class="mini">Job transfer or restriction</div><div class="v">${s.restricted_cases}</div></div>
+      <div class="box"><div class="mini">Other recordable cases</div><div class="v">${s.other_cases}</div></div>
+      <div class="box"><div class="mini">Total days away</div><div class="v">${s.days_away}</div></div>
+      <div class="box"><div class="mini">Total days of transfer / restriction</div><div class="v">${s.days_restricted}</div></div>
+    </div>
+    <div class="grid2" style="margin-top:10px">${Object.entries(OTYPE).map(([k, t]) => `<div class="box"><div class="mini">${t}</div><div class="v">${s[k]}</div></div>`).join('')}</div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="box"><div class="mini">Total recordable rate (TRIR)</div><div class="v">${s.trir == null ? '—' : num(s.trir, 2)}</div><div class="mini">cases per 100 full-time workers (× 200,000 ÷ hours worked)</div></div>
+      <div class="box"><div class="mini">DART rate</div><div class="v">${s.dart_rate == null ? '—' : num(s.dart_rate, 2)}</div><div class="mini">days-away, restricted or transfer cases per 100 full-time workers</div></div>
+    </div></div>
+    <div class="pad" style="border-top:1px solid var(--line-soft)">
+      <div class="mini" style="margin-bottom:8px"><b>Establishment</b> — the 300A needs these. Hours worked: all employees' actual hours for the year (your payroll company's year-end report has it).</div>
+      <div class="row">${f('e-name', 'Establishment name', e.establishment_name)}${f('e-street', 'Street', e.street)}${f('e-city', 'City', e.city)}${f('e-state', 'State', e.state, 'text', 'width:80px')}${f('e-zip', 'ZIP', e.zip, 'text', 'width:110px')}</div>
+      <div class="row" style="margin-top:8px">${f('e-ind', 'Industry description', e.industry)}${f('e-naics', 'NAICS code', e.naics, 'text', 'width:120px')}${f('e-emp', 'Average employees', e.avg_employees, 'number', 'width:150px')}${f('e-hrs', 'Total hours worked', e.hours_worked, 'number', 'width:170px')}</div>
+      <div class="row" style="margin-top:8px">${f('e-cname', 'Certified by (company executive)', e.certified_name)}${f('e-ctitle', 'Title', e.certified_title)}${f('e-cphone', 'Phone', e.certified_phone)}${f('e-con', 'Date', e.certified_on, 'date')}
+        ${canEdit() ? '<button class="btn primary small no-print" id="e-save">Save</button><span class="mini" id="e-msg"></span>' : ''}</div>
+      <div class="mini" style="margin-top:8px">Knowingly falsifying this document may result in a fine. A company executive certifies it; post it from February 1 to April 30 where notices to employees are usually posted.</div>
+    </div>`;
+  if ($('e-save')) $('e-save').onclick = saveEst;
+}
+async function saveEst() {
+  const y = +$('o-year').value, est = $('o-est').value || null, v = (id) => $(id).value.trim() || null, n = (id) => $(id).value === '' ? null : +$(id).value;
+  const row = { year: y, terminal_id: est, establishment_name: v('e-name'), street: v('e-street'), city: v('e-city'), state: v('e-state'), zip: v('e-zip'),
+    industry: v('e-ind'), naics: v('e-naics'), avg_employees: n('e-emp'), hours_worked: n('e-hrs'), certified_name: v('e-cname'), certified_title: v('e-ctitle'),
+    certified_phone: v('e-cphone'), certified_on: v('e-con'), updated_at: new Date().toISOString() };
+  let q = sb.from('osha_years').select('id').eq('year', y); q = est ? q.eq('terminal_id', est) : q.is('terminal_id', null);
+  const ex = await q.maybeSingle();
+  const r = ex.data ? await sb.from('osha_years').update(row).eq('id', ex.data.id) : await sb.from('osha_years').insert(row);
+  if (r.error) { $('e-msg').innerHTML = `<span class="error">${esc(r.error.message)}</span>`; return; }
+  await loadOsha(); toast('Saved.');
+}
+$('o-csv').onclick = () => download(`osha-300-${$('o-year').value}.csv`,
+  ['Case no.', 'Employee', 'Job title', 'Date of injury', 'Where', 'Describe injury, body part, object', 'Classification', 'Days away', 'Days job transfer / restriction', 'Type'],
+  LOG.map(r => [r.case_no, r.name, r.job_title || '', r.date, r.where || '', r.describe || '', OCLASS[r.class], r.days_away, r.days_restricted, OTYPE[r.type]]));
+$('o-print-log').onclick = () => printAs('log', true);
+$('o-print-a').onclick = () => printAs('a300', false);
+
+// ---------------------------------------------------------------- OSHA 301, one case
+// same rule as osha_class() in the database
+const oclass = (x) => !x.employee || !x.work_related ? null : x.death ? 'death' : x.days_away > 0 ? 'days_away' : x.days_restricted > 0 ? 'restricted'
+  : (x.medical_treatment || x.lost_consciousness || x.significant_diagnosis) ? 'other' : null;
+async function show301(id) {
+  TAB = 'f301'; document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== 'f301');
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on'));
+  const j = await sb.from('incident_injuries').select('*').eq('id', id).single();
+  if (j.error) { $('f301').innerHTML = `<div class="empty error">${esc(j.error.message)}</div>`; return; }
+  const x = j.data;
+  const [i, d, me] = await Promise.all([
+    sb.from('incidents').select('*').eq('id', x.incident_id).single(),
+    x.driver_id ? sb.from('drivers').select('full_name, address, hire_date').eq('id', x.driver_id).single() : Promise.resolve({ data: null }),
+    sb.auth.getUser()]);
+  const inc = i.data || {}, drv = d.data || {};
+  const at = inc.occurred_at ? new Date(inc.occurred_at) : null;
+  const cell = (label, v) => `<div><b>${label}</b>${esc(v ?? '') || '<span class="mini">—</span>'}</div>`;
+  $('f301').innerHTML = `<div class="f301">
+    <h3>About the employee</h3>
+    ${cell('Full name', x.privacy_case ? 'Privacy case — name kept separately' : x.person_name)}${cell('Job title', x.job_title)}
+    ${cell('Address', x.privacy_case ? '' : drv.address)}${cell('Date hired', drv.hire_date)}
+    <h3>About the health care professional</h3>
+    ${cell('Physician or other professional', x.physician)}${cell('Facility', [x.facility, x.facility_address].filter(Boolean).join(', '))}
+    ${cell('Treated in an emergency room?', x.er_treated == null ? '' : x.er_treated ? 'Yes' : 'No')}${cell('Hospitalized overnight as an in-patient?', x.hospitalized ? 'Yes' : 'No')}
+    <h3>About the case</h3>
+    ${cell('Case number (from the log)', `${x.case_year}-${x.case_no}`)}${cell('Date of injury or illness', at ? at.toLocaleDateString() : '')}
+    ${cell('Time of event', at ? at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '')}${cell('Where', inc.location_text)}
+    <div style="grid-column:1/-1"><b>What was the employee doing just before the incident occurred?</b>${esc(x.notes || '') || '<span class="mini">—</span>'}</div>
+    <div style="grid-column:1/-1"><b>What happened?</b>${esc(inc.description || '')}</div>
+    <div style="grid-column:1/-1"><b>What was the injury or illness? (part of body, how affected)</b>${esc([x.nature, x.body_part].filter(Boolean).join(' — '))}</div>
+    <div style="grid-column:1/-1"><b>What object or substance directly harmed the employee?</b>${esc(x.source || '')}</div>
+    ${cell('If the employee died, date of death', x.death ? x.death_date : '')}${cell('Log classification', OCLASS[oclass(x)] || 'Not recordable — not on the log')}
+    <h3>Completed by</h3>
+    ${cell('Name / email', me.data?.user?.email)}${cell('Date', new Date().toLocaleDateString())}
+    <div style="grid-column:1/-1" class="mini">Equivalent to OSHA Form 301 (29 CFR 1904.29). Keep with the log for 5 years. Incident <a href="incidents.html?id=${x.incident_id}">#${inc.incident_no || ''}</a>.</div></div>`;
+}
+$('f301-print').onclick = () => printAs('f301', false);
+$('f301-back').onclick = () => { history.replaceState(null, '', '?tab=osha'); tab('osha'); };
+
+start();
+</script>
+</body>
+</html>

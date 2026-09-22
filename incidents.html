@@ -79,6 +79,7 @@
       <h1>Incidents</h1><span class="sp"></span>
       <label>Show<select id="f-status"><option value="active">Open &amp; in review</option><option value="closed">Closed</option><option value="all">All</option></select></label>
       <label>Year<select id="f-year"></select></label>
+      <a class="btn small" href="safety.html">Safety dashboard</a>
       <button class="btn small" id="register">Accident register (CSV)</button>
       <button class="btn small primary" id="new">New report</button>
     </div>
@@ -100,7 +101,7 @@ const yn = (v) => v === true ? 'Yes' : v === false ? 'No' : '—';
 const KIND = { collision: 'Collision', injury: 'Injury', cargo: 'Cargo damage', property: 'Property damage', other: 'Other' };
 const SHOT = { scene: 'Scene', our_vehicle: 'Our truck', other_vehicle: 'Other vehicle', plate: 'Their plate', insurance_card: 'Insurance card', license: 'Licence', cargo: 'Cargo', injury: 'Injury', police: 'Police', other: 'Other' };
 const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('safety', 'edit');
-let ROWS = [], CUR = null, DRIVERS = [], UNITS = [];
+let ROWS = [], CUR = null, DRIVERS = [], UNITS = [], LOCS = [], TERMS = [], INJ = [];
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -118,6 +119,9 @@ async function start() {
   $('new').hidden = !canEdit();
   const [d, u] = await Promise.all([sb.from('drivers').select('id, full_name').order('full_name'), sb.from('equipment').select('id, unit_no, unit_type').order('unit_no')]);
   DRIVERS = d.data || []; UNITS = u.data || [];
+  // 86: customer locations and terminals (for where it happened and the OSHA establishment)
+  const [lo, te] = await Promise.all([sb.from('delivery_locations').select('id, name').order('name'), sb.from('terminals').select('id, name').order('name')]);
+  LOCS = lo.data || []; TERMS = te.data || [];
   await loadList();
   const q = new URLSearchParams(location.search).get('id'); if (q) show(q);
 }
@@ -148,8 +152,12 @@ async function show(id) {
     sb.from('incident_photos').select('*').eq('incident_id', id).order('created_at'),
     sb.from('incident_witnesses').select('*').eq('incident_id', id).order('created_at'),
   ]);
+  // 86: where it happened, and the people hurt (OSHA)
+  const [x86, ij] = await Promise.all([sb.from('incidents').select('at_location_id, public_road').eq('id', id).single(),
+    sb.from('incident_injuries').select('*').eq('incident_id', id).order('case_no')]);
+  INJ = ij.data || [];
   if (r.error) { $('detail').innerHTML = `<div class="card empty error">${esc(r.error.message)}</div>`; return; }
-  const i = r.data, photos = ph.data || [], wits = wi.data || [];
+  const i = { ...r.data, ...(x86.data || {}) }, photos = ph.data || [], wits = wi.data || [];
   const paths = [...photos.map(p => p.path), ...wits.map(w => w.signature_path).filter(Boolean)];
   const urls = {};
   if (paths.length) { const s = await sb.storage.from('incident-photos').createSignedUrls(paths, 3600); (s.data || []).forEach(x => urls[x.path] = x.signedUrl); }
@@ -199,6 +207,12 @@ async function show(id) {
         ${w.signature_path && urls[w.signature_path] ? `<img src="${urls[w.signature_path]}" alt="Signature of ${esc(w.name)}">` : '<div class="mini">No signature</div>'}</div>`).join('') || '<div class="empty">No witness cards.</div>'}
     </div>
 
+    <div class="card" id="inj-card">
+      <header><h2>People hurt — OSHA (${INJ.length})</h2><span class="sp"></span>${canEdit() ? '<button class="btn small no-print" id="inj-add">Add person hurt</button>' : ''}<a class="btn small no-print" href="safety.html?tab=osha">OSHA logs</a></header>
+      ${injList(i)}
+      <div id="inj-form"></div>
+    </div>
+
     <div class="card">
       <header><h2>Office</h2></header>
       <div class="grid">
@@ -207,6 +221,9 @@ async function show(id) {
         <label>Claim #<input id="o-claim" value="${esc(i.claim_no || '')}"${ed}><a class="mini" href="claims.html?incident=${i.id}">Claims & money for this incident →</a></label>
         <label>Insurer notified<input id="o-ins" type="datetime-local" value="${i.insurer_notified_at ? new Date(new Date(i.insurer_notified_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"${ed}></label>
         <label>Estimated cost $<input id="o-cost" type="number" step="0.01" value="${i.est_cost ?? ''}"${ed}></label>
+        <label>At a customer location<select id="o-loc"${ed}><option value="">— not at a customer location —</option>${LOCS.map(l => `<option value="${l.id}"${l.id === i.at_location_id ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>
+        <label>On a public road?<select id="o-road"${ed}><option value="">—</option><option value="true"${i.public_road === true ? ' selected' : ''}>Yes</option><option value="false"${i.public_road === false ? ' selected' : ''}>No (yard, dock, lot)</option></select>
+          <span class="mini">OSHA's 8/24-hour call doesn't apply to a motor-vehicle accident on a public road.</span></label>
         ${i.test_required || i.alcohol_test_at || i.drug_test_at ? `
         <label>Alcohol test done<input id="o-alc" type="datetime-local" value="${i.alcohol_test_at ? new Date(new Date(i.alcohol_test_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"${ed}></label>
         <label>Drug test done<input id="o-drug" type="datetime-local" value="${i.drug_test_at ? new Date(new Date(i.drug_test_at) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}"${ed}></label>
@@ -216,16 +233,88 @@ async function show(id) {
       ${canEdit() ? '<div style="padding:0 16px 14px" class="no-print"><button class="btn primary" id="o-save">Save</button> <span class="mini" id="o-msg"></span></div>' : ''}
     </div>`;
   if ($('d-edit')) $('d-edit').onclick = () => reportForm(i);
+  if ($('inj-add')) $('inj-add').onclick = () => injForm(i, null);
+  document.querySelectorAll('[data-inj]').forEach(b => b.onclick = () => injForm(i, INJ.find(x => x.id === b.dataset.inj)));
   if ($('o-save')) $('o-save').onclick = async () => {
     const ts = (id) => $(id) && $(id).value ? new Date($(id).value).toISOString() : null;
     const upd = { status: $('o-status').value, preventable: $('o-prev').value || null, claim_no: $('o-claim').value.trim() || null,
-      insurer_notified_at: ts('o-ins'), est_cost: $('o-cost').value === '' ? null : +$('o-cost').value, office_notes: $('o-notes').value.trim() || null };
+      insurer_notified_at: ts('o-ins'), est_cost: $('o-cost').value === '' ? null : +$('o-cost').value, office_notes: $('o-notes').value.trim() || null,
+      at_location_id: $('o-loc').value || null, public_road: $('o-road').value === '' ? null : $('o-road').value === 'true' };
     if ($('o-alc')) { upd.alcohol_test_at = ts('o-alc'); upd.drug_test_at = ts('o-drug'); upd.test_note = $('o-tnote').value.trim() || null; }
     const { error } = await sb.from('incidents').update(upd).eq('id', id);
     if (error) { $('o-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
     await loadList(); await show(id); $('o-msg').innerHTML = '<span class="ok">Saved.</span>';
   };
   $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 86: people hurt, and what OSHA needs (29 CFR 1904)
+const OCLASS = { death: 'Death', days_away: 'Days away', restricted: 'Job transfer / restriction', other: 'Other recordable' };
+const OTYPE = { injury: 'Injury', skin: 'Skin disorder', respiratory: 'Respiratory condition', poisoning: 'Poisoning', hearing: 'Hearing loss', other_illness: 'Other illness' };
+const oclass = (x) => !x.employee || !x.work_related ? null : x.death ? 'death' : x.days_away > 0 ? 'days_away' : x.days_restricted > 0 ? 'restricted'
+  : (x.medical_treatment || x.lost_consciousness || x.significant_diagnosis) ? 'other' : null;
+function callBy(i, x) {
+  if (!x.employee || !x.work_related || (i.kind === 'collision' && i.public_road)) return null;
+  const h = x.death ? 8 : (x.hospitalized || x.amputation_or_eye) ? 24 : 0;
+  return h ? new Date(new Date(i.occurred_at).getTime() + h * 3600000) : null;
+}
+function injList(i) {
+  if (!INJ.length) return `<div class="empty">No one added.${i.anyone_hurt || i.driver_injured ? ' <b>The report says someone was hurt</b> — add each person so OSHA-recordable cases reach the log.' : ''}</div>`;
+  // DOT (390.5) turns on treatment away from the scene; the people-hurt answers can contradict the driver's report
+  const treated = INJ.some(x => x.hospitalized || x.er_treated || x.facility);
+  const dotNote = treated && i.treated_away !== true && (i.public_road === true || (i.kind === 'collision' && i.public_road !== false))
+    ? `<div class="alert" style="margin:10px 16px;padding:8px 12px;border:1px solid var(--late);border-radius:8px">Someone here was treated at a hospital or clinic, but the report says no one was <b>treated away from the scene</b>. If that's right for this road accident, correct the report — it makes the accident <b>DOT recordable</b> (49 CFR 390.5) and may require a post-accident test.</div>` : '';
+  return dotNote + `<table class="t"><thead><tr><th>Case</th><th>Person</th><th>Injury</th><th>OSHA log</th><th>Days away / restricted</th><th></th></tr></thead><tbody>${INJ.map(x => {
+    const c = oclass(x), due = callBy(i, x);
+    return `<tr><td class="mono">${x.case_year}-${x.case_no}</td><td>${esc(x.person_name)}${x.employee ? '' : ' <span class="mini">(not an employee)</span>'}${x.privacy_case ? ' <span class="tag">PRIVACY CASE</span>' : ''}<div class="mini">${esc(x.job_title || '')}</div></td>
+      <td>${esc([x.nature, x.body_part].filter(Boolean).join(' — '))}<div class="mini">${esc(x.source || '')}</div></td>
+      <td>${c ? `<span class="tag amber">${OCLASS[c]}</span>` : '<span class="mini">Not recordable</span>'}${due ? (x.osha_reported_at ? `<div class="mini ok">OSHA called ${dt(x.osha_reported_at)}</div>` : `<div class="error"><b>Call OSHA by ${dt(due)}</b></div>`) : ''}</td>
+      <td>${x.days_away} / ${x.days_restricted}</td>
+      <td class="no-print">${canEdit() ? `<button class="btn small" data-inj="${x.id}">Edit</button> ` : ''}${c ? `<a class="btn small" href="safety.html?f301=${x.id}">301</a>` : ''}</td></tr>`; }).join('')}</tbody></table>`;
+}
+function injForm(i, x) {
+  const drv = i.driver_id ? DRIVERS.find(d => d.id === i.driver_id) : null;
+  x = x || { employee: true, work_related: true, driver_id: i.driver_injured ? i.driver_id : null, person_name: i.driver_injured && drv ? drv.full_name : '',
+    job_title: i.driver_injured ? 'Truck driver' : '', injury_type: 'injury', days_away: 0, days_restricted: 0 };
+  const cb = (k, t) => `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" data-b="${k}"${x[k] ? ' checked' : ''} style="height:auto"> ${t}</label>`;
+  const tx = (k, t, type = 'text', v) => `<label>${t}<input data-v="${k}" type="${type}" value="${esc(v ?? x[k] ?? '')}"></label>`;
+  $('inj-form').innerHTML = `<div style="padding:12px 16px;border-top:1px solid var(--line-soft)">
+    <div class="grid">
+      <label>Employee<select id="j-driver"><option value="">— someone else —</option>${DRIVERS.map(d => `<option value="${d.id}"${d.id === x.driver_id ? ' selected' : ''}>${esc(d.full_name)}</option>`).join('')}</select></label>
+      ${tx('person_name', 'Name')}${tx('job_title', 'Job title')}
+      <label>Establishment<select id="j-term"><option value="">${TERMS.length ? '— their home terminal —' : 'Whole company'}</option>${TERMS.map(t => `<option value="${t.id}"${t.id === x.terminal_id ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>
+      <label>Type<select id="j-type">${Object.entries(OTYPE).map(([k, t]) => `<option value="${k}"${x.injury_type === k ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+      ${tx('nature', 'Injury (strain, cut, fracture…)')}${tx('body_part', 'Part of body')}${tx('source', 'What harmed them')}
+      <label style="grid-column:1/-1">What they were doing just before<input data-v="notes" value="${esc(x.notes || '')}"></label>
+    </div>
+    <div class="mini" style="margin:10px 0 4px"><b>Does it go on the OSHA log?</b> Only employees, only work-related, and only if one of these happened (first aid alone doesn't count).</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">${cb('employee', 'An employee')}${cb('work_related', 'Work-related')}${cb('medical_treatment', 'Medical treatment beyond first aid')}
+      ${cb('lost_consciousness', 'Lost consciousness')}${cb('significant_diagnosis', 'Significant injury diagnosed by a doctor (fracture, punctured eardrum…)')}${cb('death', 'Died')}${cb('privacy_case', 'Privacy case (keep name off the log)')}</div>
+    <div class="grid" style="margin-top:10px">
+      ${tx('away_from', 'First day away', 'date')}${tx('back_on', 'Back to work on', 'date')}${tx('days_away', 'Days away (max 180)', 'number')}${tx('days_restricted', 'Days on restricted duty / transfer (max 180)', 'number')}
+    </div>
+    <div class="mini" style="margin:4px 0 0">With both dates the days away count themselves (calendar days, not counting the day it happened).</div>
+    <div class="mini" style="margin:10px 0 4px"><b>Treatment</b></div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">${cb('er_treated', 'Treated in an emergency room')}${cb('hospitalized', 'Admitted to hospital (in-patient)')}${cb('amputation_or_eye', 'Amputation or loss of an eye')}</div>
+    <div class="grid" style="margin-top:10px">${tx('physician', 'Doctor / health care professional')}${tx('facility', 'Facility')}${tx('facility_address', 'Facility address')}
+      ${tx('osha_reported_at', 'OSHA called (date & time)', 'datetime-local', x.osha_reported_at ? local(x.osha_reported_at) : '')}${tx('osha_report_no', 'OSHA reference #')}</div>
+    <div style="margin-top:12px"><button class="btn primary" id="j-save">${x.id ? 'Save' : 'Add'}</button> <button class="btn" id="j-cancel">Cancel</button>
+      ${x.id ? '<button class="btn" id="j-del" style="margin-left:12px">Remove</button>' : ''} <span class="mini" id="j-msg"></span></div></div>`;
+  $('j-driver').onchange = () => { const d = DRIVERS.find(z => z.id === $('j-driver').value); if (d) { document.querySelector('[data-v="person_name"]').value = d.full_name; const jt = document.querySelector('[data-v="job_title"]'); if (!jt.value) jt.value = 'Truck driver'; } };
+  $('j-cancel').onclick = () => $('inj-form').innerHTML = '';
+  if ($('j-del')) $('j-del').onclick = async () => { if (!confirm('Remove this person from the incident and the OSHA log?')) return;
+    const { error } = await sb.from('incident_injuries').delete().eq('id', x.id); if (error) { $('j-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; } show(i.id); };
+  $('j-save').onclick = async () => {
+    const row = { incident_id: i.id, driver_id: $('j-driver').value || null, terminal_id: $('j-term').value || null, injury_type: $('j-type').value };
+    document.querySelectorAll('[data-b]').forEach(c => row[c.dataset.b] = c.checked);
+    document.querySelectorAll('[data-v]').forEach(f => { const k = f.dataset.v, v = f.value.trim();
+      row[k] = k === 'days_away' || k === 'days_restricted' ? Math.min(180, Math.max(0, +v || 0)) : k === 'osha_reported_at' ? (v ? new Date(v).toISOString() : null) : (v || null); });
+    if (!row.person_name) { $('j-msg').innerHTML = '<span class="error">Name who was hurt.</span>'; return; }
+    const r = x.id ? await sb.from('incident_injuries').update(row).eq('id', x.id) : await sb.from('incident_injuries').insert(row);
+    if (r.error) { $('j-msg').innerHTML = `<span class="error">${esc(r.error.message)}${/incident_injuries|schema cache/.test(r.error.message) ? ' — run 86_safety_dashboard.sql in the SQL Editor.' : ''}</span>`; return; }
+    show(i.id);
+  };
+  $('inj-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // The office takes a report by phone, or corrects one

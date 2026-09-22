@@ -335,6 +335,20 @@ $('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (t
 // ---------- Editor ----------
 $('new-btn').onclick = () => edit(null);
 $('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history.replaceState(null, '', 'equipment.html'); render(); };
+// 86: a one-line safety record, linking to the dashboard for just this one
+async function safetyLine(kind, rec) {
+  let el = document.getElementById('ed-safety');
+  if (!el) { el = document.createElement('span'); el.id = 'ed-safety'; el.className = 'mini'; el.style.marginLeft = '10px'; $('ed-status').after(el); }
+  el.innerHTML = '';
+  if (!rec || (window.RC_ACCESS && !window.RC_ACCESS.can('safety'))) return;
+  const since = new Date(); since.setFullYear(since.getFullYear() - 3);
+  const col = kind === 'driver' ? 'driver_id' : rec.unit_type === 'trailer' ? 'trailer_id' : 'truck_id';
+  const { data, error } = await sb.from('incidents').select('preventable').eq(col, rec.id).gte('occurred_at', since.toISOString());
+  if (error || (cur && cur.id !== rec.id)) return;
+  const n = data.length, p = data.filter(x => x.preventable === 'preventable').length;
+  const param = kind === 'driver' ? 'driver' : rec.unit_type === 'trailer' ? 'trailer' : 'truck';
+  el.innerHTML = `<a href="safety.html?${param}=${rec.id}">Safety: ${n ? `${n} incident${n === 1 ? '' : 's'} in 3 years${p ? ` (${p} preventable)` : ''}` : 'no incidents in 3 years'} →</a>`;
+}
 function edit(u, quiet) {
   cur = u;
   FIELDS.forEach(f => { $('f-' + f).value = u && u[f] != null ? u[f] : ''; });
@@ -343,6 +357,7 @@ function edit(u, quiet) {
   if (!u) $('f-unit_type').value = 'tractor';
   $('ed-title').textContent = u ? `${u.unit_no}` : 'New unit';
   $('ed-status').innerHTML = u ? (u.active ? '<span class="pill p-ok">In service</span>' : '<span class="pill p-none">Retired</span>') : '';
+  safetyLine('unit', u);
   $('oos-wrap').hidden = !(u && !u.active);
   $('active-btn').hidden = !u; $('active-btn').textContent = u && !u.active ? 'Put back in service' : 'Retire';
   $('active-btn').classList.toggle('danger', !!(u && u.active));

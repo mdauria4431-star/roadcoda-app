@@ -381,6 +381,20 @@ $('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (t
 $('new-btn').onclick = () => edit(null);
 $('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history.replaceState(null, '', 'drivers.html'); render(); };
 
+// 86: a one-line safety record, linking to the dashboard for just this one
+async function safetyLine(kind, rec) {
+  let el = document.getElementById('ed-safety');
+  if (!el) { el = document.createElement('span'); el.id = 'ed-safety'; el.className = 'mini'; el.style.marginLeft = '10px'; $('ed-status').after(el); }
+  el.innerHTML = '';
+  if (!rec || (window.RC_ACCESS && !window.RC_ACCESS.can('safety'))) return;
+  const since = new Date(); since.setFullYear(since.getFullYear() - 3);
+  const col = kind === 'driver' ? 'driver_id' : rec.unit_type === 'trailer' ? 'trailer_id' : 'truck_id';
+  const { data, error } = await sb.from('incidents').select('preventable').eq(col, rec.id).gte('occurred_at', since.toISOString());
+  if (error || (cur && cur.id !== rec.id)) return;
+  const n = data.length, p = data.filter(x => x.preventable === 'preventable').length;
+  const param = kind === 'driver' ? 'driver' : rec.unit_type === 'trailer' ? 'trailer' : 'truck';
+  el.innerHTML = `<a href="safety.html?${param}=${rec.id}">Safety: ${n ? `${n} incident${n === 1 ? '' : 's'} in 3 years${p ? ` (${p} preventable)` : ''}` : 'no incidents in 3 years'} →</a>`;
+}
 function edit(d, quiet) {
   cur = d;
   FIELDS.forEach(f => { $('f-' + f).value = d && d[f] != null ? d[f] : ''; });
@@ -389,6 +403,7 @@ function edit(d, quiet) {
   $('f-trip_mode').closest('label').hidden = !!(d && !('trip_mode' in d));   // before 67_trip_sheets.sql
   $('f-driver_type').closest('label').hidden = !!(d && !('driver_type' in d));   // before 60_payroll_rules.sql
   $('ed-status').innerHTML = d ? (d.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-none">Inactive</span>') : '';
+  safetyLine('driver', d);
   $('end-wrap').hidden = !(d && !d.active);
   $('active-btn').hidden = !d;
   $('active-btn').textContent = d && !d.active ? 'Reactivate' : 'Deactivate';

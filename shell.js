@@ -53,11 +53,11 @@
   var GROUPS = [
     { name: 'Daily', items: ['index.html', 'dispatch.html', 'planner.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'office-payroll.html', 'profit.html', 'tolls.html', 'ifta.html', 'qb-export.html'] },
-    { name: 'Safety', items: ['incidents.html', 'claims.html', 'compliance.html', 'retention.html', 'handbooks.html'] },
+    { name: 'Safety', items: ['safety.html', 'incidents.html', 'claims.html', 'compliance.html', 'retention.html', 'handbooks.html'] },
     { name: 'Setup', items: ['getting-started.html', 'customers.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'users.html', 'features.html', 'devices.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'devices.html': '▯', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'devices.html': '▯', 'getting-started.html': '✓', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
@@ -67,7 +67,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -181,6 +181,12 @@
       gs.href = 'getting-started.html'; gs.textContent = 'Getting started';
       if (here === 'getting-started.html') gs.className = 'on';
       nav.appendChild(gs); links['getting-started.html'] = gs;
+    }
+    if (!links['safety.html'] && (!acc || (acc.can && acc.can('safety')))) {
+      var sd = document.createElement('a');
+      sd.href = 'safety.html'; sd.textContent = 'Safety dashboard';
+      if (here === 'safety.html') sd.className = 'on';
+      nav.appendChild(sd); links['safety.html'] = sd;
     }
     if (!links['incidents.html'] && (!acc || (acc.can && acc.can('safety')))) {
       var il = document.createElement('a');
