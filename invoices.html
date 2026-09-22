@@ -109,6 +109,12 @@
       <div id="n-result" style="margin-top:14px"></div>
     </section>
 
+    <section class="card" id="wait-card" hidden>
+      <div class="row" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">Waiting to invoice</h2>
+        <span class="hint" style="margin:0">Delivered loads of customers set to "make the draft when delivered" — each draft is made as soon as what's missing comes in.</span></div>
+      <div id="wait"></div>
+    </section>
+
     <section class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
         <h2 style="margin:0">All invoices</h2>
@@ -304,6 +310,31 @@ async function loadList() {
       <td><span class="pill st-${i.status}">${STATUS[i.status]}</span></td></tr>`;
   }).join('') || '<tr><td colspan="7">No invoices yet.</td></tr>';
   document.querySelectorAll('#list tr[data-id]').forEach(tr => tr.onclick = () => showInvoice(tr.dataset.id));
+  // Drafts the system made on delivery (74)
+  const ids = data.map(i => i.id);
+  if (ids.length) sb.from('invoices').select('id').in('id', ids).not('auto_created_at', 'is', null).then(({ data: a, error: e }) => {
+    if (e) return; (a || []).forEach(x => { const td = document.querySelector(`#list tr[data-id="${x.id}"] td:last-child`); if (td) td.insertAdjacentHTML('beforeend', ' <span class="pill" title="Made automatically when the load was delivered">auto</span>'); });
+  });
+  loadWaiting();
+}
+
+// Waiting to invoice (74): what each delivered load still needs before its draft is made
+async function loadWaiting() {
+  const { data, error } = await sb.rpc('auto_invoice_queue');
+  if (error || !(data || []).length) { $('wait-card').hidden = true; return; }
+  const canMake = !window.RC_ACCESS || window.RC_ACCESS.can('invoices', 'edit');
+  $('wait-card').hidden = false;
+  $('wait').innerHTML = `<div class="tablewrap"><table><thead><tr><th>Load</th><th>Date</th><th>Customer</th><th>Still missing</th><th></th></tr></thead><tbody>${data.map(w => `<tr>
+      <td class="mono"><a href="trip.html?load=${w.load_id}">${esc(w.load_no)}</a></td><td>${dt(w.service_date)}</td><td>${esc(w.customer)}</td>
+      <td>${(w.missing || []).length ? w.missing.map(esc).join('<br>') : '<span class="hint" style="margin:0">nothing — the draft is being made</span>'}</td>
+      <td>${canMake ? `<button class="btn small" data-make="${w.load_id}" data-missing="${(w.missing || []).length}">Make the draft now</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
+  document.querySelectorAll('[data-make]').forEach(b => b.onclick = async () => {
+    if (+b.dataset.missing && !confirm('Some things are still missing. Make the draft anyway? The missing items are written on the draft so the approver sees them.')) return;
+    b.disabled = true;
+    const { data: inv, error: e } = await sb.rpc('create_auto_load_invoice', { p_load: b.dataset.make, p_force: true });
+    if (e) { alert(e.message); b.disabled = false; return; }
+    await loadList(); if (inv) showInvoice(inv);
+  });
 }
 
 // ---------- Detail ----------

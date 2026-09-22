@@ -269,6 +269,11 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    sigs: await (async () => {    // receiver signatures (74); nothing if not installed
+      if (!stopIds.length) return null;
+      const { data, error } = await sb.from('stop_signatures').select('stop_id, receiver_name, bol_no, refused, refused_reason, signed_at, receiver_notes, exceptions').in('stop_id', stopIds);
+      return error ? null : Object.fromEntries((data || []).map(x => [x.stop_id, x]));
+    })(),
     gps: await (async () => {     // GPS stop times from the ELD (73); nothing if not installed
       if (!stopIds.length) return null;
       const [g, c] = await Promise.all([sb.from('stop_gps').select('stop_id, eld_arrived_at, eld_departed_at').in('stop_id', stopIds), sb.from('carriers').select('geofence_flag_minutes').maybeSingle()]);
@@ -499,7 +504,7 @@ function stopsHtml(edit) {
     const done = ['delivered', 'exception'].includes(s.status);
     return `<tr id="s-${s.id}">
       <td class="n">${s.seq}</td>
-      <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}${routeLine(s)}${boxLine(s)}</td>
+      <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}${routeLine(s)}${boxLine(s)}${sigLine(s)}</td>
       <td class="n dim">${s.window_start ? hm(s.window_start) + '–' + hm(s.window_end) : hm(s.window_end) || '—'}</td>
       <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}>${gpsLine(s, 'arrived')}</td>
       <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}>${gpsLine(s, 'departed')}</td>
@@ -515,6 +520,16 @@ function stopsHtml(edit) {
   return `<div class="card"><header><h2>Stops</h2>${gpsFill ? '<button class="btn small" id="gps-fill" title="Fill empty arrival / departure times from the truck\'s GPS. Each is logged and can be undone.">Use GPS times</button>' : ''}<span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + sheetHtml(edit);
+}
+
+// ── Receiver signature (74): who signed, BOL #, or why there's none ──
+function sigLine(s) {
+  if (!T.sigs || s.stop_type === 'pickup') return '';
+  const g = T.sigs[s.id], ed = !T.locked && (!window.RC_ACCESS || window.RC_ACCESS.can('dispatch', 'edit') || window.RC_ACCESS.can('loads', 'edit'));
+  const edit = ed ? ` <a href="#" class="mini" data-sigedit="${s.id}">edit name / BOL</a>` : '';
+  if (!g) return s.status === 'delivered' ? `<div class="mini">No signature${edit}</div>` : '';
+  const exc = (g.exceptions || []).length || g.receiver_notes;
+  return `<div class="mini">${g.refused ? `<span style="color:var(--warn)">Not signed: ${esc(g.refused_reason || '')}</span>` : `Signed${exc ? ' <b style="color:var(--late)">with exceptions</b>' : ''} by <b>${esc(g.receiver_name || '')}</b> <a href="#" data-sigview="${s.id}">view</a>`}${g.receiver_notes ? `<div style="color:var(--late)">Receiver noted: ${esc(g.receiver_notes)}</div>` : ''}${g.bol_no ? ` · ${/^bol/i.test(g.bol_no) ? '' : 'BOL '}${esc(g.bol_no)}` : ''}${edit}</div>`;
 }
 
 // ── GPS times from the truck (73): shown under the driver's time; highlighted when off by more than the tolerance ──
@@ -738,6 +753,23 @@ function wire(edit) {
     const { error } = await sb.rpc('resolve_stop_issue', { p_stop: b.dataset.resolveGo, p_resolution: inp.value });
     if (error) return fail(error);
     toast('OS&amp;D resolved'); load();
+  });
+
+  // Receiver signature (74): view it; the office can correct the name / BOL # (never the signature itself)
+  document.querySelectorAll('[data-sigview]').forEach(a => a.onclick = async (e) => {
+    e.preventDefault();
+    const { data, error } = await sb.from('stop_signatures').select('signature, receiver_name, signed_at').eq('stop_id', a.dataset.sigview).single(); if (error) return fail(error);
+    const w = window.open('', '_blank'); if (!w) return;
+    const ok = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(data.signature || '');
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Signature</title><body style="font-family:system-ui;padding:20px"><h3>${esc(data.receiver_name || '')}</h3><p>${new Date(data.signed_at).toLocaleString()}</p>${ok ? `<img src="${data.signature}" style="max-width:100%;border:1px solid #ccc">` : ''}</body>`); w.document.close();
+  });
+  document.querySelectorAll('[data-sigedit]').forEach(a => a.onclick = async (e) => {
+    e.preventDefault();
+    const g = T.sigs[a.dataset.sigedit] || {};
+    const name = prompt("Receiver's name:", g.receiver_name || ''); if (name === null) return;
+    const bol = prompt('BOL #:', g.bol_no || ''); if (bol === null) return;
+    const { error } = await sb.rpc('office_edit_signature', { p_stop: a.dataset.sigedit, p_name: name, p_bol: bol }); if (error) return fail(error);
+    toast('Saved'); load();
   });
 
   // Use GPS times (73): fill empty times through the normal, logged edit

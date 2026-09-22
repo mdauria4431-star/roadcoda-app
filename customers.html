@@ -170,6 +170,11 @@
       <div id="dc-msg" class="hint"></div>
       </details>
     </section>
+    <section class="card" id="sign-card" hidden>
+      <h2>Delivery signature &amp; invoicing</h2>
+      <div class="hint" style="margin:0 0 8px">What the driver collects at delivery, and whether the invoice draft is made as soon as the load is delivered. Nothing is ever sent automatically — the draft waits on Invoices for the right person to approve.</div>
+      <div id="sign-box"></div>
+    </section>
     <section class="card" id="portal-card" hidden>
       <h2>Customer portal</h2>
       <div class="hint" style="margin:0 0 8px">Which tabs this customer's logins can use. Their portal admin can switch these off for their own people, never on.</div>
@@ -326,7 +331,7 @@ function pickCustomer() {
     const extra = par ? `Account under <a href="#" data-go="${par.id}">${esc(par.name)}</a>; anything not set here uses the settings on ${esc(par.name)}`
       : kids.length ? `Accounts under it: ${kids.map(k => `<a href="#" data-go="${k.id}">${esc(k.name)}</a>`).join(', ')}` : '';
     if (extra) $('cust-info').innerHTML += (($('cust-info').innerHTML ? '<br>' : '') + extra);
-    loadDl(); loadAct(); loadDelays(); loadPortalTabs();
+    loadDl(); loadAct(); loadDelays(); loadPortalTabs(); loadSignRules();
   }
 }
 $('cust-info').onclick = (e) => { const a = e.target.closest('a[data-go]'); if (!a) return; e.preventDefault(); $('cust').value = a.dataset.go; $('cust').onchange(); };
@@ -366,6 +371,37 @@ async function loadDelayCodes() {
   $('cdc-maps').innerHTML = delayCodes.map(d => `<option value="${d.id}">${esc(d.code)} — ${esc(d.name)}</option>`).join('');
 }
 
+// Delivery signature & invoicing (74): this customer's own choice, else its main customer's, else the defaults
+const REQ = [['signature', 'Receiver signature'], ['receiver_name', 'Receiver name'], ['bol', 'BOL #'], ['pod', 'POD photo'], ['times', 'Arrival / departure times'],
+             ['counts', 'Delivered counts'], ['po', 'Customer PO #'], ['closeout', 'Trip closed out']];
+async function loadSignRules() {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const [me, car] = await Promise.all([sb.from('customers').select('sign_rule, auto_invoice, auto_requires, master_bill, parent_customer_id').eq('id', c.id).maybeSingle(),
+                                       sb.from('carriers').select('require_closeout').maybeSingle()]);
+  if (me.error) { $('sign-card').hidden = true; return; }           // before 74
+  $('sign-card').hidden = false;
+  const m = me.data, par = m.parent_customer_id ? (await sb.from('customers').select('name, sign_rule, auto_invoice, auto_requires, master_bill').eq('id', m.parent_customer_id).maybeSingle()).data : null;
+  const eff = { sign: m.sign_rule ?? par?.sign_rule ?? 'optional', auto: m.auto_invoice ?? par?.auto_invoice ?? false, req: m.auto_requires ?? par?.auto_requires ?? ['signature', 'times', 'counts'] };
+  const master = par ? par.master_bill : m.master_bill, dis = window.RC_ACCESS && !window.RC_ACCESS.can('customers', 'edit') ? ' disabled' : '';
+  const from = par ? `same as ${esc(par.name)}` : 'the default';
+  $('sign-box').innerHTML = `<div class="grid">
+      <label>Receiver signature at delivery<select id="sr-sign"${dis}><option value="">${esc(from)} (${eff.sign})</option>${['off', 'optional', 'required'].map(v => `<option value="${v}" ${m.sign_rule === v ? 'selected' : ''}>${{ off: 'Off — don\'t ask', optional: 'Optional — driver may skip', required: 'Ask every time — sign, or say why not (e.g. after hours)' }[v]}</option>`).join('')}</select></label>
+      <label>Make the invoice draft when delivered<select id="sr-auto"${dis}><option value="">${esc(from)} (${eff.auto ? 'on' : 'off'})</option><option value="true" ${m.auto_invoice === true ? 'selected' : ''}>On</option><option value="false" ${m.auto_invoice === false ? 'selected' : ''}>Off</option></select></label>
+    </div>
+    ${master ? '<div class="hint" style="margin:6px 0 0">This customer is billed on a master bill, so drafts aren\'t made per load — keep making its invoices on Invoices.</div>' : ''}
+    <div style="margin-top:10px"><label style="flex-direction:row;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="sr-own" ${m.auto_requires ? 'checked' : ''} style="height:auto"${dis}> Choose what must be complete before the draft is made</label>
+      <span class="hint" style="margin:0">(otherwise ${esc(from)}: ${eff.req.map(k => REQ.find(r => r[0] === k)?.[1]).join(', ')})</span>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">${REQ.map(([k, l]) => `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" data-req="${k}" ${eff.req.includes(k) ? 'checked' : ''} ${m.auto_requires ? '' : 'disabled'} style="height:auto"${dis}> ${l}</label>`).join('')}</div>
+      ${car.data?.require_closeout ? '<div class="hint" style="margin:6px 0 0">You use trip close-out, so a draft always waits for the trip to be closed out.</div>' : ''}</div>`;
+  const save = async () => {
+    const upd = { sign_rule: $('sr-sign').value || null, auto_invoice: $('sr-auto').value === '' ? null : $('sr-auto').value === 'true',
+                  auto_requires: $('sr-own').checked ? [...document.querySelectorAll('[data-req]')].filter(x => x.checked).map(x => x.dataset.req) : null };
+    const { error } = await sb.from('customers').update(upd).eq('id', c.id);
+    if (error) { flash(error.message); return; }
+    flash('Saved'); loadSignRules();
+  };
+  ['sr-sign', 'sr-auto', 'sr-own'].forEach(id => $(id).onchange = save); document.querySelectorAll('[data-req]').forEach(x => x.onchange = save);
+}
 // Customer portal tabs (72): this customer's own choice, else its main customer's, else the carrier default
 const PTABS = [['loads', 'Loads / deliveries'], ['invoices', 'Invoices'], ['file', 'Activity file'], ['boxes', 'Containers']];
 async function loadPortalTabs() {

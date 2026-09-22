@@ -370,6 +370,24 @@
     <div class="card inc-sec" id="inc-recent" hidden></div>
   </section>
 
+  <section id="sg-view" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Receiver signature</h1>
+    <div class="meta" id="sg-where" style="font-size:16px"></div>
+    <div id="sg-summary" class="card" style="padding:10px 12px;font-size:15px"></div>
+    <div><b>Anything short, damaged or over?</b> <span class="meta">The receiver notes it here before signing.</span>
+      <div style="display:flex;gap:8px;margin-top:6px"><button class="btn" data-ex="short" style="flex:1;min-height:44px">Short</button><button class="btn" data-ex="damaged" style="flex:1;min-height:44px">Damaged</button><button class="btn" data-ex="over" style="flex:1;min-height:44px">Over</button></div>
+      <textarea id="sg-notes" rows="2" placeholder="Receiver's notes, e.g. 1 pallet crushed, short 2 totes" style="width:100%;margin-top:8px;font-size:16px;border-radius:10px;padding:8px"></textarea></div>
+    <label>Receiver's name<input id="sg-name" autocomplete="off"></label>
+    <label>BOL # (if there is one)<input id="sg-bol" autocomplete="off"></label>
+    <div><b>Receiver signs here</b> <button class="btn" id="sg-clear" style="min-height:34px;margin-left:8px">Clear</button><canvas class="sig" id="sg-sig"></canvas></div>
+    <button class="btn primary" id="sg-ok" style="min-height:56px;font-size:18px">Signed — finish delivery</button>
+    <details id="sg-no-box"><summary style="font-size:16px;padding:6px 0">Receiver not available / won't sign</summary>
+      <label>Why<select id="sg-why"><option value="">Choose…</option><option>Store closed — left per instructions</option><option>No one available to sign</option><option>Receiver refused to sign</option><option>Drop-and-hook / unattended delivery</option><option>Other</option></select></label>
+      <input id="sg-note" placeholder="Short note (required for Other)" style="margin-top:8px">
+      <button class="btn" id="sg-refuse" style="min-height:48px;margin-top:8px;width:100%">Finish delivery without a signature</button></details>
+    <button class="btn" id="sg-skip" style="min-height:44px">Skip — no signature needed</button>
+    <button class="btn" id="sg-back" style="min-height:44px">Back</button>
+  </section>
   <section id="hb-view" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1 id="hb-h">Handbook</h1>
     <iframe id="hb-doc" title="Handbook" sandbox="" style="width:100%;height:62vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
@@ -751,6 +769,7 @@ async function loadStops() {
   let elsewhere = 0;
   if (devL) { elsewhere = loads.filter(l => l.truck_id && l.truck_id !== devL.equipment_id && l.status !== 'delivered').length;
               loads = loads.filter(l => !l.truck_id || l.truck_id === devL.equipment_id); }
+  STOPMAP = Object.fromEntries((loads || []).flatMap(l => l.stops || []).map(x => [x.id, x]));   // for the signature screen (75)
   // Delivered loads drop off; the driver sees one open load at a time
   const all = loads;
   loads = loads.filter(l => l.status !== 'delivered');
@@ -903,13 +922,26 @@ async function act(btn) {
   const id = btn.dataset.id, ev = btn.dataset.act;
   let counts = null, note = null, type = null;
   const readCounts = () => { const c = {}; document.querySelectorAll(`#counts-${id} input[data-item]`).forEach(inp => c[inp.dataset.item] = parseInt(inp.value || '0', 10)); return c; };
-  if (ev === 'deliver') counts = readCounts();
+  let evSend = ev;
+  if (ev === 'deliver') {
+    counts = readCounts();
+    const res = await askSignature(id, { counts });   // receiver signature (74) — false if the driver backs out
+    if (!res) return;
+    if (res.exceptions) {                            // the receiver noted shortage / damage / overage (75): record it as OS&D
+      evSend = 'exception'; type = res.exceptions.includes('damaged') ? 'damaged' : res.exceptions[0]; note = 'Receiver noted: ' + res.notes;
+    }
+  }
   if (ev === 'exception') {
     type = $('it-' + id).value;
     note = $('in-' + id).value.trim() || null;
     if (!type) { alert('Choose what happened.'); return; }
     if (['damaged', 'other'].includes(type) && !note) { alert('Add a short note describing what happened.'); return; }
     if (!['refused', 'closed'].includes(type)) counts = readCounts();   // refused / closed = nothing delivered
+    if (['damaged', 'short', 'over'].includes(type)) {                   // the receiver confirms or adds to it (75)
+      const res = await askSignature(id, { counts, issueType: type, note });
+      if (!res) return;
+      if (res.exceptions && res.notes && res.notes !== note) note = [note, 'Receiver noted: ' + res.notes].filter(Boolean).join(' — ');
+    }
   }
   btn.disabled = true;
   if (ev === 'arrive' && $('so-' + id)) {   // hub miles customer: odometer at every stop
@@ -918,7 +950,7 @@ async function act(btn) {
     const { error: oe } = await sb.rpc('driver_stop_odometer', { p_stop_id: id, p_reading: v });
     if (oe) { alert(oe.message); btn.disabled = false; return; }
   }
-  const { error } = await sb.rpc('driver_stop_event', { p_stop_id: id, p_event: ev, p_counts: counts, p_note: note, p_type: type });
+  const { error } = await sb.rpc('driver_stop_event', { p_stop_id: id, p_event: evSend, p_counts: counts, p_note: note, p_type: type });
   if (error) { alert(error.message); btn.disabled = false; return; }
   if (ev !== 'arrive') kickNotices();
   loadStops();
@@ -1036,7 +1068,7 @@ const YN = [
 const SHOTS = [['scene', 'The scene'], ['our_vehicle', 'Our truck damage'], ['other_vehicle', 'Other vehicle'], ['plate', 'Their plate'],
   ['insurance_card', 'Their insurance card'], ['license', 'Their licence'], ['cargo', 'Cargo'], ['police', 'Police / report card'], ['injury', 'Injury'], ['other', 'Anything else']];
 let INC = null, INCF = {}, incTimer = null;
-function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view', 'hb-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
+function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view', 'hb-view', 'sg-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
 async function openIncident(existing) {
   incShow('inc-view');
   $('inc-call').href = officePhone ? 'tel:' + officePhone.replace(/[^\d+]/g, '') : '#';
@@ -1187,6 +1219,64 @@ $('yard-btn').onclick = async () => {
   if (error) { alert(error.message); return; }
   SHIFT = data; paintShift();
 };
+
+// ---------- Receiver signature before "Delivered" (74) ----------
+// The customer's rule decides: off (nothing), optional (Skip allowed), required (sign, or say why not).
+let sgDrawn = false, STOPMAP = {};
+function sgPad() {
+  const c = $('sg-sig'), r = c.getBoundingClientRect(); c.width = r.width * 2 || 600; c.height = r.height * 2 || 340;
+  const g = c.getContext && c.getContext('2d'); if (!g) return; g.lineWidth = 5; g.lineCap = 'round'; g.strokeStyle = '#111'; g.clearRect(0, 0, c.width, c.height); sgDrawn = false;
+  let down = false; const at = (e) => { const b = c.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [(t.clientX - b.left) * c.width / b.width, (t.clientY - b.top) * c.height / b.height]; };
+  c.onpointerdown = (e) => { down = true; const [x, y] = at(e); g.beginPath(); g.moveTo(x, y); };
+  c.onpointermove = (e) => { if (!down) return; const [x, y] = at(e); g.lineTo(x, y); g.stroke(); sgDrawn = true; };
+  c.onpointerup = c.onpointerleave = () => { down = false; };
+}
+// pre = { counts: {itemId: qty}, issueType, note } — what the driver has entered so far.
+// Resolves false (driver backed out), true, or { exceptions: [...], notes } when the receiver noted shortage / damage / overage.
+async function askSignature(stopId, pre) {
+  pre = pre || {};
+  const { data: rule, error } = await sb.rpc('driver_signature_rule', { p_stop: stopId });
+  if (error || !rule || rule.rule === 'off' || rule.signed) return true;      // before 74, pickups, or already signed
+  return new Promise((resolve) => {
+    $('sg-where').textContent = rule.consignee || ''; $('sg-name').value = ''; $('sg-bol').value = ''; $('sg-why').value = ''; $('sg-note').value = '';
+    $('sg-no-box').open = false; $('sg-skip').hidden = rule.rule !== 'optional';
+    // What's being signed for: ordered vs counted
+    const st = STOPMAP[stopId] || {}, items = st.stop_items || [], counts = pre.counts || {};
+    const rows = items.map(i => { const got = counts[i.id] ?? i.qty_delivered, diff = got == null ? 0 : got - i.qty_ordered;
+      return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span>${esc(i.unit_type)}</span><span>${got ?? '—'} of ${i.qty_ordered}${diff ? ` <b style="color:var(--late)">${diff < 0 ? 'short ' + (-diff) : 'over ' + diff}</b>` : ''}</span></div>`; }).join('');
+    $('sg-summary').innerHTML = `<b>Signing for</b>${rows || '<div class="meta">No item counts on this stop.</div>'}`;
+    const ex = new Set(pre.issueType && ['short', 'damaged', 'over'].includes(pre.issueType) ? [pre.issueType] : []);
+    items.forEach(i => { const got = counts[i.id]; if (got != null && got < i.qty_ordered) ex.add('short'); if (got != null && got > i.qty_ordered) ex.add('over'); });
+    $('sg-notes').value = pre.note || '';
+    const paint = () => { document.querySelectorAll('#sg-view [data-ex]').forEach(b => b.classList.toggle('primary', ex.has(b.dataset.ex)));
+      $('sg-ok').textContent = ex.size || $('sg-notes').value.trim() ? 'Signed with exceptions — finish' : 'Signed — finish delivery'; };
+    document.querySelectorAll('#sg-view [data-ex]').forEach(b => b.onclick = () => { ex.has(b.dataset.ex) ? ex.delete(b.dataset.ex) : ex.add(b.dataset.ex); paint(); });
+    $('sg-notes').oninput = paint; paint();
+    incShow('sg-view'); setTimeout(sgPad, 50);
+    const done = (v) => { incShow('app'); resolve(v); };
+    const save = async (refused) => {
+      const reason = refused ? [$('sg-why').value, $('sg-note').value.trim()].filter(Boolean).join(' — ') : null;
+      if (refused && (!$('sg-why').value || ($('sg-why').value === 'Other' && !$('sg-note').value.trim()))) { alert('Say why there\'s no signature.'); return; }
+      if (!refused) {
+        if ($('sg-name').value.trim().length < 2) { alert('Type the receiver\'s name.'); return; }
+        if (!sgDrawn) { alert('Have the receiver sign in the box.'); return; }
+      }
+      const notes = $('sg-notes').value.trim();
+      if (ex.size && notes.length < 3) { alert('Write what\'s short, damaged or over.'); return; }
+      const pos = typeof where === 'function' ? where() : {};
+      const { error: e } = await sb.rpc('driver_sign_stop', { p_stop: stopId, p_name: $('sg-name').value.trim() || null, p_signature: refused ? null : $('sg-sig').toDataURL('image/png'),
+        p_bol: $('sg-bol').value.trim() || null, p_refused: refused, p_reason: reason, p_lat: pos.lat ?? null, p_lng: pos.lng ?? null,
+        p_notes: notes || null, p_exceptions: [...ex] });
+      if (e) { alert(e.message); return; }
+      done(ex.size ? { exceptions: [...ex], notes } : true);
+    };
+    $('sg-clear').onclick = sgPad;
+    $('sg-ok').onclick = () => save(false);
+    $('sg-refuse').onclick = () => save(true);
+    $('sg-skip').onclick = () => done(true);
+    $('sg-back').onclick = () => done(false);
+  });
+}
 
 // ---------- Handbook to read and sign (66) ----------
 // Shown in a sandboxed frame (no scripts); never signed while moving.
