@@ -7,8 +7,16 @@
   const SCREEN_OF = {
     'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
-    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users',
+    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users', 'features.html': 'home',
   };
+  // Pages that belong to a module the carrier can switch off (82)
+  const FEATURE_OF = { 'containers.html': 'containers', 'ifta.html': 'ifta', 'claims.html': 'claims', 'compliance.html': 'compliance', 'handbooks.html': 'handbooks',
+    'retention.html': 'retention', 'office-payroll.html': 'office_payroll', 'qb-export.html': 'quickbooks', 'tolls.html': 'tolls', 'profit.html': 'profit',
+    'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets' };
+  const FEATURE_NAME = { containers: 'Returnable containers', ifta: 'IFTA fuel tax', claims: 'Claims & subrogation', compliance: 'Driver files & inspections', handbooks: 'Employee handbooks',
+    retention: 'Onboarding & retention', office_payroll: 'Office staff payroll', quickbooks: 'QuickBooks export', tolls: 'Tolls', profit: 'Profit reports', activity_files: 'Customer activity files',
+    ratings: 'Delivery ratings', trip_sheets: 'Trip sheets' };
+  const pageFile = location.pathname.split('/').pop() || 'index.html';
   const NAMES = { dispatch: 'Dispatch', loads: 'Loads', customers: 'Customers', drivers: 'Drivers', equipment: 'Equipment', rates: 'Rates',
                   invoices: 'Invoices', tolls: 'Tolls', payroll: 'Payroll', money: 'Profit (needs the money switch)', safety: 'Incidents', containers: 'Containers', office_payroll: 'Office payroll', ifta: 'IFTA / fuel tax', integrations: 'Integrations', users: 'Users' };
   const page = SCREEN_OF[location.pathname.split('/').pop()] ?? null;
@@ -50,6 +58,15 @@
     if (data.role === 'driver') { resolveReady(data); return; }
     const can = (s, lvl) => data.owner || (!!data.screens && !!data.screens[s] && (lvl !== 'edit' || data.screens[s] === 'edit'));
     data.can = can; data.money = can('money'); data.pay = data.money || can('payroll');
+    // Feature modules (82): anything tagged data-feature="x" hides while x is switched off — including parts drawn later
+    const feats = data.features || null;
+    data.feature = (k) => !feats || feats[k] !== false;
+    if (feats) {
+      const off = Object.keys(feats).filter(k => feats[k] === false);
+      if (off.length) { const st = document.createElement('style'); st.textContent = off.map(k => `[data-feature="${k}"]`).join(',') + '{display:none!important}'; document.head.appendChild(st); }
+    }
+    // A new carrier picks a preset first (owner, or whoever may switch features)
+    if (data.features && !data.feature_preset && (data.owner || can('users', 'edit')) && pageFile !== 'features.html') { location.href = 'features.html?welcome=1'; return; }
     window.RC_ACCESS = data;
     if (data.money) document.documentElement.classList.add('rc-money');
     if (data.pay) document.documentElement.classList.add('rc-pay');
@@ -57,19 +74,20 @@
     // Menu: remove screens they can't open; add Users (if allowed) and My account
     const nav = document.querySelector('header nav');
     if (nav) {
-      nav.querySelectorAll('a').forEach((a) => { const s = SCREEN_OF[a.getAttribute('href')]; if (s && s !== 'home' && !can(s)) a.remove(); });
+      nav.querySelectorAll('a').forEach((a) => { const h = a.getAttribute('href'), s = SCREEN_OF[h]; if ((s && s !== 'home' && !can(s)) || (FEATURE_OF[h] && !data.feature(FEATURE_OF[h]))) a.remove(); });
       // Every page gets the same full menu: add any standard page this page's own list left out,
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
         ['templates.html', 'Templates'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
         ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['compliance.html', 'Compliance'], ['claims.html', 'Claims'], ['handbooks.html', 'Handbooks'],
         ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
-        ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['driver.html', 'Driver app']];
+        ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['features.html', 'Features'], ['driver.html', 'Driver app']];
       const here = location.pathname.split('/').pop() || 'index.html';
       FULL.forEach(([h, t]) => {
         if (nav.querySelector(`a[href="${h}"]`)) return;
         const s = SCREEN_OF[h];
         if (s && s !== 'home' && !can(s)) return;
+        if (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) return;
         const a = document.createElement('a'); a.href = h; a.textContent = t; if (h === here) a.className = 'on';
         nav.appendChild(a);
       });
@@ -81,7 +99,10 @@
         const a = document.createElement('a'); a.href = 'account.html'; a.textContent = 'My account'; nav.appendChild(a);
       }
     }
-    if (page && page !== 'home' && !can(page)) {
+    if (FEATURE_OF[pageFile] && !data.feature(FEATURE_OF[pageFile])) {
+      document.documentElement.classList.add('rc-blocked');
+      note(`<b>${FEATURE_NAME[FEATURE_OF[pageFile]] || 'This module'}</b> is switched off for your company. ${data.owner || can('users', 'edit') ? '<a href="features.html">Switch it on under Features</a>.' : 'Ask the owner if you need it.'} <a href="index.html">Go to Home</a>`);
+    } else if (page && page !== 'home' && !can(page)) {
       document.documentElement.classList.add('rc-blocked');
       note(`You don't have access to <b>${NAMES[page] || 'this screen'}</b>. Ask the owner if you need it. <a href="index.html">Go to Home</a>`);
     } else if (page && page !== 'home' && !can(page, 'edit')) {

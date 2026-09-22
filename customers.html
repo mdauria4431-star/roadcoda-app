@@ -244,7 +244,7 @@
         </fieldset>
         <div class="row" style="margin-top:10px"><button class="btn primary" id="dl-save">Save</button><button class="btn" id="dl-new" type="button">Cancel</button><span id="dl-msg"></span></div>
         <div id="dl-used" class="note" hidden></div>
-        <div id="dl-geo" class="note" hidden></div>
+        <div id="dl-geo" class="note" data-feature="gps_times" hidden></div>
       </details>
 
       <div class="tablewrap"><table style="min-width:960px">
@@ -423,10 +423,10 @@ async function loadSignRules() {
   const from = par ? `same as ${esc(par.name)}` : 'the default';
   $('sign-box').innerHTML = `<div class="grid">
       <label>Receiver signature at delivery<select id="sr-sign"${dis}><option value="">${esc(from)} (${eff.sign})</option>${['off', 'optional', 'required'].map(v => `<option value="${v}" ${m.sign_rule === v ? 'selected' : ''}>${{ off: 'Off — don\'t ask', optional: 'Optional — driver may skip', required: 'Ask every time — sign, or say why not (e.g. after hours)' }[v]}</option>`).join('')}</select></label>
-      <label>Make the invoice draft when delivered<select id="sr-auto"${dis}><option value="">${esc(from)} (${eff.auto ? 'on' : 'off'})</option><option value="true" ${m.auto_invoice === true ? 'selected' : ''}>On</option><option value="false" ${m.auto_invoice === false ? 'selected' : ''}>Off</option></select></label>
+      <label data-feature="auto_invoice">Make the invoice draft when delivered<select id="sr-auto"${dis}><option value="">${esc(from)} (${eff.auto ? 'on' : 'off'})</option><option value="true" ${m.auto_invoice === true ? 'selected' : ''}>On</option><option value="false" ${m.auto_invoice === false ? 'selected' : ''}>Off</option></select></label>
     </div>
     ${master ? '<div class="hint" style="margin:6px 0 0">This customer is billed on a master bill, so drafts aren\'t made per load — keep making its invoices on Invoices.</div>' : ''}
-    <div style="margin-top:10px"><label style="flex-direction:row;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="sr-own" ${m.auto_requires ? 'checked' : ''} style="height:auto"${dis}> Choose what must be complete before the draft is made</label>
+    <div data-feature="auto_invoice" style="margin-top:10px"><label style="flex-direction:row;align-items:center;gap:6px;font-weight:600"><input type="checkbox" id="sr-own" ${m.auto_requires ? 'checked' : ''} style="height:auto"${dis}> Choose what must be complete before the draft is made</label>
       <span class="hint" style="margin:0">(otherwise ${esc(from)}: ${eff.req.map(k => REQ.find(r => r[0] === k)?.[1]).join(', ')})</span>
       <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">${REQ.map(([k, l]) => `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" data-req="${k}" ${eff.req.includes(k) ? 'checked' : ''} ${m.auto_requires ? '' : 'disabled'} style="height:auto"${dis}> ${l}</label>`).join('')}</div>
       ${car.data?.require_closeout ? '<div class="hint" style="margin:6px 0 0">You use trip close-out, so a draft always waits for the trip to be closed out.</div>' : ''}</div>`;

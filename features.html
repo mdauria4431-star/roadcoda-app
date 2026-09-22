@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Features · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  .btn{height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer}
+  main{padding:14px 16px 50px!important;display:flex;flex-direction:column;gap:14px;max-width:1100px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px}
+  h1{margin:0;font-size:22px} h2{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .pad{padding:14px 18px}
+  .mini{font-size:12.5px;color:var(--ink-3)}
+  .presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+  .preset{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+  .preset.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .preset b{font-size:17px} .preset ul{margin:0;padding-left:18px;font-size:13px;color:var(--ink-2)}
+  .core{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-block;padding:3px 10px;border-radius:999px;border:1px solid var(--line);font-size:12.5px}
+  .grp{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+  .mod{display:flex;gap:12px;align-items:flex-start;padding:12px 16px;border-top:1px solid var(--line-soft)}
+  .mod:first-of-type{border-top:0}
+  .mod .w{flex:1} .mod .t{font-weight:600}
+  .sw{position:relative;width:46px;height:26px;flex:none;margin-top:2px}
+  .sw input{opacity:0;width:0;height:0}
+  .sw span{position:absolute;inset:0;border-radius:13px;background:var(--panel-2);border:1px solid var(--line);transition:.15s;cursor:pointer}
+  .sw span:before{content:'';position:absolute;width:20px;height:20px;left:2px;top:2px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .sw input:checked + span{background:var(--accent);border-color:var(--accent)}
+  .sw input:checked + span:before{transform:translateX(20px)}
+  .sw input:disabled + span{opacity:.5;cursor:default}
+  .tag{font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+  .tag.ok{color:var(--ok);border-color:var(--ok)}
+  .toast{position:fixed;right:18px;bottom:18px;max-width:440px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a class="on" href="features.html">Features</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div>
+      <h1 id="title">What RoadCoda can do</h1>
+      <div class="mini" id="lead" style="margin-top:4px;font-size:14px">Everything below is built in. Switch on what you use today — the rest is here whenever you're ready. Turning something off hides it and keeps its data.</div>
+    </div>
+
+    <div id="preset-box">
+      <h2 style="margin-bottom:8px" id="preset-h">Start with</h2>
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <div class="card pad">
+      <h2 style="margin-bottom:8px">Always included</h2>
+      <div class="core" id="core"></div>
+    </div>
+
+    <div id="groups" style="display:flex;flex-direction:column;gap:14px"></div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let CAT = [], ON = {}, PRESET = null, CAN = false, tt = null;
+const WELCOME = new URLSearchParams(location.search).get('welcome') === '1';
+function toast(t) { $('toast').textContent = t; $('toast').hidden = false; clearTimeout(tt); tt = setTimeout(() => $('toast').hidden = true, 4000); }
+
+const CORE = ['Dispatch board & loads', 'Load templates', 'Customers & delivery locations', 'Route & sort codes', 'Rates, detention & trip types', 'Invoices', 'Driver payroll',
+  'Drivers & trucks (truck devices)', 'Driver app: stops, scans, photos', 'Receiver signatures & exceptions', 'Customer portal', 'Messages', 'Close-out checks', 'Accident & injury reporting', 'Office users & permissions'];
+const PRESETS = [
+  ['essentials', 'Essentials', 'Run loads, prove delivery, bill and pay — nothing extra.', 'Everything under "Always included"'],
+  ['growing', 'Growing fleet', 'Essentials plus the tools most fleets add first.', 'Tolls, QuickBooks, profit, activity files, invoice drafts on delivery, documents, GPS stop times, trip sheets, driver files, IFTA, payroll company files'],
+  ['everything', 'Everything', 'The complete system — every module switched on.', 'All modules (add-ons are separate)']];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || ''} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  $('app').hidden = false;
+  const [c, can] = await Promise.all([sb.from('feature_catalog').select('*').order('sort'), sb.rpc('feature_can_change')]);
+  if (c.error) { $('groups').innerHTML = `<div class="card pad">${esc(c.error.message)} — run 82_feature_modules.sql in the SQL Editor.</div>`; return; }
+  CAT = c.data || []; CAN = can.data === true;
+  const a = window.RC_ACCESS || {}; ON = a.features || {}; PRESET = a.feature_preset || null;
+  draw();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+function draw() {
+  const first = WELCOME || !PRESET;
+  $('title').textContent = first ? 'Welcome — how would you like to start?' : 'What RoadCoda can do';
+  if (first) $('lead').textContent = 'Pick a starting point. Every module can be switched on or off later on this page — nothing is lost either way.';
+  $('preset-h').textContent = first ? 'Choose one' : 'Start over with';
+  $('presets').innerHTML = PRESETS.map(([k, name, what, list]) => `<div class="preset ${PRESET === k ? 'on' : ''}"><b>${name}</b><div>${what}</div><div class="mini">${list}</div>
+      ${CAN ? `<button class="btn ${first ? 'primary' : ''}" data-preset="${k}" style="margin-top:auto">${PRESET === k ? 'Current' : first ? 'Start with ' + name : 'Switch to ' + name}</button>` : ''}</div>`).join('');
+  $('core').innerHTML = CORE.map(t => `<span class="chip">✓ ${esc(t)}</span>`).join('');
+  const groups = [...new Set(CAT.map(f => f.grp))];
+  $('groups').innerHTML = groups.map(g => {
+    const mods = CAT.filter(f => f.grp === g), addon = mods[0].kind === 'addon';
+    const on = mods.filter(f => ON[f.key]).length;
+    return `<div class="card"><div class="pad" style="padding-bottom:6px;display:flex;align-items:center;gap:10px"><h2>${esc(g)}</h2><span class="sp" style="flex:1"></span><span class="mini">${addon ? 'Switched on by RoadCoda' : `${on} of ${mods.length} on`}</span></div>
+      ${mods.map(f => `<div class="mod"><div class="w"><div class="t">${esc(f.name)}</div><div class="mini">${esc(f.blurb)}</div></div>
+        ${f.kind === 'addon' ? (ON[f.key] ? '<span class="tag ok">On</span>' : '<span class="tag">Available — ask RoadCoda</span>')
+          : `<label class="sw" title="${ON[f.key] ? 'On' : 'Off'}"><input type="checkbox" data-f="${f.key}" ${ON[f.key] ? 'checked' : ''} ${CAN ? '' : 'disabled'} aria-label="${esc(f.name)}"><span></span></label>`}</div>`).join('')}</div>`;
+  }).join('') + (CAN ? '' : '<div class="mini">Only the owner (or someone with Edit on Users) can switch modules.</div>');
+  document.querySelectorAll('[data-f]').forEach(c => c.onchange = async () => {
+    const { data, error } = await sb.rpc('set_feature', { p_key: c.dataset.f, p_on: c.checked });
+    if (error) { c.checked = !c.checked; return toast(error.message); }
+    ON = data; PRESET = 'custom'; toast(`${CAT.find(f => f.key === c.dataset.f).name} ${c.checked ? 'switched on' : 'switched off'} — the menu updates on the next page.`); draw();
+  });
+  document.querySelectorAll('[data-preset]').forEach(b => b.onclick = async () => {
+    const k = b.dataset.preset; if (PRESET === k) return;
+    if (!first && !confirm(`Switch to ${PRESETS.find(p => p[0] === k)[1]}? Modules not in it are switched off (their data is kept).`)) return;
+    const { data, error } = await sb.rpc('apply_feature_preset', { p_preset: k });
+    if (error) return toast(error.message);
+    ON = data; PRESET = k;
+    if (first) { location.href = 'getting-started.html'; return; }
+    toast('Done — the menu updates on the next page.'); draw();
+  });
+}
+start();
+</script>
+</body>
+</html>

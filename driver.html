@@ -829,7 +829,7 @@ async function loadStops() {
 
   let openHtml = '';
   for (const l of loads) {
-    let html = `<div class="load-head" style="display:flex;align-items:center;gap:8px">Load ${esc(l.load_no)}<span style="flex:1"></span><button class="btn" data-docs="${l.id}" style="min-height:40px;font-size:15px">Documents</button></div>`;
+    let html = `<div class="load-head" style="display:flex;align-items:center;gap:8px">Load ${esc(l.load_no)}<span style="flex:1"></span><button class="btn" data-feature="documents" data-docs="${l.id}" style="min-height:40px;font-size:15px">Documents</button></div>`;
     if (l.ask_odometer) {
       const allDone = (l.stops || []).length && l.stops.every(s => ['delivered', 'exception'].includes(s.status));
       const ask = l.hub_start == null ? 'start' : (allDone && l.hub_end == null ? 'end' : null);
@@ -1373,6 +1373,13 @@ $('dc-file').onchange = async () => {
 // ---------- Receiver signature before "Delivered" (74) ----------
 // The customer's rule decides: off (nothing), optional (Skip allowed), required (sign, or say why not).
 let sgDrawn = false, STOPMAP = {}, STOPLOAD = {}, LOADNO = {};
+// Feature modules (82): the office switches some features off; hide their buttons here too
+(async () => {
+  try { const { data } = await sb.rpc('driver_features'); if (!data) return;
+    const off = Object.keys(data).filter(k => data[k] === false);
+    if (off.length) { const st = document.createElement('style'); st.textContent = off.map(k => `[data-feature="${k}"]`).join(',') + '{display:none!important}'; document.head.appendChild(st); }
+  } catch (_) {}
+})();
 function sgPad() {
   const c = $('sg-sig'), r = c.getBoundingClientRect(); c.width = r.width * 2 || 600; c.height = r.height * 2 || 340;
   const g = c.getContext && c.getContext('2d'); if (!g) return; g.lineWidth = 5; g.lineCap = 'round'; g.strokeStyle = '#111'; g.clearRect(0, 0, c.width, c.height); sgDrawn = false;

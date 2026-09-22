@@ -533,7 +533,7 @@ function stopsHtml(edit) {
       <td>${pod}</td></tr>`;
   }).join('');
   const gpsFill = edit && T.gps && T.l.stops.some(x => { const g = T.gps.by[x.id]; return g && ((!x.arrived_at && g.eld_arrived_at) || (!x.departed_at && g.eld_departed_at)); });
-  return `<div class="card"><header><h2>Stops</h2>${gpsFill ? '<button class="btn small" id="gps-fill" title="Fill empty arrival / departure times from the truck\'s GPS. Each is logged and can be undone.">Use GPS times</button>' : ''}<span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
+  return `<div class="card"><header><h2>Stops</h2>${gpsFill ? '<button class="btn small" data-feature="gps_times" id="gps-fill" title="Fill empty arrival / departure times from the truck\'s GPS. Each is logged and can be undone.">Use GPS times</button>' : ''}<span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + guestHtml(edit) + docsHtml(edit) + sheetHtml(edit);
 }
@@ -548,7 +548,7 @@ function docsHtml(edit) {
       <td><a href="#" data-docview="${esc(d.path)}">View</a></td>
       <td><label class="mini" style="display:flex;gap:5px;align-items:center"><input type="checkbox" data-docshare="${d.id}" ${d.shared ? 'checked' : ''} ${edit ? '' : 'disabled'} style="height:auto"> Shared with customer</label></td>
       <td>${edit && d.kind === 'fuel_receipt' && T.sheet ? `<button class="btn small" data-docfuel="${d.id}">Add to fuel</button>` : ''}${edit ? ` <button class="btn small" data-docdel="${d.id}">Remove</button>` : ''}</td></tr>`).join('');
-  return `<div class="card"><header><h2>Documents</h2><span class="sp"></span><span class="mini">From the driver's phone or uploaded here. Tick "Shared" to show one in the customer portal.</span></header>
+  return `<div class="card" data-feature="documents"><header><h2>Documents</h2><span class="sp"></span><span class="mini">From the driver's phone or uploaded here. Tick "Shared" to show one in the customer portal.</span></header>
     ${T.docs.length ? `<table class="stops"><tbody>${rows}</tbody></table>` : '<div class="mini" style="padding:10px 16px">No documents yet — the driver adds them with Documents in the app.</div>'}
     ${edit ? `<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="doc-kind" style="height:30px">${Object.entries(DOCK).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
       <select id="doc-stop" style="height:30px"><option value="">Whole load</option>${T.l.stops.map(x => `<option value="${x.id}">Stop ${x.seq} · ${esc(x.consignee)}</option>`).join('')}</select>
@@ -560,14 +560,14 @@ function guestHtml(edit) {
   const g = T.guest; if (!g) return '';
   const done = T.l.stops.every(x => ['delivered', 'exception'].includes(x.status));
   const until = g.guest_until ? new Date(g.guest_until).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
-  if (g.is_guest) return `<div class="card"><header><h2>Guest driver</h2><span class="sp"></span>${g.active ? '<span class="mini ok">link works</span>' : `<span class="mini">ended — ${esc(g.guest_ended_why || '')}</span>`}</header>
+  if (g.is_guest) return `<div class="card" data-feature="guest_drivers"><header><h2>Guest driver</h2><span class="sp"></span>${g.active ? '<span class="mini ok">link works</span>' : `<span class="mini">ended — ${esc(g.guest_ended_why || '')}</span>`}</header>
     <div style="padding:10px 16px;display:flex;flex-direction:column;gap:8px">
       <div><b>${esc(g.full_name)}</b>${g.guest_company ? ` · ${esc(g.guest_company)}` : ''}${g.phone ? ` · ${esc(g.phone)}` : ''}${g.email ? ` · ${esc(g.email)}` : ''}</div>
       <div class="mini">Sees only this load in the driver app — arrivals, scans, POD photos, signatures. Switched off 1 hour after delivery, if you give the load to someone else${until ? `, or at ${until}` : ''}.</div>
       ${g.active && edit ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" id="gl-qr">Show QR code</button><button class="btn small" id="gl-copy">Copy link (to text it)</button>${g.email ? '<button class="btn small" id="gl-mail">Email the link</button>' : ''}<button class="btn small" id="gl-end">End guest access</button></div><div id="gl-out"></div>` : ''}
     </div></div>`;
   if (done || !edit || T.l.status === 'cancelled') return '';
-  return `<div class="card"><header><h2>Guest driver</h2><span class="sp"></span><span class="mini">An owner-operator, subcontractor or temp driver runs this one load from a link — no account.</span></header>
+  return `<div class="card" data-feature="guest_drivers"><header><h2>Guest driver</h2><span class="sp"></span><span class="mini">An owner-operator, subcontractor or temp driver runs this one load from a link — no account.</span></header>
     <div style="padding:10px 16px"><details id="gl-new"><summary style="cursor:pointer;font-weight:600">Give this load to a guest driver…</summary>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:end">
         <label class="mini">Name<input id="gl-name" style="height:30px"></label><label class="mini">Company<input id="gl-co" style="height:30px"></label>
@@ -588,7 +588,7 @@ function labelLine(s) {
   const t = T.labels && T.labels[s.id]; if (!t) return '';
   const miss = t.missing || [], extra = t.extra || [];
   const done = ['delivered', 'exception'].includes(s.status);
-  return `<div class="mini">Labels <b>${t.scanned} of ${t.expected}</b>${miss.length ? ` · <span style="color:${done ? 'var(--late)' : 'var(--warn)'}" title="${esc(miss.join(', '))}">missing ${miss.length}: ${esc(miss.slice(0, 6).join(', '))}${miss.length > 6 ? '…' : ''}</span>` : ' · <span class="ok">all scanned</span>'}${extra.length ? ` · <span style="color:var(--warn)" title="${esc(extra.join(', '))}">not on list: ${esc(extra.slice(0, 4).join(', '))}${extra.length > 4 ? '…' : ''}</span>` : ''}</div>`;
+  return `<div class="mini" data-feature="manifests">Labels <b>${t.scanned} of ${t.expected}</b>${miss.length ? ` · <span style="color:${done ? 'var(--late)' : 'var(--warn)'}" title="${esc(miss.join(', '))}">missing ${miss.length}: ${esc(miss.slice(0, 6).join(', '))}${miss.length > 6 ? '…' : ''}</span>` : ' · <span class="ok">all scanned</span>'}${extra.length ? ` · <span style="color:var(--warn)" title="${esc(extra.join(', '))}">not on list: ${esc(extra.slice(0, 4).join(', '))}${extra.length > 4 ? '…' : ''}</span>` : ''}</div>`;
 }
 
 // ── Receiver signature (74): who signed, BOL #, or why there's none ──
@@ -607,7 +607,7 @@ function gpsLine(s, which) {
   const t = which === 'arrived' ? g.eld_arrived_at : g.eld_departed_at, mine = which === 'arrived' ? s.arrived_at : s.departed_at;
   if (!t) return '';
   const off = mine ? Math.round(Math.abs(new Date(mine) - new Date(t)) / 60000) : null, bad = off != null && off > T.gps.tol;
-  return `<div class="mini"${bad ? ' style="color:var(--late);font-weight:600"' : ''} title="From the truck's GPS (accurate to about 5 minutes)">GPS ${hm(t)}${bad ? ` · ${off} min off` : ''}</div>`;
+  return `<div class="mini" data-feature="gps_times"${bad ? ' style="color:var(--late);font-weight:600"' : ''} title="From the truck's GPS (accurate to about 5 minutes)">GPS ${hm(t)}${bad ? ` · ${off} min off` : ''}</div>`;
 }
 
 // ── Trip sheet (67): print, paper trip, signed sheet, fuel, odometers ──
@@ -616,7 +616,7 @@ function sheetHtml(edit) {
   const dis = edit ? '' : ' disabled', L = S.load;
   const docs = S.docs.map(d => `<a href="#" class="podlink" data-view="${esc(d.path)}">${d.kind === 'trip_sheet' ? 'Signed trip sheet' : 'Document'} · ${when(d.uploaded_at)}</a>`).join(' &nbsp; ');
   const fuel = S.fuel.map(f => `<tr><td>${esc(f.bought_on || '')}</td><td class="n">${esc(f.state)}</td><td class="n">${Number(f.gallons).toFixed(1)}</td><td class="n">${f.odometer ?? ''}</td><td>${edit ? `<button class="btn small" data-delfuel="${f.id}">Remove</button>` : ''}</td></tr>`).join('');
-  return `<div class="card"><header><h2>Trip sheet</h2><span class="sp"></span>
+  return `<div class="card" data-feature="trip_sheets"><header><h2>Trip sheet</h2><span class="sp"></span>
       <a class="btn small" href="trip-sheet.html?load=${T.l.id}" target="_blank" rel="noopener">Print trip sheet</a></header>
     <div style="padding:10px 16px;display:flex;flex-direction:column;gap:12px">
       <div class="facts" style="padding:0">

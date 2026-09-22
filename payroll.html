@@ -99,7 +99,7 @@
       <button class="btn small" id="next" aria-label="Next pay week">›</button>
       <button class="btn small" id="thisweek">Last full week</button>
       <button class="btn small" id="set-btn">Pay week settings</button>
-      <button class="btn small" id="pc-btn" hidden>Payroll company</button>
+      <button class="btn small" data-feature="payroll_files" id="pc-btn" hidden>Payroll company</button>
     </div>
 
     <div class="card" id="settings" hidden>
@@ -112,7 +112,7 @@
       </div>
     </div>
 
-    <div class="card" id="pc-card" hidden>
+    <div class="card" data-feature="payroll_files" id="pc-card" hidden>
       <header><h2>Payroll company</h2><span class="sp"></span><span class="mini">The approved week downloads in this company's own import format.</span></header>
       <div class="settings" style="flex-direction:column;align-items:stretch;gap:12px">
         <div class="pc-row">
