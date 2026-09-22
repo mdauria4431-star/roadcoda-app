@@ -269,6 +269,12 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    gps: await (async () => {     // GPS stop times from the ELD (73); nothing if not installed
+      if (!stopIds.length) return null;
+      const [g, c] = await Promise.all([sb.from('stop_gps').select('stop_id, eld_arrived_at, eld_departed_at').in('stop_id', stopIds), sb.from('carriers').select('geofence_flag_minutes').maybeSingle()]);
+      if (g.error) return null;
+      return { by: Object.fromEntries((g.data || []).map(x => [x.stop_id, x])), tol: c.data?.geofence_flag_minutes || 10 };
+    })(),
     sheet: await (async () => {   // trip sheet (67): paper setting, documents, fuel, odometers, receivers; nothing if not installed
       const [lx, docs, fuel, st, dm] = await Promise.all([
         sb.from('loads').select('paper_trip, hub_start, hub_end').eq('id', LOAD).maybeSingle(),
@@ -495,8 +501,8 @@ function stopsHtml(edit) {
       <td class="n">${s.seq}</td>
       <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}${routeLine(s)}${boxLine(s)}</td>
       <td class="n dim">${s.window_start ? hm(s.window_start) + '–' + hm(s.window_end) : hm(s.window_end) || '—'}</td>
-      <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}></td>
-      <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}></td>
+      <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}>${gpsLine(s, 'arrived')}</td>
+      <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}>${gpsLine(s, 'departed')}</td>
       <td class="n">${onSite != null ? mins(Math.max(0, onSite)) : '—'}${free != null ? `<div class="mini">${free}m free</div>` : ''}${det ? `<div>${det}</div>` : ''}</td>
       ${T.sheet?.paper ? `<td><input class="ed n" type="number" step="0.1" min="0" data-stop-f="odometer" data-stop="${s.id}" value="${s.odometer ?? ''}" placeholder="odometer" style="max-width:100px"${dis}></td>
       <td><input class="ed" data-stop-f="receiver_name" data-stop="${s.id}" value="${esc(s.receiver_name || '')}" placeholder="${s.stop_type === 'pickup' ? '' : 'receiver'}" style="max-width:130px"${dis}></td>` : ''}
@@ -505,9 +511,19 @@ function stopsHtml(edit) {
       <td>${osd}</td>
       <td>${pod}</td></tr>`;
   }).join('');
-  return `<div class="card"><header><h2>Stops</h2><span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
+  const gpsFill = edit && T.gps && T.l.stops.some(x => { const g = T.gps.by[x.id]; return g && ((!x.arrived_at && g.eld_arrived_at) || (!x.departed_at && g.eld_departed_at)); });
+  return `<div class="card"><header><h2>Stops</h2>${gpsFill ? '<button class="btn small" id="gps-fill" title="Fill empty arrival / departure times from the truck\'s GPS. Each is logged and can be undone.">Use GPS times</button>' : ''}<span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
     <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + sheetHtml(edit);
+}
+
+// ── GPS times from the truck (73): shown under the driver's time; highlighted when off by more than the tolerance ──
+function gpsLine(s, which) {
+  const g = T.gps?.by[s.id]; if (!g) return '';
+  const t = which === 'arrived' ? g.eld_arrived_at : g.eld_departed_at, mine = which === 'arrived' ? s.arrived_at : s.departed_at;
+  if (!t) return '';
+  const off = mine ? Math.round(Math.abs(new Date(mine) - new Date(t)) / 60000) : null, bad = off != null && off > T.gps.tol;
+  return `<div class="mini"${bad ? ' style="color:var(--late);font-weight:600"' : ''} title="From the truck's GPS (accurate to about 5 minutes)">GPS ${hm(t)}${bad ? ` · ${off} min off` : ''}</div>`;
 }
 
 // ── Trip sheet (67): print, paper trip, signed sheet, fuel, odometers ──
@@ -723,6 +739,18 @@ function wire(edit) {
     if (error) return fail(error);
     toast('OS&amp;D resolved'); load();
   });
+
+  // Use GPS times (73): fill empty times through the normal, logged edit
+  if ($('gps-fill')) $('gps-fill').onclick = () => {
+    let n = 0;
+    T.l.stops.forEach(x => { const g = T.gps.by[x.id]; if (!g) return;
+      [['arrived_at', g.eld_arrived_at], ['departed_at', g.eld_departed_at]].forEach(([f, t]) => {
+        if (x[f] || !t) return;
+        const el = document.querySelector(`input[data-stop-f="${f}"][data-stop="${x.id}"]`); if (!el) return;
+        el.value = toLocal(t); el.dispatchEvent(new Event('change', { bubbles: true })); n++;
+      }); });
+    toast(n ? `${n} time${n > 1 ? 's' : ''} filled from GPS — each is in the change log.` : 'Nothing to fill.');
+  };
 
   // Trip sheet card (67)
   if ($('paper-sel')) $('paper-sel').onchange = async () => {

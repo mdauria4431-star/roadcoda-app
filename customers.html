@@ -234,6 +234,7 @@
         </fieldset>
         <div class="row" style="margin-top:10px"><button class="btn primary" id="dl-save">Save</button><button class="btn" id="dl-new" type="button">Cancel</button><span id="dl-msg"></span></div>
         <div id="dl-used" class="note" hidden></div>
+        <div id="dl-geo" class="note" hidden></div>
       </details>
 
       <div class="tablewrap"><table style="min-width:960px">
@@ -559,6 +560,31 @@ async function editDl(id) {
   $('dl-used').innerHTML = recent.length ? `<b>Used on ${(st || []).length} stop${(st || []).length === 1 ? '' : 's'}.</b> Latest: ` +
     recent.map(s => `<a href="loads.html?load=${s.loads.id}&day=${s.loads.service_date}">Load ${esc(s.loads.load_no)}</a> (${s.loads.service_date})`).join(', ')
     : 'Not used on any load yet.';
+  drawGeo(d);
+}
+// Map point for GPS arrival / departure times (73): learned from drivers' scans, or set by hand
+function drawGeo(d) {
+  const box = $('dl-geo'); if (!('lat' in d)) { box.hidden = true; return; }        // before 73
+  const ed = !window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit');
+  box.hidden = false;
+  box.innerHTML = `<b>Map point for GPS times</b> — ${d.lat != null ? `${d.lat}, ${d.lon} · ${d.geo_source === 'manual' ? 'set by hand' : `learned from ${d.geo_scans} driver scans`}${d.geo_radius_m ? ` · circle ${d.geo_radius_m} m` : ''}
+      · <a href="https://www.google.com/maps?q=${d.lat},${d.lon}" target="_blank" rel="noopener">see on map</a>` : 'not known yet — it\'s learned from the GPS on drivers\' scans here (3 or more), or paste one.'}
+    ${ed ? `<div class="row" style="margin-top:6px;align-items:end">
+      <label>Point (paste from Google Maps)<input id="geo-pt" placeholder="40.7358, -74.1725" value="${d.geo_source === 'manual' ? d.lat + ', ' + d.lon : ''}"></label>
+      <label>Circle (meters, blank = your default)<input id="geo-r" type="number" min="50" max="2000" value="${d.geo_radius_m ?? ''}" style="width:130px"></label>
+      <button class="btn" type="button" id="geo-save">Save point</button>
+      ${d.geo_source === 'manual' ? '<button class="btn" type="button" id="geo-clear">Go back to learning from scans</button>' : '<button class="btn" type="button" id="geo-learn">Learn from scans now</button>'}</div>` : ''}`;
+  const after = async (msg) => { const { data } = await sb.from('delivery_locations').select('*').eq('id', d.id).single(); Object.assign(d, data); flash(msg); drawGeo(d); };
+  if ($('geo-save')) $('geo-save').onclick = async () => {
+    const t = $('geo-pt').value.trim(), m = t.match(/^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/), r = $('geo-r').value === '' ? null : +$('geo-r').value;
+    if (t && !m) return flash('Paste the point as "latitude, longitude", e.g. 40.7358, -74.1725');
+    const lat = m ? +m[1] : d.lat, lon = m ? +m[2] : d.lon;
+    if (lat == null) return flash('Paste a point first.');
+    const { error } = await sb.rpc('set_location_coords', { p_location: d.id, p_lat: lat, p_lon: lon, p_radius: r }); if (error) return flash(error.message);
+    after('Map point saved');
+  };
+  if ($('geo-clear')) $('geo-clear').onclick = async () => { const { error } = await sb.rpc('set_location_coords', { p_location: d.id, p_lat: null, p_lon: null, p_radius: $('geo-r').value === '' ? null : +$('geo-r').value }); if (error) return flash(error.message); after('Back to learning from scans'); };
+  if ($('geo-learn')) $('geo-learn').onclick = async () => { const { data, error } = await sb.rpc('learn_location_coords', { p_location: d.id }); if (error) return flash(error.message); after(data ? 'Point learned from scans' : 'Not enough scans with GPS here yet (needs 3 close together)'); };
 }
 const EVS = { on_the_way: 'On the way', late: 'Late', delivered: 'Delivered', issue: 'Issue' };
 const ACC = [['dl-instr', 'delivery_instructions'], ['dl-door', 'door_code'], ['dl-gate', 'gate_code'], ['dl-oname', 'other_code_name'],
@@ -567,7 +593,7 @@ function clearDl() {
   dlEditing = null; ['dl-name', 'dl-code', 'dl-route', 'dl-sort', 'dl-contact', 'dl-phone', 'dl-email', 'dl-nemail', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes', ...ACC.map(a => a[0])].forEach(id => $(id).value = '');
   $('dl-notify').checked = false; $('dl-kind').value = 'delivery';
   document.querySelectorAll('.dl-ev').forEach(c => c.checked = ['delivered', 'issue'].includes(c.value));
-  $('dl-active').checked = true; $('dl-title').textContent = 'Add a stop customer'; $('dl-used').hidden = true;
+  $('dl-active').checked = true; $('dl-title').textContent = 'Add a stop customer'; $('dl-used').hidden = true; $('dl-geo').hidden = true;
 }
 $('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; $('dl-edit').open = false; };
 $('dl-save').onclick = async () => {
