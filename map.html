@@ -97,7 +97,7 @@ const esc = RC_MAP.esc;
 const hm = (t) => t ? new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
 const COLOR = { late: 'var(--late)', moving: 'var(--ok)', stopped: 'var(--accent)', stale: '#8a8f98', none: '#8a8f98' };
 const SRC = { phone: "driver's phone", sample: 'sample', samsara: 'Samsara', motive: 'Motive', geotab: 'Geotab' };
-let TRUCKS = [], MARK = {}, SEL = null, ROUTE = null, map = null, fitted = false, timer = null, tt = null;
+let TRUCKS = [], MARK = {}, GROUP_OF = {}, SEL = null, ROUTE = null, map = null, fitted = false, timer = null, tt = null;
 function toast(h, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 5000); }
 
 async function start() {
@@ -157,21 +157,46 @@ function draw() {
     : '<div class="empty">No trucks to show.</div>';
   document.querySelectorAll('.trk').forEach(el => el.onclick = () => select(el.dataset.id, true));
 
-  // markers
-  const ids = new Set(shown.map(t => t.id));
-  for (const id of Object.keys(MARK)) if (!ids.has(id)) { MARK[id].remove(); delete MARK[id]; }
-  const pts = [];
+  // markers — trucks parked within ~30 m of each other share one marker (a yard), so none hides under another
+  const groups = [];
   for (const t of shown) {
     if (!t.pos) continue;
-    const ll = [t.pos.lat, t.pos.lon]; pts.push(ll);
-    const icon = RC_MAP.truckIcon(t.unit_no, COLOR[t.state], t.pos.heading, t.state === 'moving' || (t.pos.speed || 0) > 3, t.pos.provider === 'phone');
-    if (MARK[t.id]) { MARK[t.id].setLatLng(ll).setIcon(icon); } else { MARK[t.id] = L.marker(ll, { icon, title: t.unit_no }).addTo(map).on('click', () => select(t.id, false)); }
-    MARK[t.id].bindPopup(() => popup(t), { maxWidth: 300 });
+    const g = groups.find(g => metersBetween(g.ll, [t.pos.lat, t.pos.lon]) < 30);
+    if (g) g.trucks.push(t); else groups.push({ ll: [t.pos.lat, t.pos.lon], trucks: [t] });
   }
+  GROUP_OF = {};
+  const keys = new Set();
+  const pts = [];
+  for (const g of groups) {
+    g.trucks.sort((a, b) => RANK[a.state] - RANK[b.state] || String(a.unit_no).localeCompare(String(b.unit_no)));
+    const key = g.trucks.map(t => t.id).sort().join('|'); keys.add(key);
+    g.trucks.forEach(t => GROUP_OF[t.id] = key);
+    pts.push(g.ll);
+    const lead = g.trucks[0];   // the most urgent one sets the color
+    const label = g.trucks.length === 1 ? lead.unit_no : g.trucks.length <= 3 ? g.trucks.map(t => t.unit_no).join(', ') : `${g.trucks.length} trucks`;
+    const moving = g.trucks.length === 1 && (lead.state === 'moving' || (lead.pos.speed || 0) > 3);
+    const icon = RC_MAP.truckIcon(label, COLOR[lead.state], lead.pos.heading, moving, g.trucks.some(t => t.pos.provider === 'phone'));
+    const title = g.trucks.map(t => t.unit_no).join(', ');
+    if (MARK[key]) { MARK[key].setLatLng(g.ll).setIcon(icon); }
+    else { MARK[key] = L.marker(g.ll, { icon, title }).addTo(map).on('click', () => { if (g.trucks.length === 1) select(lead.id, false); }); }
+    MARK[key].options.title = title;
+    MARK[key].bindPopup(() => groupPopup(g.trucks), { maxWidth: 320, maxHeight: 380 });
+  }
+  for (const k of Object.keys(MARK)) if (!keys.has(k)) { MARK[k].remove(); delete MARK[k]; }
   if (!fitted && pts.length) { map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 }); fitted = true; }
   if (SEL) route(TRUCKS.find(t => t.id === SEL));
 }
 
+const metersBetween = (a, b) => { const R = 6371000, r = Math.PI / 180, dLa = (b[0] - a[0]) * r, dLo = (b[1] - a[1]) * r;
+  const h = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+// one truck's details, or each truck's in turn when several share a spot
+function groupPopup(trucks) {
+  if (trucks.length === 1) return popup(trucks[0]);
+  const box = document.createElement('div');
+  box.innerHTML = `<div style="font-weight:700;margin-bottom:4px">${trucks.length} trucks here</div>`;
+  trucks.forEach((t, i) => { const d = popup(t); if (i) d.style.cssText = 'border-top:1px solid #ddd;margin-top:10px;padding-top:8px'; box.appendChild(d); });
+  return box;
+}
 function popup(t) {
   const n = t.next, p = t.pos;
   const div = document.createElement('div'); div.className = 'pop';
@@ -198,7 +223,8 @@ function select(id, fly) {
   SEL = id; const t = TRUCKS.find(x => x.id === id);
   document.querySelectorAll('.trk').forEach(el => el.classList.toggle('on', el.dataset.id === id));
   route(t);
-  if (t && t.pos && MARK[t.id]) { if (fly) map.setView([t.pos.lat, t.pos.lon], Math.max(map.getZoom(), 11)); MARK[t.id].openPopup(); }
+  const mk = t && MARK[GROUP_OF[t.id]];
+  if (t && t.pos && mk) { if (fly) map.setView([t.pos.lat, t.pos.lon], Math.max(map.getZoom(), 11)); mk.openPopup(); }
   else if (t && !t.pos) toast(`${esc(t.unit_no)} has no position yet — it appears once its ELD or the driver's phone reports one.`);
 }
 function route(t) {
