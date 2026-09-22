@@ -674,6 +674,16 @@ function clearDl() {
   $('dl-active').checked = true; $('dl-title').textContent = 'Add a stop customer'; $('dl-used').hidden = true; $('dl-geo').hidden = true;
 }
 $('dl-q').oninput = drawDl; $('dl-inactive').onchange = drawDl; $('dl-new').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; $('dl-edit').open = false; };
+async function geocodeOne(typed) {
+  // supabase-js hides the function's own message on a non-2xx; dig it out of the response
+  const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'geocode', addresses: [typed] } });
+  if (!error) return (data && data.points && data.points[0]) || null;
+  let why = error.message || 'Address check failed';
+  try { const body = error.context && typeof error.context.json === 'function' ? await error.context.json() : null; if (body && body.error) why = body.error; } catch (_) {}
+  if (/non-2xx|failed to fetch|not found/i.test(why)) why += ' — redeploy the route-miles function, and check GOOGLE_MAPS_KEY is set with the Geocoding API enabled.';
+  throw new Error(why);
+}
+
 // 93: check a stop address against Google — and keep the map point, so miles, maps and tracking work from day one
 let dlPoint = null;
 $('dl-check').onclick = async () => {
@@ -681,9 +691,7 @@ $('dl-check').onclick = async () => {
   if (!typed) { out.innerHTML = '<span class="error">Type an address first.</span>'; return; }
   out.textContent = 'Checking…'; dlPoint = null;
   try {
-    const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'geocode', addresses: [typed] } });
-    if (error) throw error;
-    const hit = data && data.points && data.points[0];
+    const hit = await geocodeOne(typed);
     if (!hit) { out.innerHTML = '<span class="error">Google couldn\'t find that address.</span>'; return; }
     dlPoint = { lat: hit.lat, lon: hit.lng };
     const same = (hit.formatted || '').toLowerCase().replace(/[.,]/g, '') === typed.toLowerCase().replace(/[.,]/g, '');
