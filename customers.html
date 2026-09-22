@@ -10,9 +10,9 @@
 <link rel="manifest" href="site.webmanifest">
 <meta name="theme-color" content="#070c14">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e" crossorigin="anonymous"></script>
 <script src="config.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
@@ -216,6 +216,10 @@
           <label for="dl-phone">Phone<input id="dl-phone" type="tel"></label>
           <label for="dl-email">Email<input id="dl-email" type="email"></label>
           <label for="dl-nemail">Notification email (if different)<input id="dl-nemail" type="email" placeholder="blank = email"></label>
+          <div data-feature="texts" style="display:contents">
+            <label for="dl-sms">Text number for notifications<input id="dl-sms" type="tel" placeholder="blank = email only"></label>
+            <label class="chk" style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="dl-smsok" style="height:auto;width:auto"> They agreed to get texts at this number <span class="mini" id="dl-smsinfo"></span></label>
+          </div>
           <div style="grid-column:1/-1;display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:8px">
             <label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="dl-notify" style="height:auto"> <b>Send delivery notifications</b></label>
             <span class="hint" style="margin:0">Which:</span>
@@ -620,7 +624,7 @@ async function editDl(id) {
   const d = dlRows.find(x => x.id === id); dlEditing = d.id;
   $('dl-name').value = d.name; $('dl-code').value = d.code || ''; $('dl-route').value = d.route_no || ''; $('dl-sort').value = d.sort_code || ''; $('dl-contact').value = d.contact || ''; $('dl-addr').value = d.address || '';
   $('dl-kind').value = d.kind || 'delivery';
-  $('dl-phone').value = d.phone || ''; $('dl-email').value = d.email || ''; $('dl-notify').checked = !!d.notify; $('dl-nemail').value = d.notify_email || '';
+  $('dl-phone').value = d.phone || ''; $('dl-email').value = d.email || ''; $('dl-notify').checked = !!d.notify; $('dl-nemail').value = d.notify_email || ''; $('dl-sms').value = d.notify_sms || ''; $('dl-smsok').checked = !!d.notify_sms_consent_at; $('dl-smsinfo').textContent = d.notify_sms_consent_at ? '(recorded ' + new Date(d.notify_sms_consent_at).toLocaleDateString() + ')' : '';
   $('dl-ws').value = (d.window_start || '').slice(0, 5); $('dl-we').value = (d.window_end || '').slice(0, 5); $('dl-notes').value = d.notes || ''; $('dl-active').checked = d.active;
   ACC.forEach(([id, k]) => $(id).value = d[k] || '');
   document.querySelectorAll('.dl-ev').forEach(c => c.checked = (d.notify_events || ['delivered', 'issue']).includes(c.value));
@@ -678,6 +682,12 @@ $('dl-save').onclick = async () => {
     kind: $('dl-kind').value,
     phone: $('dl-phone').value.trim() || null, email: $('dl-email').value.trim().toLowerCase() || null,
     notify: $('dl-notify').checked, notify_email: $('dl-nemail').value.trim().toLowerCase() || null };
+  // 89: a text number, and whether its owner agreed (the database stamps who and when; a new number needs a fresh tick)
+  if ($('dl-sms')) {
+    row.notify_sms = $('dl-sms').value.trim() || null;
+    if (row.notify_sms && !$('dl-smsok').checked) { $('dl-msg').innerHTML = '<span class="error">Tick “They agreed to get texts” — texts can only go to a number whose owner agreed.</span>'; return; }
+    row.notify_sms_consent_at = row.notify_sms && $('dl-smsok').checked ? (d0 => d0 && d0.notify_sms === row.notify_sms ? d0.notify_sms_consent_at || new Date().toISOString() : new Date().toISOString())(dlRows.find(x => x.id === dlEditing)) : null;
+  }
   ACC.forEach(([id, k]) => row[k] = $(id).value.trim() || null);
   row.notify_events = [...document.querySelectorAll('.dl-ev')].filter(c => c.checked).map(c => c.value);
   if (row.notify && !row.notify_events.length) { $('dl-msg').innerHTML = '<span class="error">Pick at least one notice, or untick Send delivery notifications.</span>'; return; }

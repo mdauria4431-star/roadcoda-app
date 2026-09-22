@@ -10,8 +10,8 @@
 <link rel="manifest" href="site.webmanifest">
 <meta name="theme-color" content="#070c14">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
 <script src="config.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
@@ -381,6 +381,24 @@ $('list').onclick = (ev) => { const tr = ev.target.closest('tr[data-id]'); if (t
 $('new-btn').onclick = () => edit(null);
 $('cancel-btn').onclick = () => { cur = null; $('editor').hidden = true; history.replaceState(null, '', 'drivers.html'); render(); };
 
+// 89: texts — whether this driver agreed, and a way to record or withdraw it
+async function smsLine(d) {
+  let el = document.getElementById('ed-sms');
+  if (!el) { el = document.createElement('span'); el.id = 'ed-sms'; el.className = 'mini'; el.style.marginLeft = '10px'; (document.getElementById('ed-safety') || $('ed-status')).after(el); }
+  el.innerHTML = '';
+  if (!d || !window.RC_ACCESS || !window.RC_ACCESS.feature || !window.RC_ACCESS.feature('texts')) return;
+  const { data: x, error } = await sb.from('drivers').select('id, phone, sms_ok, sms_consent_at, sms_consent_source').eq('id', d.id).single();
+  if (error || !x || (cur && cur.id !== d.id)) return;
+  const edit = window.RC_ACCESS.can('drivers', 'edit');
+  el.innerHTML = x.sms_ok ? `Texts: on — agreed ${x.sms_consent_source === 'driver_app' ? 'in the driver app' : 'with the office'} ${new Date(x.sms_consent_at).toLocaleDateString()}${edit ? ' · <a href="#" id="sms-x">turn off</a>' : ''}`
+    : `Texts: off${edit ? ' · <a href="#" id="sms-y">record their agreement</a>' : ''} <span title="Drivers can switch texts on themselves in the driver app">(or they switch it on in the app)</span>`;
+  const set = async (on) => {
+    if (on && !confirm(`Record that ${d.full_name} agreed to get texts at ${x.phone || 'their phone on file'}? Only do this if they did (e.g. signed your texting form).`)) return;
+    const { error } = await sb.rpc('office_driver_sms', { p_driver: d.id, p_on: on }); if (error) { alert(error.message); return; } smsLine(d);
+  };
+  if (document.getElementById('sms-x')) document.getElementById('sms-x').onclick = (e) => { e.preventDefault(); set(false); };
+  if (document.getElementById('sms-y')) document.getElementById('sms-y').onclick = (e) => { e.preventDefault(); set(true); };
+}
 // 86: a one-line safety record, linking to the dashboard for just this one
 async function safetyLine(kind, rec) {
   let el = document.getElementById('ed-safety');
@@ -404,6 +422,7 @@ function edit(d, quiet) {
   $('f-driver_type').closest('label').hidden = !!(d && !('driver_type' in d));   // before 60_payroll_rules.sql
   $('ed-status').innerHTML = d ? (d.active ? '<span class="pill p-ok">Active</span>' : '<span class="pill p-none">Inactive</span>') : '';
   safetyLine('driver', d);
+  smsLine(d);
   $('end-wrap').hidden = !(d && !d.active);
   $('active-btn').hidden = !d;
   $('active-btn').textContent = d && !d.active ? 'Reactivate' : 'Deactivate';

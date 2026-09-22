@@ -27,8 +27,8 @@
 })();
 </script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
 <script src="config.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
@@ -300,6 +300,16 @@
       <button class="btn" id="switch-btn" type="button" style="min-height:44px">Switch driver</button>
     </div>
     <div id="stops"></div>
+    <!-- Text messages (89): the driver's own choice — this is their agreement to get texts -->
+    <div class="card" id="sms-card" hidden style="margin-top:12px">
+      <label style="display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600"><input type="checkbox" id="sms-on" style="width:22px;height:22px"> Text me about my loads</label>
+      <div id="sms-more" style="margin:8px 0 0 32px;display:flex;flex-direction:column;gap:6px;font-size:15px">
+        <label><input type="checkbox" id="sms-new"> A new load for me</label>
+        <label><input type="checkbox" id="sms-chg"> Dispatch changed my load</label>
+        <label><input type="checkbox" id="sms-msg"> Messages I haven't read in the app</label>
+      </div>
+      <div id="sms-note" style="font-size:13px;opacity:.8;margin-top:8px"></div>
+    </div>
     <div class="meta">You see only your own loads. The app locks while the truck is moving.</div>
   </section>
 
@@ -540,6 +550,28 @@ setInterval(async () => {
     pingAt = Date.now(); pingLL = ll;
   } catch (_) { /* offline: try again next time */ }
 }, 60000);
+
+// ---------- Text messages (89) ----------
+async function smsLoad() {
+  try {
+    const { data, error } = await sb.rpc('driver_sms_get');
+    if (error || !data || !data.available) { $('sms-card').hidden = true; return; }
+    $('sms-card').hidden = false; smsShow(data);
+  } catch (_) { $('sms-card').hidden = true; }
+}
+function smsShow(d) {
+  $('sms-on').checked = !!d.on; $('sms-new').checked = !!d.new_load; $('sms-chg').checked = !!d.changes; $('sms-msg').checked = !!d.messages;
+  $('sms-more').style.display = d.on ? 'flex' : 'none';
+  $('sms-note').textContent = !d.valid_phone ? 'Ask the office to put your cell number on file first.'
+    : d.on ? `Texts go to ${d.phone}. Msg & data rates may apply. Reply STOP to any text to stop them.` : 'Switch on to get texts at ' + d.phone + '. Msg & data rates may apply; reply STOP any time.';
+  $('sms-on').disabled = !d.valid_phone && !d.on;
+}
+async function smsSave() {
+  const { data, error } = await sb.rpc('driver_sms_settings', { p_on: $('sms-on').checked, p_new_load: $('sms-new').checked, p_changes: $('sms-chg').checked, p_messages: $('sms-msg').checked });
+  if (error) { alert(error.message); return smsLoad(); }
+  smsShow(data);
+}
+['sms-on', 'sms-new', 'sms-chg', 'sms-msg'].forEach(id => $(id).onchange = smsSave);
 
 // ---------- Sign in ----------
 async function start() {
@@ -798,6 +830,7 @@ $('pw-btn').onclick = async () => {
 
 // ---------- Today's stops ----------
 async function loadStops() {
+  if (!window.__smsLoaded) { window.__smsLoaded = true; smsLoad(); }
   let { data: loads, error } = await sb.from('loads')
     .select('id, load_no, status, truck_id, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');

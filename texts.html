@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text messages · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  .sp{flex:1}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:12px;color:var(--ink-3)}
+  .error{color:var(--late)} .ok{color:var(--ok)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px}
+  .meter{height:8px;border-radius:4px;background:var(--panel-2);overflow:hidden;margin-top:8px} .meter i{display:block;height:100%;background:var(--accent)}
+  .meter.full i{background:var(--late)}
+  .scroll{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line)}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .mono{font-family:var(--mono)}
+  .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;border:1px solid var(--line);white-space:nowrap;color:var(--ink)}
+  .tag.ok{background:var(--ok);color:#fff;border-color:var(--ok)} .tag.red{background:var(--late);color:#fff;border-color:var(--late)} .tag.amber{background:var(--warn);color:#000;border-color:var(--warn)}
+  .note{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);line-height:1.5;font-size:13px}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a class="on" href="texts.html">Text messages</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar"><h1>Text messages</h1><span class="sp"></span><button class="btn small" id="refresh">Refresh</button></div>
+    <div id="off" hidden></div>
+    <div id="body" style="display:flex;flex-direction:column;gap:12px">
+      <div class="tiles" id="tiles"></div>
+      <div class="note">Texts go to <b>stores</b> for the same events as their notification emails (set the number and tick that they agreed on Customers › the location), and to <b>drivers</b> who switch texts on in the driver app. Nobody is texted without their agreement on file, and anyone can reply <b>STOP</b>. A driver's reply to a text lands in Messages; a store's reply shows below.</div>
+      <div class="card"><header><h2>Texts</h2><span class="sp"></span><div class="tabs" id="flt">
+        <button data-f="all" class="on">All</button><button data-f="store">Stores</button><button data-f="driver">Drivers</button><button data-f="in">Replies</button><button data-f="problem">Not sent</button></div></header>
+        <div class="scroll" id="log"></div></div>
+      <div class="card"><header><h2>Stores with a text number</h2></header><div class="scroll" id="stores"></div></div>
+      <div class="card"><header><h2>Drivers</h2><span class="sp"></span><span class="mini">Drivers switch texts on in the driver app. The office can record an agreement from the Drivers page.</span></header><div class="scroll" id="drivers"></div></div>
+    </div>
+  </section>
+</main>
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tm = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+const dt = (t) => t ? new Date(t).toLocaleDateString() : '';
+const phone = (p) => { const m = String(p || '').match(/^\+1(\d{3})(\d{3})(\d{4})$/); return m ? `(${m[1]}) ${m[2]}-${m[3]}` : (p || ''); };
+const KIND = { store_notice: 'Store notice', driver_load: 'New load', driver_change: 'Load changed', driver_message: 'Dispatch message', reply: 'Reply', system: 'System' };
+const EV = { on_the_way: 'On the way', late: 'Running late', delivered: 'Delivered', issue: 'Issue' };
+const ST = { queued: ['Waiting', ''], sending: ['Sending', ''], sent: ['Sent', 'ok'], delivered: ['Delivered', 'ok'], failed: ['Failed', 'red'], undelivered: ['Not delivered', 'red'],
+  blocked: ['Opted out', 'amber'], over_allowance: ['Over allowance', 'red'], skipped: ['Not sent', ''], received: ['Received', ''] };
+let DATA = null, FLT = 'all';
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  if (window.RC_ACCESS && !window.RC_ACCESS.can('dispatch')) return;
+  $('app').hidden = false;
+  load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+$('refresh').onclick = () => load();
+document.querySelectorAll('#flt button').forEach(b => b.onclick = () => { FLT = b.dataset.f; document.querySelectorAll('#flt button').forEach(x => x.classList.toggle('on', x === b)); drawLog(); });
+
+async function load() {
+  const { data, error } = await sb.rpc('texts_home', { p_limit: 300 });
+  if (error) { $('off').hidden = false; $('body').hidden = true; $('off').innerHTML = `<div class="card empty ${/add-on/.test(error.message) ? '' : 'error'}">${esc(error.message)}${/texts_home|schema cache/.test(error.message) ? ' — run 89_text_messages.sql in the SQL Editor.' : ''}</div>`; return; }
+  DATA = data; draw();
+}
+function draw() {
+  const d = DATA, pct = d.allowance ? Math.min(100, Math.round(d.used / d.allowance * 100)) : 100;
+  const month = new Date().toLocaleString([], { month: 'long' });
+  const replies = d.messages.filter(m => m.dir === 'in').length, problems = d.messages.filter(m => ['failed', 'undelivered', 'over_allowance'].includes(m.status)).length;
+  $('tiles').innerHTML = `
+    <div class="tile"><div class="k">Texts in ${month}</div><div class="v">${d.used} <span class="mini">of ${d.allowance}</span></div><div class="meter ${pct >= 100 ? 'full' : ''}"><i style="width:${pct}%"></i></div>
+      <div class="mini" style="margin-top:6px">${pct >= 100 ? '<b class="error">Allowance used up — texts wait until next month. Ask RoadCoda to raise it.</b>' : pct >= 80 ? 'Getting close to this month\'s allowance.' : 'Included in your plan.'}</div></div>
+    <div class="tile"><div class="k">Texts come from</div><div class="v" style="font-size:17px">${esc(phone(d.own_number || d.shared_number) || '—')}</div><div class="mini" style="margin-top:6px">${d.own_number ? 'Your own number' : d.shared_number ? 'RoadCoda\'s shared number (your own number is an upgrade)' : 'RoadCoda is still setting up texting'}</div></div>
+    <div class="tile"><div class="k">Replies</div><div class="v">${replies}</div><div class="mini">in the latest texts below</div></div>
+    <div class="tile"><div class="k">Not delivered</div><div class="v ${problems ? 'error' : ''}">${problems}</div><div class="mini">failed, not delivered or over the allowance</div></div>`;
+  drawLog();
+  $('stores').innerHTML = d.stores.length ? `<table class="t"><thead><tr><th>Store</th><th>Text number</th><th>Agreed</th><th></th></tr></thead><tbody>${d.stores.map(s => `<tr>
+      <td>${esc(s.name)}</td><td class="mono">${esc(phone(s.phone))}</td><td>${s.agreed ? dt(s.agreed) : '<span class="error">No — texts won\'t go</span>'}</td>
+      <td>${s.opted_out ? '<span class="tag amber">Replied STOP</span>' : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">No store has a text number yet. Add one on Customers › the location (with their agreement).</div>';
+  $('drivers').innerHTML = d.drivers.length ? `<table class="t"><thead><tr><th>Driver</th><th>Cell</th><th>Texts</th><th>What they get</th><th></th></tr></thead><tbody>${d.drivers.map(x => `<tr>
+      <td><a href="drivers.html?id=${x.id}">${esc(x.name)}</a></td><td class="mono">${x.valid ? esc(x.phone) : `<span class="error">${x.phone ? 'Not a valid cell number' : 'No number on file'}</span>`}</td>
+      <td>${x.on ? `On <span class="mini">since ${dt(x.agreed)} (${x.source === 'driver_app' ? 'in the app' : 'recorded by the office'})</span>` : '<span class="mini">Off</span>'}</td>
+      <td class="mini">${x.on ? [x.new_load && 'new loads', x.changes && 'changes', x.messages && 'messages'].filter(Boolean).join(', ') || 'nothing picked' : ''}</td>
+      <td>${x.opted_out ? '<span class="tag amber">Replied STOP</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No drivers.</div>';
+}
+function drawLog() {
+  const ms = DATA.messages.filter(m => FLT === 'all' || (FLT === 'store' && m.kind === 'store_notice') || (FLT === 'driver' && m.kind.startsWith('driver_'))
+    || (FLT === 'in' && m.dir === 'in') || (FLT === 'problem' && ['failed', 'undelivered', 'over_allowance', 'blocked', 'skipped'].includes(m.status)));
+  $('log').innerHTML = ms.length ? `<table class="t"><thead><tr><th>When</th><th>What</th><th>To / from</th><th>Text</th><th>Status</th></tr></thead><tbody>${ms.map(m => {
+      const s = ST[m.status] || [m.status, ''];
+      return `<tr><td>${tm(m.at)}</td><td>${m.dir === 'in' ? '<b>Reply</b>' : esc(KIND[m.kind] || m.kind)}${m.event ? ` <span class="mini">${esc(EV[m.event] || m.event)}</span>` : ''}${m.load_no ? `<div class="mini">Load ${esc(m.load_no)}</div>` : ''}</td>
+        <td>${esc(m.who || '')}<div class="mini mono">${esc(phone(m.dir === 'in' ? m.from : m.to))}</div></td>
+        <td style="max-width:420px">${esc(m.body || '')}</td>
+        <td><span class="tag ${s[1]}">${s[0]}</span>${m.detail ? `<div class="mini">${esc(m.detail)}</div>` : ''}</td></tr>`; }).join('')}</tbody></table>`
+    : '<div class="empty">No texts here yet.</div>';
+}
+start();
+</script>
+</body>
+</html>
