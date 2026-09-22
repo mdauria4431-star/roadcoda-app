@@ -170,7 +170,7 @@
       if (here === 'customer-logins.html') cl.className = 'on';
       nav.appendChild(cl); links['customer-logins.html'] = cl;
     }
-    if (!links['retention.html'] && (!acc || (acc.can && acc.can('safety'))) && (!acc || !acc.feature || acc.feature('retention'))) {
+    if (!links['retention.html'] && (!acc || (acc.can && acc.can('safety')))) {
       var rt = document.createElement('a');
       rt.href = 'retention.html'; rt.textContent = 'Retention';
       if (here === 'retention.html') rt.className = 'on';
@@ -221,7 +221,7 @@
       if (here === 'messages.html') ml.className = 'on';
       nav.appendChild(ml); links['messages.html'] = ml;
     }
-    if (links['dispatch.html'] && !links['ratings.html'] && (!acc || !acc.feature || acc.feature('ratings'))) {
+    if (links['dispatch.html'] && !links['ratings.html']) {
       var rl = document.createElement('a');
       rl.href = 'ratings.html'; rl.textContent = 'Ratings';
       if (here === 'ratings.html') rl.className = 'on';
