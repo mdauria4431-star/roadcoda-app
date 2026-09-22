@@ -100,6 +100,8 @@
   </section>
 
   <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
+    <!-- 92: while setup is unfinished, Home says what's next (disappears when the 15 steps are done) -->
+    <div class="card" id="setup-strip" hidden style="padding:12px 16px"></div>
     <div class="toolbar">
       <h1 id="title">Today</h1>
       <label for="day">Date<input id="day" type="date"></label>
@@ -171,9 +173,35 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 $('day').onchange = () => load();
 $('refresh').onclick = () => load();
 
+// 92: the setup strip — only for offices still finishing setup
+async function setupStrip() {
+  try {
+    const { data, error } = await sb.rpc('getting_started');
+    if (error || !data) return;
+    const steps = data.filter(r => r.section === 'Set up');
+    if (!steps.length) return;
+    const left = steps.filter(r => !r.done);
+    const el = $('setup-strip');
+    if (!left.length) { el.hidden = true; return; }
+    const next = left.slice(0, 3);
+    el.hidden = false;
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <b>Setting up RoadCoda</b>
+        <span class="muted">${steps.length - left.length} of ${steps.length} done</span>
+        <div style="flex:1;min-width:120px;height:8px;border-radius:4px;background:var(--panel-2);overflow:hidden">
+          <i style="display:block;height:100%;width:${Math.round((steps.length - left.length) / steps.length * 100)}%;background:var(--accent)"></i></div>
+        <a class="btn" href="getting-started.html">Getting started</a></div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="muted">Next:</span>
+        ${next.map(r => `<a class="btn small" href="${esc(r.link || 'getting-started.html')}">${esc(r.title)}</a>`).join('')}
+      </div>`;
+  } catch (_) { /* never gets in the way of the day's work */ }
+}
+
 async function load() {
   const day = $('day').value, tomorrow = addDays(day, 1), today = localISO(new Date());
   $('title').textContent = day === today ? 'Today' : new Date(day + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  setupStrip();
   const sel = 'id, load_no, status, miles, driver_id, customer_id, invoice_id, hub_required, hub_start, hub_end, drivers(full_name), equipment(unit_no), customers(name), ' +
               'stops(id, seq, stop_type, needs_review, added_note, consignee, address, status, window_start, window_end, eta, arrived_at, departed_at, issue_type, late_reason)';
   const [L, T, P, I, D, AE, EQ] = await Promise.all([
