@@ -104,6 +104,11 @@
   <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
     <div class="row">
       <h1 style="flex-grow:1">Users</h1>
+    <div class="card" id="mfa-card" hidden style="margin:10px 0;padding:12px 14px">
+      <label class="chk" style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="req-mfa" style="height:auto;width:auto"> Require two-factor sign-in for everyone in the office</label>
+      <div class="hint" style="margin:6px 0 0">Each person sets it up once on My account with an authenticator app. Drivers aren't affected — they sign in with links, QR codes and reset cards. If someone loses their phone, use <b>Clear two-factor</b> on their row.</div>
+      <div class="hint" id="req-mfa-msg" style="margin:4px 0 0"></div>
+    </div>
       <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Deactivated</option><option value="all">All</option></select>
       <button class="btn primary" id="new-btn" type="button">+ Invite a user</button>
     </div>
@@ -332,7 +337,23 @@ async function loadLog() {
     || '<li class="hint" style="margin:0">No changes yet.</li>';
 }
 
+// 95: the company-wide two-factor requirement
+async function mfaCardDraw() {
+  const a = window.RC_ACCESS;
+  if (!a || !(a.owner || (a.can && a.can('users', 'edit')))) return;
+  $('mfa-card').hidden = false;
+  $('req-mfa').checked = !!a.mfa_required;
+}
+$('req-mfa').onchange = async () => {
+  const msg = $('req-mfa-msg');
+  msg.textContent = 'Saving…';
+  const { data, error } = await sb.rpc('set_require_mfa', { p_on: $('req-mfa').checked });
+  if (error) { msg.innerHTML = `<span class="error">${esc(error.message)}</span>`; $('req-mfa').checked = !$('req-mfa').checked; return; }
+  msg.innerHTML = data ? '<span class="ok">On. Anyone without it is asked to set it up next time they sign in.</span>' : 'Off.';
+};
+
 start();
+if (window.RC_ACCESS_READY) window.RC_ACCESS_READY.then(mfaCardDraw);
 </script>
 </body>
 </html>

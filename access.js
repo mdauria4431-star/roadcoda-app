@@ -53,6 +53,58 @@
       const t = setInterval(async () => { const { data: { session: s2 } } = await c.auth.getSession(); if (s2) { clearInterval(t); location.reload(); } }, 1200);
       resolveReady(null); return;
     }
+    // 95: two-factor. Supabase Auth holds the codes; this asks for one when a session
+    // is still at password-only, and blocks the app when the company requires it and the
+    // person hasn't set it up. Runs on every office page because access.js does.
+    async function twoFactorGate(access) {
+      let factors;
+      try { factors = (await c.auth.mfa.listFactors()).data; } catch (_) { return true; }   // older project: carry on
+      const verified = (factors && factors.totp || []).filter(f => f.status === 'verified');
+      let aal = 'aal1';
+      try { aal = (await c.auth.mfa.getAuthenticatorAssuranceLevel()).data.currentLevel || 'aal1'; } catch (_) {}
+      const onAccount = (location.pathname.split('/').pop() || '') === 'account.html';
+
+      if (verified.length && aal !== 'aal2') { await askForCode(verified[0].id); return false; }
+      if (access && access.mfa_required && !verified.length && !onAccount) {
+        document.documentElement.classList.add('rc-blocked');
+        note('<b>Your company requires two-factor sign-in.</b> Set it up once on <a href="account.html">My account</a>, then carry on. <a href="index.html">Home</a>');
+        return false;
+      }
+      return true;
+    }
+
+    function askForCode(factorId) {
+      return new Promise(() => {   // never resolves: the page reloads on success
+        document.documentElement.classList.add('rc-blocked');
+        const back = document.createElement('div');
+        back.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10000';
+        back.innerHTML = '<div style="background:var(--surface,#fff);border:1px solid var(--line,#ddd);border-radius:12px;max-width:380px;width:100%;padding:18px;color:var(--ink,#111);font-family:system-ui,sans-serif">'
+          + '<h2 style="margin:0 0 4px;font-size:17px">Two-factor sign-in</h2>'
+          + '<div style="font-size:13px;color:var(--ink-3,#666)">Open your authenticator app and enter the 6-digit code for RoadCoda.</div>'
+          + '<input id="rc-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" '
+          + 'style="width:100%;height:44px;margin-top:12px;padding:0 12px;font-size:22px;letter-spacing:.3em;text-align:center;border-radius:8px;border:1px solid var(--line,#ccc);background:var(--panel-2,#f7f7f7);color:inherit">'
+          + '<div style="display:flex;gap:8px;align-items:center;margin-top:12px">'
+          + '<button id="rc-mfa-go" style="height:36px;padding:0 14px;border:0;border-radius:8px;background:var(--accent,#5b3cc4);color:#fff;font-weight:600;cursor:pointer">Continue</button>'
+          + '<button id="rc-mfa-out" style="height:36px;padding:0 12px;border:1px solid var(--line,#ccc);border-radius:8px;background:transparent;color:inherit;cursor:pointer">Sign out</button>'
+          + '<span id="rc-mfa-msg" style="font-size:12.5px"></span></div>'
+          + '<div style="font-size:12px;color:var(--ink-3,#666);margin-top:10px">Lost your phone? Ask your RoadCoda owner to clear it for you.</div></div>';
+        document.body.appendChild(back);
+        const box = back.querySelector('#rc-mfa-code'), msg = back.querySelector('#rc-mfa-msg');
+        box.focus();
+        async function go() {
+          const code = (box.value || '').replace(/\D/g, '');
+          if (code.length !== 6) { msg.innerHTML = '<span style="color:#c62828">Six digits.</span>'; return; }
+          msg.textContent = 'Checking…';
+          const { error } = await c.auth.mfa.challengeAndVerify({ factorId, code });
+          if (error) { msg.innerHTML = '<span style="color:#c62828">' + (error.message || 'That code didn\'t work') + '</span>'; box.value = ''; box.focus(); return; }
+          location.reload();
+        }
+        back.querySelector('#rc-mfa-go').onclick = go;
+        box.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+        back.querySelector('#rc-mfa-out').onclick = async () => { await c.auth.signOut(); location.href = 'index.html'; };
+      });
+    }
+
     const { data, error } = await c.rpc('my_access');
     if (error || !data) return legacy();                       // before 37_user_access.sql: everything as before
     if (data.role === 'driver') { resolveReady(data); return; }
@@ -68,6 +120,7 @@
     // A new carrier picks a preset first (owner, or whoever may switch features)
     if (data.features && !data.feature_preset && (data.owner || can('users', 'edit')) && pageFile !== 'features.html') { location.href = 'features.html?welcome=1'; return; }
     window.RC_ACCESS = data;
+    if (!(await twoFactorGate(data))) return;   // 95: ask for the code, or send them to set it up
     if (data.money) document.documentElement.classList.add('rc-money');
     if (data.pay) document.documentElement.classList.add('rc-pay');
 
