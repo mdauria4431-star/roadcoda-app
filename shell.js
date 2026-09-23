@@ -61,7 +61,7 @@
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
-    'driver.html': '▢', 'account.html': '⊙', 'rc-report-link': '⚑',
+    'driver.html': '▢', 'account.html': '⊙', 'rc-report-link': '⚑', 'privacy.html': '§',
   };
   var NAME = { 'index.html': 'Home', 'dispatch.html': 'Dispatch', 'loads.html': 'Loads',
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
@@ -181,6 +181,12 @@
       co.href = 'company.html'; co.textContent = 'Company';
       if (here === 'company.html') co.className = 'on';
       nav.appendChild(co); links['company.html'] = co;
+    }
+    if (!links['privacy.html']) {
+      var pv = document.createElement('a');
+      pv.href = 'privacy.html'; pv.textContent = 'Privacy';
+      pv.target = '_blank'; pv.rel = 'noopener';
+      nav.appendChild(pv); links['privacy.html'] = pv;
     }
     if (!links['rc-report-link']) {
       var rp = document.createElement('a');
