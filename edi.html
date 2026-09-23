@@ -175,6 +175,14 @@ function drawConns() {
   document.querySelectorAll('[data-test]').forEach(b => b.onclick = () => testTender(b.dataset.test));
 }
 
+// what a message actually says, so the log is readable without opening anything
+function what(m) {
+  if (m.kind === '214') return `${(m.event || '').replace('_', ' ')}${m.code ? ` — their code ${m.code}` : ''}`;
+  if (m.kind === '210') return m.invoice_no ? `Invoice ${m.invoice_no}` : 'Invoice';
+  if (m.kind === '990') return m.response === 'A' ? 'Accepted' : m.response === 'D' ? 'Declined' : '';
+  return '';
+}
+
 function drawMsgs() {
   const f = $('filter').value;
   const rows = DATA.messages.filter(m => !f || (f === 'failed' ? m.status === 'failed' : m.direction === f));
@@ -186,7 +194,7 @@ function drawMsgs() {
       <td><b>${esc(m.kind)}</b> ${m.direction === 'in' ? 'in' : 'out'}</td>
       <td>${esc(m.load_no || '—')}</td>
       <td>${m.status === 'failed' ? '<span class="tag bad">failed</span>' : m.status === 'ignored' ? '<span class="tag test">test mode</span>' : `<span class="tag${m.status === 'sent' || m.status === 'received' ? ' ok' : ''}">${esc(m.status)}</span>`}${m.acked ? ' <span class="mini">acked</span>' : ''}</td>
-      <td class="mini">${esc(m.detail || '')}</td></tr>`).join('')}
+      <td class="mini">${esc(m.detail || what(m))}</td></tr>`).join('')}
   </tbody></table>`;
 }
 
