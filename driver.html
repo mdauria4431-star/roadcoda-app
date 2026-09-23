@@ -300,6 +300,7 @@
       <button class="btn" id="switch-btn" type="button" style="min-height:44px">Switch driver</button>
     </div>
     <div id="stops"></div>
+    <div style="text-align:center;margin:14px 0 4px"><a href="#" id="drv-report" style="font-size:13px;opacity:.75">Report a problem to RoadCoda</a></div>
     <!-- Text messages (89): the driver's own choice — this is their agreement to get texts -->
     <div class="card" id="sms-card" hidden style="margin-top:12px">
       <label style="display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600"><input type="checkbox" id="sms-on" style="width:22px;height:22px"> Text me about my loads</label>
@@ -529,6 +530,20 @@ function watchMotion() {
     }
   }, () => {}, { enableHighAccuracy: true, maximumAge: 2000 });
 }
+
+// 94: a driver can report a problem too — the page, browser and any errors go with it
+let drvErrors = [];
+window.addEventListener('error', (e) => { if (drvErrors.length < 5) drvErrors.push(String((e && e.message) || e).slice(0, 200)); });
+$('drv-report').onclick = async (e) => {
+  e.preventDefault();
+  const what = prompt('What went wrong? (RoadCoda also gets the page you are on and any errors)');
+  if (!what || what.trim().length < 3) return;
+  const { data, error } = await sb.rpc('report_problem', {
+    p_message: what.trim(), p_page: 'driver.html',
+    p_details: { browser: navigator.userAgent.slice(0, 200), screen: innerWidth + 'x' + innerHeight, errors: drvErrors.slice(0, 5) }
+  });
+  alert(error ? (error.message || 'Not sent') : `Thanks — RoadCoda has it. Reference ${data.ticket_no}.`);
+};
 
 // ---------- Live tracking (87): the phone as a fallback position ----------
 // While a load is in progress and the app is open, send where the truck is: every 3 minutes, or sooner

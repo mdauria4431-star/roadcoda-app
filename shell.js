@@ -61,7 +61,7 @@
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
-    'driver.html': '▢', 'account.html': '⊙',
+    'driver.html': '▢', 'account.html': '⊙', 'rc-report-link': '⚑',
   };
   var NAME = { 'index.html': 'Home', 'dispatch.html': 'Dispatch', 'loads.html': 'Loads',
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
@@ -181,6 +181,12 @@
       co.href = 'company.html'; co.textContent = 'Company';
       if (here === 'company.html') co.className = 'on';
       nav.appendChild(co); links['company.html'] = co;
+    }
+    if (!links['rc-report-link']) {
+      var rp = document.createElement('a');
+      rp.href = '#'; rp.textContent = 'Report a problem';
+      rp.onclick = function (e) { e.preventDefault(); reportProblem(); };
+      nav.appendChild(rp); links['rc-report-link'] = rp;
     }
     if (!links['getting-started.html'] && (!acc || (acc.can && acc.can('users')))) {
       var gs = document.createElement('a');
@@ -391,5 +397,58 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', dayArrows);
   else dayArrows();
   window.RC_DAY_ARROWS = dayArrows;   // pages that draw their toolbar later can call this again
+
+
+  // ---- Report a problem (94): a small link at the foot of the menu on every office page.
+  // The report carries the page, the browser and any errors the page hit, so RoadCoda isn't
+  // working from a screenshot. Errors are kept in memory only, and only sent if someone reports.
+  var rcErrors = [];
+  window.addEventListener('error', function (e) {
+    if (rcErrors.length < 5) rcErrors.push(String((e && e.message) || e).slice(0, 200));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    if (rcErrors.length < 5) rcErrors.push('promise: ' + String((e && e.reason && e.reason.message) || e.reason || '').slice(0, 200));
+  });
+
+  function reportProblem() {
+    if (document.getElementById('rc-report')) return;
+    var back = document.createElement('div');
+    back.id = 'rc-report';
+    back.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:9999';
+    back.innerHTML = '<div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;max-width:520px;width:100%;padding:16px;color:var(--ink);font-family:inherit">'
+      + '<h2 style="margin:0 0 4px;font-size:16px">Report a problem to RoadCoda</h2>'
+      + '<div style="font-size:12.5px;color:var(--ink-3)">What went wrong, and what you were doing. The page you\'re on and any errors it hit are sent too.</div>'
+      + '<textarea id="rc-rp-text" rows="5" style="width:100%;margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-family:inherit;font-size:14px" placeholder="e.g. Saving a load gives an error when the customer is ABC"></textarea>'
+      + '<label style="display:block;margin-top:8px;font-size:12.5px;color:var(--ink-3)">Email for the reply (optional)<input id="rc-rp-mail" type="email" style="width:100%;height:32px;margin-top:4px;padding:0 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink)"></label>'
+      + '<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">'
+      + '<button id="rc-rp-send" style="height:34px;padding:0 14px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer">Send report</button>'
+      + '<button id="rc-rp-x" style="height:34px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);font-weight:600;cursor:pointer">Cancel</button>'
+      + '<span id="rc-rp-msg" style="font-size:12.5px"></span></div></div>';
+    document.body.appendChild(back);
+    back.onclick = function (e) { if (e.target === back) back.remove(); };
+    document.getElementById('rc-rp-x').onclick = function () { back.remove(); };
+    setTimeout(function () { document.getElementById('rc-rp-text').focus(); }, 50);
+    document.getElementById('rc-rp-send').onclick = function () {
+      var txt = document.getElementById('rc-rp-text').value.trim(), msg = document.getElementById('rc-rp-msg');
+      if (txt.length < 3) { msg.innerHTML = '<span style="color:var(--late)">Say what went wrong.</span>'; return; }
+      var sb = window.RC_SB || (window.supabase && window.RC_CONFIG ? window.supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY) : null);
+      if (!sb) { msg.innerHTML = '<span style="color:var(--late)">Can\'t send from this page — email support instead.</span>'; return; }
+      msg.textContent = 'Sending…';
+      sb.rpc('report_problem', {
+        p_message: txt,
+        p_page: location.pathname.split('/').pop() + location.search,
+        p_reply_to: document.getElementById('rc-rp-mail').value.trim() || null,
+        p_details: { browser: navigator.userAgent.slice(0, 200), screen: window.innerWidth + 'x' + window.innerHeight, errors: rcErrors.slice(0, 5) }
+      }).then(function (r) {
+        if (r.error) { msg.innerHTML = '<span style="color:var(--late)">' + (r.error.message || 'Not sent') + '</span>'; return; }
+        back.innerHTML = '<div style="background:var(--surface);border:1px solid var(--line);border-radius:12px;max-width:460px;width:100%;padding:18px;color:var(--ink)">'
+          + '<h2 style="margin:0 0 6px;font-size:16px">Thanks — that\'s with RoadCoda</h2>'
+          + '<div style="font-size:13.5px">Your reference is <b>' + (r.data && r.data.ticket_no) + '</b>. Quote it if you call or email.</div>'
+          + '<div style="margin-top:12px"><button id="rc-rp-done" style="height:34px;padding:0 14px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer">Close</button></div></div>';
+        document.getElementById('rc-rp-done').onclick = function () { back.remove(); };
+      });
+    };
+  }
+  window.RC_REPORT_PROBLEM = reportProblem;
 
 })();
