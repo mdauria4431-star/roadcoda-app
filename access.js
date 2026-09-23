@@ -7,12 +7,12 @@
   const SCREEN_OF = {
     'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'safety.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
-    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home', 'company.html': 'home', 'planner.html': 'dispatch', 'map.html': 'dispatch', 'dock.html': 'dock', 'texts.html': 'dispatch',
+    'tolls.html': 'tolls', 'integrations.html': 'integrations', 'edi.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home', 'company.html': 'home', 'planner.html': 'dispatch', 'map.html': 'dispatch', 'dock.html': 'dock', 'texts.html': 'dispatch',
   };
   // Pages that belong to a module the carrier can switch off (82)
   const FEATURE_OF = { 'containers.html': 'containers', 'ifta.html': 'ifta', 'claims.html': 'claims', 'compliance.html': 'compliance', 'handbooks.html': 'handbooks',
     'retention.html': 'retention', 'office-payroll.html': 'office_payroll', 'qb-export.html': 'quickbooks', 'tolls.html': 'tolls', 'profit.html': 'profit',
-    'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets', 'planner.html': 'route_planner', 'map.html': 'live_tracking', 'dock.html': 'dock_scanning', 'texts.html': 'texts' };
+    'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets', 'planner.html': 'route_planner', 'map.html': 'live_tracking', 'dock.html': 'dock_scanning', 'texts.html': 'texts', 'edi.html': 'edi' };
   const FEATURE_NAME = { containers: 'Returnable containers', ifta: 'IFTA fuel tax', claims: 'Claims & subrogation', compliance: 'Driver files & inspections', handbooks: 'Employee handbooks',
     retention: 'Onboarding & retention', office_payroll: 'Office staff payroll', quickbooks: 'QuickBooks export', tolls: 'Tolls', profit: 'Profit reports', activity_files: 'Customer activity files',
     ratings: 'Delivery ratings', trip_sheets: 'Trip sheets', route_planner: 'Route planner', live_tracking: 'Live tracking (a RoadCoda add-on)', dock_scanning: 'Dock & load-out scanning (a RoadCoda add-on)', texts: 'Text messages (a RoadCoda add-on)' };

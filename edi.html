@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EDI · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+  .btn.small{height:27px;padding:0 9px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:12px}
+  input,select,textarea{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:14px;color:var(--ink);width:100%;background:var(--panel-2)}
+  textarea{height:56px;padding:7px 9px}
+  input[type=checkbox]{width:auto;height:auto}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line-soft)}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:12px;color:var(--ink-3);font-weight:400}
+  .tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--line)}
+  .tag.ok{color:var(--ok);border-color:var(--ok)} .tag.bad{color:var(--late);border-color:var(--late)}
+  .tag.test{color:var(--warn,#c98a00);border-color:var(--warn,#c98a00)}
+  .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sp{flex:1}
+  .error{color:var(--late)} .ok{color:var(--ok)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a class="on" href="edi.html">EDI</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar"><h1>EDI</h1><span class="sp"></span><button class="btn" id="new-btn">+ New connection</button></div>
+    <div class="mini">One connection per customer you exchange EDI with. Their tenders become loads here, your stop events go back as status updates, and invoices go out when a load is billed. New connections start in <b>test mode</b> — nothing leaves RoadCoda until you switch that off.</div>
+
+    <div class="card"><header><h2>Connections</h2></header>
+      <div id="conns" class="pad">Loading…</div>
+    </div>
+
+    <div class="card"><header><h2>Messages</h2><span class="sp"></span>
+      <select id="days" style="width:auto;height:27px"><option value="1">Today</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option></select>
+      <select id="filter" style="width:auto;height:27px"><option value="">All</option><option value="in">Received</option><option value="out">Sent</option><option value="failed">Problems</option></select></header>
+      <div id="msgs" class="pad" style="padding:0"></div>
+    </div>
+  </section>
+
+  <dialog id="ed" style="max-width:720px;width:94%;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0">
+    <form method="dialog" style="margin:0"><div class="pad" style="gap:12px">
+      <div class="bar"><h2 style="margin:0;font-size:16px" id="ed-title">New connection</h2><span class="sp"></span>
+        <span class="mini" id="ed-state"></span></div>
+      <div class="grid">
+        <label>Name <span class="mini">what your office calls it</span><input id="f-name" placeholder="Northeast Parts DC"></label>
+        <label>Customer<select id="f-customer"></select></label>
+      </div>
+      <div class="grid">
+        <label>Their EDI id<input id="f-partner_id" placeholder="from their routing guide"></label>
+        <label>Their qualifier<input id="f-partner_qual" placeholder="ZZ"></label>
+        <label>Your EDI id with them<input id="f-our_id"></label>
+        <label>Your qualifier<input id="f-our_qual" placeholder="ZZ"></label>
+      </div>
+      <label>Provider reference <span class="mini">how your EDI provider names this partner (optional)</span><input id="f-provider_ref"></label>
+      <div class="bar" style="gap:16px">
+        <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="f-tenders_in"> Take their tenders</label>
+        <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="f-status_out"> Send status updates</label>
+        <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="f-invoices_out"> Send invoices</label>
+        <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="f-auto_accept"> Accept tenders automatically</label>
+      </div>
+      <div class="grid">
+        <label>Status events sent <span class="mini">tick what they want</span>
+          <span class="bar" id="f-events" style="gap:10px;font-weight:400"></span></label>
+        <label>Least gap between updates (minutes) <span class="mini">0 = send every event</span><input id="f-status_min_gap" type="number" min="0" max="240"></label>
+      </div>
+      <details><summary style="cursor:pointer;font-weight:600">Their codes</summary>
+        <div class="pad" style="padding-left:0">
+          <div class="mini">From their routing guide. Blank uses the common default.</div>
+          <div class="grid" id="f-status-map"></div>
+          <div class="mini" style="margin-top:6px">Charge codes on invoices</div>
+          <div class="grid" id="f-charge-map"></div>
+          <div class="mini" style="margin-top:6px">Reference qualifiers</div>
+          <div class="grid" id="f-ref-map"></div>
+        </div>
+      </details>
+      <label>Notes<textarea id="f-notes" placeholder="Who to call there, quirks, go-live date"></textarea></label>
+      <div class="bar">
+        <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="f-test_mode"> <b>Test mode</b> — nothing is sent out</label>
+        <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="f-active"> Active</label>
+      </div>
+      <div class="bar"><button class="btn primary" id="save" value="save">Save</button>
+        <button class="btn" value="cancel">Cancel</button>
+        <span class="sp"></span><span id="ed-msg" class="mini"></span></div>
+    </div></form>
+  </dialog>
+</main>
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const EVENTS = ['arrived', 'departed', 'delivered', 'delayed', 'picked_up', 'refused'];
+const CHARGES = [['linehaul', 'Line haul'], ['fsc', 'Fuel surcharge'], ['detention', 'Detention'], ['stop', 'Stop charge'], ['toll', 'Tolls'], ['other', 'Other']];
+const REFS = [['load_no', 'Our load number'], ['po', 'Purchase order'], ['bol', 'Bill of lading'], ['customer_ref', 'Their reference'], ['stop_ref', 'Stop reference']];
+let DATA = { connections: [], messages: [], customers: [], can_edit: false }, editing = null;
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data: p } = await sb.from('profiles').select('full_name, role, carriers(name)').eq('user_id', session.user.id).single();
+  if (!p) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  $('who').textContent = `${p.full_name || ''} · ${p.carriers?.name || ''} · ${p.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  $('app').hidden = false;
+  await load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load() {
+  const { data, error } = await sb.rpc('edi_home', { p_days: parseInt($('days').value, 10) });
+  if (error) { $('conns').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  DATA = data; drawConns(); drawMsgs();
+  $('new-btn').hidden = !DATA.can_edit;
+}
+$('days').onchange = load;
+$('filter').onchange = () => drawMsgs();
+
+function drawConns() {
+  if (!DATA.connections.length) {
+    $('conns').innerHTML = '<div class="mini">No connections yet. Add one when a customer gives you their routing guide — you can run it in test mode until both sides are happy.</div>';
+    return;
+  }
+  $('conns').innerHTML = `<table><thead><tr><th>Name</th><th>Customer</th><th>Their id</th><th>Handles</th><th>State</th><th>7 days</th><th></th></tr></thead><tbody>
+    ${DATA.connections.map(c => `<tr>
+      <td><b>${esc(c.name)}</b>${c.notes ? `<div class="mini">${esc(c.notes)}</div>` : ''}</td>
+      <td>${esc(c.customer || '—')}</td>
+      <td class="mono">${esc(c.partner_id)}</td>
+      <td class="mini">${[c.tenders_in ? 'tenders in' : null, c.status_out ? 'status out' : null, c.invoices_out ? 'invoices out' : null].filter(Boolean).join(' · ') || 'nothing'}${c.auto_accept ? ' · auto-accept' : ''}</td>
+      <td>${!c.active ? '<span class="tag">off</span>' : c.test_mode ? '<span class="tag test">test mode</span>' : '<span class="tag ok">live</span>'}</td>
+      <td class="mini">${c.sent_7d} sent${c.failed_7d ? ` · <span class="error">${c.failed_7d} failed</span>` : ''}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${DATA.can_edit ? `<button class="btn small" data-edit="${c.id}">Edit</button>` : ''}
+        ${DATA.can_edit && c.test_mode ? `<button class="btn small" data-test="${c.id}">Send a test tender</button>` : ''}</td></tr>`).join('')}
+  </tbody></table>`;
+  document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => open(DATA.connections.find(c => c.id === b.dataset.edit)));
+  document.querySelectorAll('[data-test]').forEach(b => b.onclick = () => testTender(b.dataset.test));
+}
+
+function drawMsgs() {
+  const f = $('filter').value;
+  const rows = DATA.messages.filter(m => !f || (f === 'failed' ? m.status === 'failed' : m.direction === f));
+  if (!rows.length) { $('msgs').innerHTML = '<div class="pad mini">Nothing yet.</div>'; return; }
+  $('msgs').innerHTML = `<table><thead><tr><th>When</th><th>Connection</th><th>Message</th><th>Load</th><th>State</th><th>Detail</th></tr></thead><tbody>
+    ${rows.map(m => `<tr>
+      <td class="mini">${new Date(m.at).toLocaleString()}</td>
+      <td>${esc(m.connection || '—')}</td>
+      <td><b>${esc(m.kind)}</b> ${m.direction === 'in' ? 'in' : 'out'}</td>
+      <td>${esc(m.load_no || '—')}</td>
+      <td>${m.status === 'failed' ? '<span class="tag bad">failed</span>' : m.status === 'ignored' ? '<span class="tag test">test mode</span>' : `<span class="tag${m.status === 'sent' || m.status === 'received' ? ' ok' : ''}">${esc(m.status)}</span>`}${m.acked ? ' <span class="mini">acked</span>' : ''}</td>
+      <td class="mini">${esc(m.detail || '')}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function open(c) {
+  editing = c || null;
+  $('ed-title').textContent = c ? c.name : 'New connection';
+  $('ed-state').innerHTML = c && !c.test_mode ? '<span class="ok">live</span>' : '<span class="tag test">test mode</span>';
+  $('f-customer').innerHTML = '<option value="">—</option>' + DATA.customers.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+  const v = c || { partner_qual: 'ZZ', our_qual: 'ZZ', tenders_in: true, status_out: true, invoices_out: false, test_mode: true, active: true, status_events: ['arrived', 'departed', 'delivered', 'delayed'], status_min_gap: 0, status_map: {}, charge_map: {}, ref_map: {} };
+  ['name', 'customer_id', 'partner_id', 'partner_qual', 'our_id', 'our_qual', 'provider_ref', 'status_min_gap', 'notes'].forEach(k => { const el = $('f-' + k); if (el) el.value = v[k] ?? ''; });
+  ['tenders_in', 'status_out', 'invoices_out', 'auto_accept', 'test_mode', 'active'].forEach(k => $('f-' + k).checked = !!v[k]);
+  $('f-events').innerHTML = EVENTS.map(e => `<label style="flex-direction:row;align-items:center;gap:4px;font-weight:400"><input type="checkbox" data-ev="${e}" ${(v.status_events || []).includes(e) ? 'checked' : ''}> ${e.replace('_', ' ')}</label>`).join('');
+  $('f-status-map').innerHTML = EVENTS.map(e => `<label>${e.replace('_', ' ')}<input data-sm="${e}" value="${esc((v.status_map[e] || {}).code || '')}" placeholder="code"></label>`).join('');
+  $('f-charge-map').innerHTML = CHARGES.map(([k, lbl]) => `<label>${lbl}<input data-cm="${k}" value="${esc(v.charge_map[k] || '')}" placeholder="code"></label>`).join('');
+  $('f-ref-map').innerHTML = REFS.map(([k, lbl]) => `<label>${lbl}<input data-rm="${k}" value="${esc(v.ref_map[k] || '')}" placeholder="qualifier"></label>`).join('');
+  $('ed-msg').textContent = '';
+  $('ed').showModal();
+}
+$('new-btn').onclick = () => open(null);
+
+$('save').onclick = async (e) => {
+  e.preventDefault();
+  const pick = (sel, attr) => Object.fromEntries([...document.querySelectorAll(sel)].map(i => [i.dataset[attr], i.value.trim()]).filter(([, v]) => v));
+  const p = {
+    id: editing ? editing.id : null,
+    name: $('f-name').value.trim(), customer_id: $('f-customer').value || null,
+    partner_id: $('f-partner_id').value.trim(), partner_qual: $('f-partner_qual').value.trim() || 'ZZ',
+    our_id: $('f-our_id').value.trim(), our_qual: $('f-our_qual').value.trim() || 'ZZ',
+    provider_ref: $('f-provider_ref').value.trim() || null,
+    tenders_in: $('f-tenders_in').checked, status_out: $('f-status_out').checked,
+    invoices_out: $('f-invoices_out').checked, auto_accept: $('f-auto_accept').checked,
+    test_mode: $('f-test_mode').checked, active: $('f-active').checked,
+    status_events: [...document.querySelectorAll('[data-ev]')].filter(i => i.checked).map(i => i.dataset.ev),
+    status_min_gap: parseInt($('f-status_min_gap').value || '0', 10),
+    notes: $('f-notes').value.trim() || null,
+    status_map: Object.fromEntries(Object.entries(pick('[data-sm]', 'sm')).map(([k, v]) => [k, { code: v }])),
+    charge_map: pick('[data-cm]', 'cm'), ref_map: pick('[data-rm]', 'rm')
+  };
+  $('ed-msg').textContent = 'Saving…';
+  const { error } = await sb.rpc('set_edi_connection', { p });
+  if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  $('ed').close(); await load();
+};
+
+async function testTender(id) {
+  const { data, error } = await sb.rpc('edi_test_tender', { p_conn: id, p_stops: 3 });
+  if (error) { alert(error.message); return; }
+  await load();
+  alert(data && data.load_id
+    ? 'A pretend tender came in and became a planned load. Open Dispatch to see it — nothing was sent to the customer, because this connection is in test mode.'
+    : 'Nothing was created: ' + JSON.stringify(data));
+}
+
+start();
+</script>
+</body>
+</html>
