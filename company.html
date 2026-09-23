@@ -119,6 +119,16 @@
       </div>
     </div>
 
+    <div class="card">
+      <header><h2>6 · Your data</h2></header>
+      <div class="pad">
+        <div class="mini">Everything your company has in RoadCoda — loads and stops, customers and delivery points, drivers, trucks, rates, invoices, driver pay, safety and compliance records, messages — in one file you can keep or hand to another system. Photographs and uploaded documents stay where they are; the file lists each one so they can be fetched.</div>
+        <div id="export-counts" class="mini"></div>
+        <div class="bar"><button class="btn" id="export-btn" type="button">Export everything</button>
+          <span class="mini" id="export-msg"></span></div>
+      </div>
+    </div>
+
     <div class="bar" style="position:sticky;bottom:0;padding:12px 0;background:var(--bg);border-top:1px solid var(--line-soft)">
       <button class="btn primary" id="save">Save company details</button>
       <span id="msg"></span><span class="sp"></span>
@@ -242,6 +252,47 @@ async function geocodeOne(typed) {
   throw new Error(why);
 }
 
+// 98: everything this company has, in one file
+async function exportCounts() {
+  try {
+    const { data } = await sb.rpc('export_summary');
+    if (!data) return;
+    const bits = Object.entries(data).filter(([, n]) => n > 0).map(([k, n]) => `${n.toLocaleString()} ${k.replace(/_/g, ' ')}`);
+    $('export-counts').textContent = bits.length ? 'In here now: ' + bits.join(' · ') : '';
+  } catch (_) {}
+}
+$('export-btn').onclick = async () => {
+  const btn = $('export-btn'), msg = $('export-msg');
+  btn.disabled = true;
+  try {
+    const { data: parts, error } = await sb.rpc('export_parts');
+    if (error) throw error;
+    const name = (carrier && (carrier.name || carrier.remit_name)) || 'export';
+    const out = { exported_at: new Date().toISOString(), company: name, parts: {} };
+    for (const part of parts) {
+      let offset = 0, rows = [];
+      for (;;) {
+        msg.textContent = `${part}… ${rows.length ? rows.length.toLocaleString() + ' rows' : ''}`;
+        const { data, error: e2 } = await sb.rpc('export_part', { p_part: part, p_offset: offset, p_limit: 1000 });
+        if (e2) throw e2;
+        rows = rows.concat(data.rows || []);
+        if (!data.more) break;
+        offset += 1000;
+      }
+      out.parts[part] = rows;
+    }
+    const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `roadcoda-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    msg.innerHTML = '<span class="ok">Saved to your downloads.</span>';
+  } catch (e) {
+    msg.innerHTML = `<span class="error">${esc((e && e.message) || 'Export failed')}</span>`;
+  }
+  btn.disabled = false;
+};
+
 // 93: "Check address" — asks Google what it matches, so typos show up before miles are measured from it
 async function checkAddress(fieldId) {
   const box = $(fieldId), out = $('chk-' + fieldId), typed = box.value.trim();
@@ -263,6 +314,7 @@ async function checkAddress(fieldId) {
 document.querySelectorAll('[data-check]').forEach(b => b.onclick = () => checkAddress(b.dataset.check));
 
 start();
+exportCounts();
 </script>
 </body>
 </html>
