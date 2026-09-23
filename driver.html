@@ -617,7 +617,7 @@ async function start() {
   }
   const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name, office_phone)').eq('user_id', session.user.id).single();
   if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
-  if (p.role !== 'driver') { $('login-error').textContent = 'This page is for driver logins. Office users: open dispatch.html.'; $('login-view').hidden = false; return; }
+  if (p.role !== 'driver') { $('login-error').innerHTML = 'This page is for driver logins. <a href="index.html">Office sign-in</a>'; $('login-view').hidden = false; return; }
   const { data: drv } = await sb.from('drivers').select('active').eq('user_id', session.user.id).maybeSingle();
   if (!drv || !drv.active) { $('login-error').textContent = 'Your driver app access is turned off. Call dispatch.'; $('login-view').hidden = false; return; }
   me = p; officePhone = p.carriers?.office_phone || '';
@@ -845,6 +845,7 @@ $('pw-btn').onclick = async () => {
 
 // ---------- Today's stops ----------
 async function loadStops() {
+  try { localStorage.setItem('rc-driver-device', '1'); } catch (_) {}   // 95: this phone belongs on the driver app
   if (!window.__smsLoaded) { window.__smsLoaded = true; smsLoad(); }
   let { data: loads, error } = await sb.from('loads')
     .select('id, load_no, status, truck_id, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')

@@ -97,6 +97,7 @@
     <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
     <button class="btn primary" id="login-btn">Sign in</button>
     <div class="error" id="login-error"></div>
+    <div class="muted" style="margin-top:4px;font-size:13px">Driver? <a href="driver.html">Open the driver app</a></div>
   </section>
 
   <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
@@ -148,8 +149,15 @@ const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d
 const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Delivery issue' };
 const loadLink = (l, day) => `loads.html?load=${l.id}&day=${day}`;
 
+// 95: this page is where someone typing the address lands. A phone that has been used
+// as a driver app before belongs on the driver app, not on the office sign-in.
+function driverDevice() {
+  try { return localStorage.getItem('rc-driver-device') === '1'; } catch (_) { return false; }
+}
+
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
+  if (!session && driverDevice()) { location.replace('driver.html'); return; }
   if (!session) { $('login-view').hidden = false; return; }
   const { data: p } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
   if (!p) {
