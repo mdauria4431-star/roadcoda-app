@@ -671,6 +671,7 @@ async function startTour() {
   officePhone = t.office_phone || '';
   $('who').innerHTML = `${esc(t.full_name)}<br>${esc(t.carrier || '')}`;
   hideAll(); $('app').hidden = false; $('devbar').hidden = true;
+  const rp = $('drv-report'); if (rp) rp.parentElement.hidden = true;   // no problem reports from the tour
   if (!document.getElementById('rc-tourbar')) {
     const st = document.createElement('style');
     st.textContent = '#rc-tourbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.4;' +
@@ -901,6 +902,8 @@ async function loadStops() {
     .select('id, load_no, status, truck_id, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').eq(TOUR_DRIVER ? 'driver_id' : 'service_date', TOUR_DRIVER ? TOUR_DRIVER.driver_id : todayISO()).order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
+  // 101: on the tour nothing can be saved, so the "odometer first" step would hide every stop button
+  if (TOUR_DRIVER) (loads || []).forEach(l => { l.ask_odometer = false; });
   // Truck device: only this driver's loads on THIS truck
   const devL = getDevice();
   let elsewhere = 0;
