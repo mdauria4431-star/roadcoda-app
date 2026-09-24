@@ -369,6 +369,12 @@
     // Let access.js settle first so grouping sees the final link set
     var ready = window.RC_ACCESS_READY || Promise.resolve(null);
     ready.then(build, build);
+    // 110: the dispatch assistant, for office logins whose company has the add-on (never on the tour)
+    ready.then(function () {
+      var a = window.RC_ACCESS;
+      if (!a || a.guest || !a.features || a.features.assistant !== true || window.RCAssistant) return;
+      var s = document.createElement('script'); s.src = 'assistant.js'; document.head.appendChild(s);
+    }, function () {});
     // and a backstop in case access.js never loaded on this page
     setTimeout(build, 2500);
   }
