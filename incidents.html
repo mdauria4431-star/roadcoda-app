@@ -99,7 +99,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&
 const dt = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
 const yn = (v) => v === true ? 'Yes' : v === false ? 'No' : '—';
 const KIND = { collision: 'Collision', injury: 'Injury', cargo: 'Cargo damage', property: 'Property damage', other: 'Other' };
-const SHOT = { scene: 'Scene', our_vehicle: 'Our truck', other_vehicle: 'Other vehicle', plate: 'Their plate', insurance_card: 'Insurance card', license: 'Licence', cargo: 'Cargo', injury: 'Injury', police: 'Police', other: 'Other' };
+const SHOT = { scene: 'Scene', our_vehicle: 'Our truck', other_vehicle: 'Other vehicle', plate: 'Their plate', insurance_card: 'Insurance card', license: 'License', cargo: 'Cargo', injury: 'Injury', police: 'Police', other: 'Other' };
 const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('safety', 'edit');
 let ROWS = [], CUR = null, DRIVERS = [], UNITS = [], LOCS = [], TERMS = [], INJ = [];
 
