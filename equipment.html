@@ -12,7 +12,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <script src="config.js"></script>
+<script src="rc-upload.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <style>
@@ -97,6 +99,7 @@
       <input id="q" type="search" placeholder="Search unit, VIN, plate, tag…" aria-label="Search equipment" style="width:240px">
       <select id="ftype" aria-label="Type"><option value="">All types</option><option value="tractor">Tractors</option><option value="straight_truck">Straight trucks</option><option value="van">Vans</option><option value="pickup">Pickups</option><option value="trailer">Trailers</option></select>
       <select id="show" aria-label="Show"><option value="active">In service</option><option value="inactive">Retired</option><option value="all">All</option></select>
+      <button class="btn" id="up-btn" type="button">Upload spreadsheet</button>
       <button class="btn primary" id="new-btn" type="button">+ New unit</button>
     </div>
 
@@ -121,7 +124,7 @@
         <label>In service since<input id="f-in_service_date" type="date"></label>
         <label id="oos-wrap" hidden>Retired on<input id="f-out_of_service_date" type="date"></label>
       </div>
-      <datalist id="bodies"><option value="Dry van"><option value="Reefer"><option value="Box"><option value="Box with liftgate"><option value="Flatbed"><option value="Step deck"><option value="Cargo van"><option value="Day cab"><option value="Sleeper"></datalist>
+      <datalist id="bodies"><option value="Dry van"><option value="Reefer"><option value="Box"><option value="Box with liftgate"><option value="Flatbed"><option value="Curtainside"><option value="Step deck"><option value="Cargo van"><option value="Day cab"><option value="Sleeper"></datalist>
 
       <h3>Tolls</h3>
       <div class="grid">
@@ -532,6 +535,101 @@ $('pair-btn').onclick = async () => {
   $('pair-btn').disabled = false;
 };
 $('qr-close').onclick = async () => { $('qr-modal').hidden = true; $('qr-box').innerHTML = ''; const id = cur.id; await load(); edit(units.find(u => u.id === id), true); };
+
+// ---------- 109: upload a spreadsheet of units (the RoadCoda template, or the carrier's own list) ----------
+const UP_TYPE = [[/tractor|sleeper|slpr|day ?cab/i, 'tractor'], [/sprinter|cargo ?van|^van$/i, 'van'], [/pick ?up/i, 'pickup'],
+  [/straight|\btruck\b|bobtail|^\d+'?\s*(ft)?\s*box|^box/i, 'straight_truck'],
+  [/trailer|trlr|pup|dry ?van|53|48|28|reefer|flatbed|curtain|soft ?side|\bdv\b/i, 'trailer']];
+const UP_BODY = [[/curtain|soft ?side/i, 'Curtainside'], [/reefer|refrig/i, 'Reefer'], [/flat ?bed|stake/i, 'Flatbed'], [/dry|van/i, 'Dry van'], [/box/i, 'Box'], [/.+/, 'Other']];
+const UP_OWN = [[/owner.?op/i, 'owner_operator'], [/lease|^l$/i, 'leased'], [/rent/i, 'rented'], [/own|^o$/i, 'owned']];
+const pick = (list, v) => { const s = String(v || '').trim(); if (!s) return null; for (const [re, x] of list) if (re.test(s)) return x; return undefined; };
+let upSeen = null;
+$('up-btn').onclick = () => RCUpload.open({
+  title: 'Upload trucks and trailers',
+  template: 'templates/RoadCoda-template-Trucks-and-trailers.xlsx',
+  fields: [
+    { key: 'unit_no', label: 'Unit #', re: /^unit|unit ?(#|no|num)|^#$/i, required: true },
+    { key: 'unit_type', label: 'Type', re: /^type|unit ?type|equip.*type/i, required: true },
+    { key: 'body_type', label: 'Body', re: /body/i, rec: true },
+    { key: 'length_ft', label: 'Length (ft)', re: /length|len\b|size/i, rec: true },
+    { key: 'axles', label: 'Axles', re: /axle/i, required: true },
+    { key: 'year', label: 'Year', re: /^y(ea)?r|model ?year/i },
+    { key: 'make', label: 'Make', re: /make|manufact/i },
+    { key: 'model', label: 'Model', re: /model/i },
+    { key: 'vin', label: 'VIN', re: /vin|serial/i, required: true },
+    { key: 'plate_state', label: 'Plate State', re: /plate ?st|reg.*state|^state$/i, rec: true },
+    { key: 'plate', label: 'Plate', re: /plate|tag ?plate|license/i, rec: true },
+    { key: 'registration_expires', label: 'Registration Expires', re: /reg|expir/i, rec: true },
+    { key: 'toll_tag', label: 'Toll Tag #', re: /toll|e-?z ?pass|transponder/i, rec: true },
+    { key: 'ownership', label: 'Ownership', re: /own|lease/i },
+    { key: 'odometer_miles', label: 'Odometer', re: /odo|miles|mileage/i },
+    { key: 'notes', label: 'Notes', re: /note|comment/i },
+  ],
+  begin: () => { upSeen = { unit: new Map(), vin: new Map() }; },
+  parse: (get) => {
+    const T = RCUpload.txt, errors = [], warnings = [], v = {};
+    v.unit_no = T(get('unit_no')) || null;
+    if (v.unit_no) {                                                       // "#103", "Tractor 104", "Trlr 5302" → 103, 104, 5302
+      const clean = v.unit_no.replace(/^#\s*/, '').replace(/^(tractor|trlr|trailer|truck|unit|box|straight)\s+#?/i, '');
+      if (clean !== v.unit_no) { warnings.push(`Unit "${v.unit_no}" saved as "${clean}"`); v.unit_no = clean; }
+    }
+    const ty = pick(UP_TYPE, get('unit_type')); if (ty === undefined) errors.push(`Type "${T(get('unit_type'))}" isn't one of Tractor, Straight truck, Trailer, Van, Pickup`); v.unit_type = ty || null;
+    const bd = pick(UP_BODY, get('body_type')); v.body_type = bd || null;
+    for (const [k, lab] of [['length_ft', 'Length'], ['axles', 'Axles'], ['year', 'Year'], ['odometer_miles', 'Odometer']]) {
+      const raw = T(get(k)), n = RCUpload.num(get(k));
+      if (!Number.isNaN(n)) { v[k] = n; continue; }
+      const lead = raw.match(/^\s*(\d+(\.\d+)?)/);                         // "3 (tandem)", "53'", "26 ft box"
+      if (lead) { v[k] = +lead[1]; continue; }
+      if (k === 'axles' && /tandem|single/i.test(raw)) {                   // tandem = 2 on a trailer, 3 on a truck (steer + tandem)
+        const trl = v.unit_type === 'trailer'; v.axles = /tandem/i.test(raw) ? (trl ? 2 : 3) : (trl ? 1 : 2);
+        warnings.push(`Axles "${raw}" read as ${v.axles} — check it`); continue;
+      }
+      errors.push(`${lab} "${raw}" isn't a number`);
+    }
+    if (v.axles != null && (v.axles < 1 || v.axles > 9 || v.axles % 1)) errors.push('Axles should be a whole number, 1 to 9');
+    // lists without a Body column often put it in the type ("26' box", "48' reefer", "53 dry")
+    const tyText = T(get('unit_type'));
+    if (!v.body_type && (v.unit_type === 'trailer' || v.unit_type === 'straight_truck')) {
+      const fromType = pick([[/curtain|soft ?side/i, 'Curtainside'], [/reefer|refrig/i, 'Reefer'], [/flat ?bed|stake/i, 'Flatbed'], [/dry|\bdv\b|van trailer/i, 'Dry van'], [/box/i, 'Box']], tyText);
+      if (fromType) { v.body_type = fromType; warnings.push(`Body taken from the type: ${fromType}`); }
+    }
+    // a "26' reefer" with no trailer word is a straight truck, not a trailer
+    if (v.unit_type === 'trailer' && !/trailer|trlr|pup/i.test(tyText) && v.length_ft && v.length_ft <= 26) { v.unit_type = 'straight_truck'; warnings.push(`"${tyText}" read as a straight truck (26 ft or less) — check it`); }
+    if ((v.unit_type === 'trailer' || v.unit_type === 'straight_truck') && !v.body_type) warnings.push('No body (dry van, reefer, flatbed…): capacity and stop checks won\'t work for this unit');
+    if (v.unit_type === 'trailer' && (T(get('toll_tag')) || RCUpload.num(get('odometer_miles')) > 0)) warnings.push('Has a toll tag or odometer, which trailers don\'t — is it really a trailer?');
+    if (v.year != null && (v.year < 1950 || v.year > 2100)) errors.push('Check the year');
+    v.make = T(get('make')) || null; v.model = T(get('model')) || null;
+    v.vin = T(get('vin')).replace(/[\s-]/g, '').toUpperCase() || null;
+    if (v.vin) { const p = RCUpload.vinProblem(v.vin); if (p) (/check digit/.test(p) ? warnings : errors).push(p); }
+    let plate = T(get('plate')), st = T(get('plate_state')).toUpperCase();
+    const m = plate.match(/^([A-Za-z]{2})\s+(\S+)$/) || plate.match(/^(\S+)\s*\(([A-Za-z]{2})\)$/);
+    if (m) { if (/^[A-Za-z]{2}$/.test(m[1]) && !/\d/.test(m[1])) { st = st || m[1].toUpperCase(); plate = m[2]; } else { plate = m[1]; st = st || m[2].toUpperCase(); } }
+    v.plate = plate || null; v.plate_state = st || null;
+    if (v.plate_state && !/^[A-Z]{2}$/.test(v.plate_state)) errors.push(`Plate state "${v.plate_state}" should be two letters`);
+    const rd = RCUpload.date(get('registration_expires')); if (rd === undefined) warnings.push(`Registration date "${T(get('registration_expires'))}" can't be read, so it was left blank`); v.registration_expires = rd || null;
+    const tag = get('toll_tag');
+    if (typeof tag === 'number' && (!Number.isInteger(tag) || tag >= 1e14 && tag % 1000 === 0)) warnings.push('Toll tag lost its last digits in Excel (shows like 1.2E+14), so it was left blank. Add it from your toll statement');
+    else v.toll_tag = T(tag) || null;
+    const ow = pick(UP_OWN, get('ownership')); if (ow === undefined) warnings.push(`Ownership "${T(get('ownership'))}" not recognised — left blank`); v.ownership = ow || null;
+    v.notes = T(get('notes')) || null;
+    if (/\bsold\b|scrapp|retired/i.test(v.notes || '')) { v.active = false; warnings.push('Notes say sold / retired — added as retired'); }
+    if (v.unit_no) { const k = v.unit_no.toLowerCase(); if (upSeen.unit.has(k)) errors.push(`Unit ${v.unit_no} is in the file twice`); else upSeen.unit.set(k, 1); }
+    if (v.vin) { if (upSeen.vin.has(v.vin)) errors.push(`Same VIN as unit ${upSeen.vin.get(v.vin)} — one of them is a typo`); else upSeen.vin.set(v.vin, v.unit_no); }
+    return { values: v, errors, warnings };
+  },
+  match: (v) => units.find(u => (u.unit_no || '').toLowerCase() === (v.unit_no || '').toLowerCase()) || (v.vin && units.find(u => u.vin === v.vin)) || null,
+  describe: (v) => [v.unit_no, v.unit_type ? v.unit_type.replace('_', ' ') : '', v.body_type, v.length_ft ? v.length_ft + "'" : '', v.year, v.make, v.vin].filter(Boolean).join(' · '),
+  save: async (rows) => {
+    let added = 0, updated = 0; const failed = [];
+    for (const r of rows) {
+      const v = Object.fromEntries(Object.entries(r.values).filter(([, x]) => x !== null && x !== undefined));
+      const { error } = r.existing ? await sb.from('equipment').update(v).eq('id', r.existing.id) : await sb.from('equipment').insert(v);
+      if (error) failed.push({ line: r.line, message: niceError(error) }); else r.existing ? updated++ : added++;
+    }
+    return { added, updated, failed };
+  },
+  after: () => load(),
+});
 
 start();
 </script>
