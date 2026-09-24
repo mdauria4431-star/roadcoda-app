@@ -349,6 +349,11 @@ function pickCustomer() {
 $('cust-info').onclick = (e) => { const a = e.target.closest('a[data-go]'); if (!a) return; e.preventDefault(); $('cust').value = a.dataset.go; $('cust').onchange(); };
 $('parent').onchange = async () => {
   const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  // one click here moves a customer's billing settings under another company — make sure it was meant
+  const to = customers.find(p => p.id === $('parent').value);
+  const ask = to ? `Make ${c.name} an account under ${to.name}?\n\nAnything not set on ${c.name} will follow ${to.name}'s settings (signature, invoicing, tolerances).`
+                 : `Make ${c.name} a main customer again, not under ${customers.find(p => p.id === c.parent_customer_id)?.name || 'its parent'}?`;
+  if (!confirm(ask)) { $('parent').value = c.parent_customer_id || ''; return; }
   const { error } = await sb.from('customers').update({ parent_customer_id: $('parent').value || null }).eq('id', c.id);
   if (error) { flash(error.message); $('parent').value = c.parent_customer_id || ''; return; }
   await loadCustList(); $('cust').value = c.id; pickCustomer();
@@ -570,7 +575,7 @@ $('dc-body').onclick = async (ev) => {
 function flash(t) {
   let el = $('flash');
   if (!el) { el = document.createElement('div'); el.id = 'flash'; el.setAttribute('role', 'status');
-    el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;z-index:50;max-width:calc(100vw - 32px);font-size:14px';
+    el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--raise,#1a2938);color:var(--ink,#fff);border:1px solid var(--line,#3a4a5c);box-shadow:0 8px 28px rgba(0,0,0,.35);padding:12px 18px;border-radius:10px;z-index:50;max-width:calc(100vw - 32px);font-size:14px';
     document.body.appendChild(el); }
   el.textContent = t; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => el.hidden = true, 4000);
 }

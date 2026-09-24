@@ -321,7 +321,7 @@ function addCustomer(selectId) {
 function flash(t) {
   let el = $('nc-flash');
   if (!el) { el = document.createElement('div'); el.id = 'nc-flash'; el.setAttribute('role', 'status');
-    el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:10px;z-index:50;max-width:calc(100vw - 32px);font-size:14px';
+    el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--raise,#1a2938);color:var(--ink,#fff);border:1px solid var(--line,#3a4a5c);box-shadow:0 8px 28px rgba(0,0,0,.35);padding:12px 18px;border-radius:10px;z-index:50;max-width:calc(100vw - 32px);font-size:14px';
     document.body.appendChild(el); }
   el.textContent = t; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => el.hidden = true, 5000);
 }
