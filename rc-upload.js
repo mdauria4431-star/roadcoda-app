@@ -45,8 +45,10 @@
     q('[data-x]').onclick = close; back.addEventListener('click', (e) => { if (e.target === back) close(); });
     const st = { wb: null, rows: [], header: 0, map: {}, blockedCols: [], leave: new Set(), edits: {}, open: null }; let skipped = 0;
 
-    q('[data-file]').onchange = async (e) => {
-      const f = e.target.files[0]; if (!f) return;
+    q('[data-file]').onchange = (e) => { const f = e.target.files[0]; if (f) loadFile(f); };
+    st.opts = Object.fromEntries((cfg.options || []).map(o => [o.key, o.value || '']));
+    if (cfg.file) setTimeout(() => loadFile(cfg.file), 0);                          // opened with a file already chosen
+    async function loadFile(f) {
       q('[data-body]').innerHTML = '<div class="mini">Reading the file…</div>';
       try {
         if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Check your connection and refresh.');
@@ -58,10 +60,10 @@
         const pref = cfg.preferSheet ? Math.max(0, names.findIndex(n => cfg.preferSheet.test(n))) : 0;
         q('[data-sheet]').value = String(pref); loadSheet(pref);
       } catch (err) { q('[data-body]').innerHTML = `<div class="err">${esc(err.message || err)}</div>`; }
-    };
+    }
 
     function loadSheet(i) {
-      const ws = st.wb.Sheets[st.wb.SheetNames[i]];
+      const ws = st.wb.Sheets[st.wb.SheetNames[i]]; st.opts.__sheet = st.wb.SheetNames[i];
       st.rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' })
         .map(r => r.map(c => c == null ? '' : c));
       st.header = Math.max(0, st.rows.slice(0, 20).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
@@ -110,7 +112,7 @@
         if (st.leave.has(line)) { out.push({ line, left: true, values: {}, errors: [], warnings: [] }); return; }   // the user left it out
         const ed = st.edits[line] || {};                                           // corrections typed in here win over the file
         const get = (k) => (k in ed) ? ed[k] : (st.map[k] != null ? r[st.map[k]] : '');
-        const p = cfg.parse(get, r, prev) || { values: {}, errors: [], warnings: [] };
+        const p = cfg.parse(get, r, prev, st.opts) || { values: {}, errors: [], warnings: [] };
         p.raw = r; p.cell = (k) => (k in ed) ? ed[k] : (st.map[k] != null ? r[st.map[k]] : '');
         if (Object.keys(ed).length) p.warnings = [`Corrected here: ${Object.keys(ed).map(k => (cfg.fields.find(f => f.key === k) || {}).label || k).join(', ')}`, ...(p.warnings || [])];
         if (!p.errors.length) prev = p.values;
@@ -138,10 +140,17 @@
       const h = head(), rows = parsed();
       const ok = rows.filter(r => !r.left && !r.errors.length), add = ok.filter(r => !r.existing), upd = ok.filter(r => r.existing), bad = rows.filter(r => r.errors.length), gone = rows.filter(r => r.left);
       const opts = (sel) => '<option value="">(not in file)</option>' + h.map((x, j) => st.blockedCols.includes(j) ? '' : `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(x || 'Column ' + (j + 1))}</option>`).join('');
+      // a file that belongs somewhere else: just say so, instead of a screen of red rows
+      if (cfg.wrongFile && cfg.wrongFile(h)) {
+        q('[data-body]').innerHTML = `<div class="blocked" style="background:#a07800">${cfg.wrongFile(h).html}</div>
+          <div class="mini">Wrong idea? Pick another tab or header row above.</div>`;
+        back.querySelectorAll('[data-wrong]').forEach(b => b.onclick = () => { close(); cfg.wrongFile(h).act(); });
+        return;
+      }
       q('[data-body]').innerHTML = `
-        ${cfg.wrongFile && cfg.wrongFile(h) ? `<div class="blocked" style="background:#a07800">${cfg.wrongFile(h).html}</div>` : ''}
         ${st.blockedCols.length ? `<div class="blocked">Not read: ${st.blockedCols.map(j => esc(h[j])).join(', ')}. RoadCoda never reads or stores Social Security or bank numbers. Please delete that column from your file.</div>` : ''}
         ${st.two ? '<div class="mini" style="margin-top:6px">The header takes two rows here, so they were read together.</div>' : ''}
+        ${(cfg.options || []).length ? `<div class="rowx">${cfg.options.map(o => `<label style="display:flex;flex-direction:column;font-size:12px;gap:2px">${esc(o.label)}<select data-opt="${o.key}" style="height:30px">${o.choices.map(([v, t]) => `<option value="${esc(v)}" ${st.opts[o.key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`).join('')}</div>` : ''}
         <div class="mini" style="margin-top:6px"><span class="req">Purple</span> = required · <span class="rec">yellow</span> = recommended. Change any match that's wrong.</div>
         <div class="map">${cfg.fields.map(f => `<label><span class="${f.required ? 'req' : f.rec ? 'rec' : ''}">${esc(f.label)}${f.required ? ' *' : ''}</span><select data-map="${f.key}">${opts(st.map[f.key])}</select></label>`).join('')}</div>
         <div class="rowx"><b>${rows.length} row${rows.length === 1 ? '' : 's'}</b>
@@ -154,7 +163,7 @@
             <td>${r.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}${(r.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join('')}</td></tr>${st.open === r.line && !r.left ? editor(r) : ''}`).join('') || '<tr><td colspan="5" class="mini">No rows under the header.</td></tr>'}
         </tbody></table></div>
         <div class="rowx"><button class="btn primary" data-go ${ok.length ? '' : 'disabled'}>${ok.length ? `Add ${add.length} and update ${upd.length}` : 'Nothing to save yet'}</button><span data-msg></span></div>`;
-      if (cfg.wrongFile && cfg.wrongFile(h) && cfg.wrongFile(h).act) back.querySelectorAll('[data-wrong]').forEach(b => b.onclick = () => { close(); cfg.wrongFile(h).act(); });
+      back.querySelectorAll('[data-opt]').forEach(s => s.onchange = () => { st.opts[s.dataset.opt] = s.value; draw(); });
       back.querySelectorAll('[data-map]').forEach(s => s.onchange = () => { const k = s.dataset.map; if (s.value === '') delete st.map[k]; else st.map[k] = +s.value; draw(); });
       const keepScroll = (fn) => { const y = q('.scroll').scrollTop; fn(); draw(); q('.scroll').scrollTop = y; };
       back.querySelectorAll('[data-open]').forEach(b => b.onclick = () => keepScroll(() => { const n = +b.dataset.open; st.open = st.open === n ? null : n; }));
@@ -203,6 +212,23 @@
     }
     return undefined;   // present but unreadable
   }
+  // "7a", "0700", "07:00", "7:30 PM", an Excel time → "HH:MM"
+  function time(v) {
+    if (v === '' || v == null) return null;
+    if (v instanceof Date && !isNaN(v)) return String(v.getHours()).padStart(2, '0') + ':' + String(v.getMinutes()).padStart(2, '0');
+    if (typeof v === 'number' && v >= 0 && v < 1) { const m = Math.round(v * 1440); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+    const m = String(v).trim().match(/^(\d{1,2})(?::?(\d{2}))?\s*([ap])?\.?\s*m?\.?$/i); if (!m) return undefined;
+    let h = +m[1]; const mi = +(m[2] || 0); if (m[3]) { const pm = /p/i.test(m[3]); if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0; }
+    return h > 23 || mi > 59 ? undefined : String(h).padStart(2, '0') + ':' + String(mi).padStart(2, '0');
+  }
+  // "7a-11a", "0800-1600", "08:00 to 16:00", "6AM - 2PM", "recv 7-5", "07:00–17:00 Mon-Fri" → [start, end]
+  function hours(text) {
+    const s = String(text || '').replace(/^\s*((recv|receiving|hrs|hours)\s*)+/i, '').replace(/\s+(mon|tue|wed|thu|fri|sat|sun|7 ?days|daily).*$/i, '').trim();
+    const m = s.match(/^(.+?)\s*(?:-|–|—|to)\s*(.+)$/i); if (!m) return null;
+    let a = time(m[1]), b = time(m[2]); if (!a || !b) return null;
+    if (!/[ap]/i.test(m[2]) && !/:|\d{4}/.test(m[2]) && b <= a && +b.slice(0, 2) < 12) b = String(+b.slice(0, 2) + 12).padStart(2, '0') + b.slice(2);   // "7-5" = 7 am to 5 pm
+    return [a, b];
+  }
   const MAP = {};
   const VW = { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6, G: 7, H: 8, J: 1, K: 2, L: 3, M: 4, N: 5, P: 7, R: 9, S: 2, T: 3, U: 4, V: 5, W: 6, X: 7, Y: 8, Z: 9 };
   const WT = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
@@ -213,5 +239,5 @@
     const s = [...v].reduce((a, c, i) => a + (/\d/.test(c) ? +c : VW[c]) * WT[i], 0) % 11;
     return (s === 10 ? 'X' : String(s)) === v[8] ? null : 'VIN check digit doesn\'t match — probably a typo';
   }
-  window.RCUpload = { open, txt, num, date, vinProblem, MAP };
+  window.RCUpload = { open, txt, num, date, time, hours, vinProblem, MAP };
 })();

@@ -106,7 +106,8 @@
         <label for="cust" style="flex:1 1 260px">Customer (bill to)<select id="cust"></select></label>
         <label for="parent" style="flex:0 1 240px">Part of<select id="parent"></select></label>
         <button class="btn" id="nc-btn" type="button">+ New customer</button>
-        <button class="btn" id="cu-up-btn" type="button" title="The companies you bill — for their stores and DCs use Upload stops, further down">Upload bill-to customers</button>
+        <button class="btn" id="cu-up-btn" type="button" title="The companies you bill">Upload bill-to customers</button>
+        <button class="btn" id="st-up-btn" type="button" title="Their stores, DCs and yards — one file can cover several customers">Upload stops</button>
         <a class="btn" id="rates-link" href="rates.html" style="display:inline-flex;align-items:center;text-decoration:none">Rates &amp; billing settings</a>
       </div>
       <p class="hint" id="cust-info" style="margin:10px 0 0"></p>
@@ -1019,9 +1020,8 @@ $('cu-up-btn').onclick = () => RCUpload.open({
     const t = h.join(' | ').toLowerCase();
     const stopish = /store|route|sort|hrs|hours|window|recv|receiving|door|gate|dock/.test(t), billish = /terms|billing|ap |a\/p|invoice|po ?#|remit/.test(t);
     if (!stopish || billish) return null;
-    const who = $('cust').value ? $('cust').selectedOptions[0].textContent.replace(/^[\s\u00a0›]+/, '') : 'the customer you pick first';
-    return { html: `This looks like a list of <b>stops</b> (stores, DCs, receiving hours), not the companies you bill. Stops are loaded per customer: <button type="button" class="btn small" data-wrong style="margin-left:6px">Upload these as stops for ${esc(who)}</button>`,
-             act: () => { const h3 = document.getElementById('dl-upload-h'); if (h3) h3.scrollIntoView({ behavior: 'smooth', block: 'center' }); $('dl-file').click(); } };
+    return { html: `This looks like a list of <b>stops</b> (stores, DCs, receiving hours), not the companies you bill. Stops are loaded per customer: <button type="button" class="btn small" data-wrong style="margin-left:6px">Open the stop upload</button>`,
+             act: () => openStopUpload() };
   },
   begin: () => { cuSeen = new Set(); cuTop = null; },
   parse: (get, raw, prev) => {
@@ -1098,6 +1098,149 @@ $('cu-up-btn').onclick = () => RCUpload.open({
   },
   after: async () => { await loadCustList(); if (typeof pickCustomer === 'function') pickCustomer(); },
 });
+
+// ---------- 109: stops (the customer's stores, DCs, yards) through the shared upload ----------
+// One file can hold stops for several customers (a DC column: "HFD", "Hartford", "WOR"…); without one,
+// everything goes under the customer picked at the top. Stops without a name are named from the
+// customer and store number. Codes typed into notes move to their own fields.
+let stSeen = null, stLocs = [], stTabNote = false;
+const stNorm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function stRoot(c) { let r = c; for (let i = 0; i < 5 && r && r.parent_customer_id; i++) r = customers.find(x => x.id === r.parent_customer_id) || null; return r || c; }
+function stPrefix(c) { const r = stRoot(c); return r.customer_code && r.customer_code.length <= 6 ? r.customer_code.replace(/[^A-Za-z0-9]/g, '') : r.name; }
+function stCustomer(v) {                                        // "HFD", "Hartford", "Worc", "NAPS-WOR" → the customer
+  const n = stNorm(v); if (!n) return null;
+  const sel = customers.find(c => c.id === $('cust').value), fam = sel ? stRoot(sel).id : null;
+  const inFam = (c) => !fam || stRoot(c).id === fam;
+  const tests = [c => stNorm(c.customer_code) === n, c => stNorm(c.name) === n, c => stNorm(c.customer_code).endsWith(n) && n.length >= 2,
+                 c => stNorm(c.name).includes(n) && n.length >= 3];
+  for (const t of tests) { const hits = customers.filter(t); const f = hits.filter(inFam); if (f.length === 1) return f[0]; if (hits.length === 1) return hits[0]; }
+  return null;
+}
+async function openStopUpload(file) {
+  const { data } = await sb.from('delivery_locations').select('id, customer_id, name, code');
+  stLocs = data || [];
+  RCUpload.open({
+    title: 'Upload stops',
+    file,
+    template: 'templates/RoadCoda-template-Stop-locations.xlsx',
+    options: [{ key: 'pad', label: 'Store numbers', value: '', choices: [['', 'As in the file'], ['3', 'Pad to 3 digits (007)'], ['4', 'Pad to 4 digits (0007)'], ['5', 'Pad to 5 digits (00007)']] }],
+    fields: [
+      { key: 'dc', label: 'Customer / DC', re: /^dc$|^d\.c\.?$|dist(ribution)? ?cent|served (by|from)|ship(ped)? from|^account$|^customer$/i },
+      { key: 'notify_email', label: 'Notification email', re: /notif.*mail|alert.*mail|notice.*mail/i },
+      { key: 'email', label: 'Email', re: /e-?mail/i },
+      { key: 'notify', label: 'Notify (Y/N)', re: /notify|notification|alerts?|notices?/i },
+      { key: 'after_hours_phone', label: 'After-hours phone', re: /after.?hours?.*(phone|tel|number|#|cell)|emergency.*(phone|number)|night.*(phone|number)/i },
+      { key: 'after_hours_contact', label: 'After-hours contact', re: /after.?hours?|night.*contact|emergency/i },
+      { key: 'door_code', label: 'Door code', re: /door|lock.*code/i },
+      { key: 'gate_code', label: 'Gate code', re: /gate/i },
+      { key: 'other_code_name', label: 'Other code name', re: /other.*code.*(name|type|label)|code.*(name|type|label)/i },
+      { key: 'other_code', label: 'Other code', re: /other.*code|misc.*code|alarm|lock ?box|key ?(box|safe)/i },
+      { key: 'delivery_instructions', label: 'Delivery instructions', re: /instruction|direction|driver.*note|delivery.*note/i },
+      { key: 'contact', label: 'Contact', re: /contact|attn|attention|manager|mgr/i, rec: true },
+      { key: 'phone', label: 'Phone', re: /phone|tel|mobile|cell/i, rec: true },
+      { key: 'route_no', label: 'Route #', re: /^route|route ?(#|no|num)|^rte/i },
+      { key: 'sort_code', label: 'Sort code', re: /sort/i },
+      { key: 'code', label: 'Store #', re: /store ?(#|no|num)|^store$|^#$|site ?(#|no|id)|loc(ation)? ?(#|no|id)|^code$/i, rec: true },
+      { key: 'address', label: 'Address', re: /address|street|addr/i, required: true },
+      { key: 'city', label: 'City', re: /city|town/i },
+      { key: 'state', label: 'State', re: /^st$|state|prov/i },
+      { key: 'zip', label: 'Zip', re: /zip|postal/i },
+      { key: 'wstart', label: 'Window opens / hours', re: /open|start|from|earliest|window|hours|hrs|recv|receiv/i, rec: true },
+      { key: 'wend', label: 'Window closes', re: /close|end|latest|until|rcv to|to$/i, rec: true },
+      { key: 'notes', label: 'Office notes', re: /note|dock|comment|temp/i },
+      { key: 'active', label: 'Active (Y/N)', re: /active|status/i },
+      { key: 'name', label: 'Name', re: /name|consignee|location|ship ?to|deliver|yard|store/i },
+    ],
+    checkRequired: false,
+    begin: () => { stSeen = new Set(); stTabNote = false; },
+    parse: (get, raw, prev, opts) => {
+      const T = RCUpload.txt, errors = [], warnings = [], v = {};
+      // which customer the stop belongs to
+      const dcRaw = T(get('dc'));
+      let cust = null;
+      if (dcRaw) { cust = stCustomer(dcRaw); if (!cust) errors.push(`Customer / DC "${dcRaw}" doesn't match one of your customers — type its account code or name`); }
+      else {
+        // no Customer / DC column: a tab named after a customer ("HARBORVIEW", "Granite Ridge") goes to that customer
+        const byTab = opts.__sheet ? stCustomer(opts.__sheet) : null, picked = customers.find(c => c.id === $('cust').value) || null;
+        cust = byTab || picked;
+        if (byTab && picked && byTab.id !== picked.id && !stTabNote) { stTabNote = true; warnings.push(`Tab "${opts.__sheet}" → loading these under ${byTab.name}, not ${picked.name}`); }
+      }
+      if (!cust && !dcRaw) errors.push('Pick the customer at the top of the page first (or add a Customer / DC column)');
+      v.customer_id = cust ? cust.id : null; v._cust = cust ? cust.name : '';
+      // store number, and the name when the file has none
+      let code = T(get('code')).replace(/^#\s*/, '');
+      const numeric = /^\d+$/.test(code);
+      if (numeric && opts.pad) code = code.padStart(+opts.pad, '0');
+      else if (numeric && typeof get('code') === 'number' && code.length < 4 && !opts.pad) warnings.push(`Store # ${code} may have lost its leading zeros in Excel — if so, choose "Pad to 4 digits" above`);
+      let name = T(get('name')).replace(/\s+/g, ' ');
+      if (/^#?\d+$/.test(name) && !code) { code = name.replace('#', ''); if (opts.pad) code = code.padStart(+opts.pad, '0'); name = ''; }
+      if (!name && code && cust) { name = `${stPrefix(cust)} Store #${code}`; warnings.push(`No name in the file — named "${name}"`); }
+      v.name = name || null; v.code = code || null;
+      if (!v.name && !v.code) errors.push('Name or Store # is required');
+      // the address: parts, or everything in one cell
+      let street = T(get('address')).replace(/\s*\n\s*/g, ', '), city = T(get('city')), st = T(get('state')).toUpperCase(), zip = T(get('zip'));
+      if (/^\d{3,4}$/.test(zip)) zip = zip.padStart(5, '0');
+      if (street && !city && !st) {
+        const m = street.match(/^(.*?)[,\s]+([A-Za-z]{2})\.?(?:\s+(\d{5})(?:-\d{4})?)?\s*$/);
+        if (m) { street = m[1].replace(/,\s*$/, ''); st = m[2].toUpperCase(); zip = zip || m[3] || ''; }
+      }
+      if (!street) errors.push('Address is required');
+      else if (!st) errors.push('No state in the address — add it');
+      else if (!/^\d{5}$/.test(zip)) errors.push('No zip code — add it (maps and mileage need it)');
+      v.address = street ? [street, city, [st, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : null;
+      // receiving window
+      const h1 = get('wstart'), h2 = get('wend');
+      let ws = RCUpload.time(h1), we = RCUpload.time(h2);
+      if ((ws === undefined || ws === null) && h1 && !h2) { const r = RCUpload.hours(h1); if (r) { [ws, we] = r; } }
+      if (ws === undefined || (h1 && ws === null && !we)) { warnings.push(`Receiving hours "${T(h1)}" can't be read — left blank`); ws = null; }
+      if (we === undefined) { warnings.push(`Closing time "${T(h2)}" can't be read — left blank`); we = null; }
+      v.window_start = ws || null; v.window_end = we || null;
+      // contact, codes, instructions
+      for (const k of ['contact', 'phone', 'email', 'notify_email', 'delivery_instructions', 'door_code', 'gate_code', 'other_code_name', 'other_code',
+                       'after_hours_contact', 'after_hours_phone', 'route_no', 'sort_code', 'notes']) v[k] = T(get(k)) || '';
+      v.email = v.email.toLowerCase(); v.notify_email = v.notify_email.toLowerCase();
+      for (const k of ['email', 'notify_email']) if (v[k] && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v[k])) { warnings.push(`Email "${v[k]}" doesn't look right — left blank`); v[k] = ''; }
+      const pull = (re) => { for (const f of ['notes', 'delivery_instructions']) { const m = v[f].match(re); if (m) { v[f] = v[f].replace(m[0], '').replace(/^[\s\/;,|–-]+|[\s\/;,|–-]+$/g, '').replace(/\s*[\/;|]\s*[\/;|]\s*/g, ' / '); return m[1]; } } return ''; };
+      if (!v.gate_code) v.gate_code = pull(/\bgate(?:\s*code)?\s*[:#-]?\s*([0-9*#]{3,8}#?)/i);
+      if (!v.door_code) v.door_code = pull(/\b(?:door(?:\s*code)?|dr|code)\s*[:#-]?\s*([0-9*]{3,8}#?)/i);
+      if (!v.other_code) { const k = pull(/\b(?:key ?box|lock ?box|key ?safe)\s*[:#-]?\s*([0-9]{2,8})/i); if (k) { v.other_code = k; v.other_code_name = v.other_code_name || 'Key box'; } }
+      if (!v.other_code) { const a = pull(/\balarm(?:\s*code)?\s*[:#-]?\s*([0-9]{3,8})/i); if (a) { v.other_code = a; v.other_code_name = v.other_code_name || 'Alarm'; } }
+      if ([v.gate_code, v.door_code, v.other_code].some(Boolean) && !T(get('door_code')) && !T(get('gate_code'))) warnings.push('Codes found in the notes were moved to their own fields');
+      // what's left of the notes: driver-facing sentences go to delivery instructions
+      if (v.notes && !v.delivery_instructions && /\b(door|dock|rear|back|park|lot|clearance|overhang|buzzer|ring|stockroom|trucks?)\b/i.test(v.notes)) { v.delivery_instructions = v.notes; v.notes = ''; }
+      const rs = (v.route_no && !v.sort_code) ? v.route_no : (!v.route_no && v.sort_code) ? v.sort_code : '';
+      if (rs) { const m = rs.match(/^R?0*(\d+)\s*[-\/ ]\s*S?0*(\d+)$/i); if (m) { v.route_no = 'R' + m[1].padStart(2, '0'); v.sort_code = 'S' + m[2]; } }
+      const act = T(get('active')), closed = /\bclosed\b/i.test(v.notes + ' ' + act);
+      v.active = closed ? false : act ? !/^(n|no|false|0|inactive)$/i.test(act) : true;
+      if (closed) warnings.push('Marked closed — saved as inactive (or tick Leave out)');
+      const n = T(get('notify')); v.notify = n ? /^(y|yes|true|1|x)$/i.test(n) : undefined;
+      // twice in the file?
+      const key = (v.customer_id || '') + '|' + (v.code ? 'c' + v.code.toLowerCase() : 'n' + stNorm(v.name));
+      if (v.customer_id && stSeen.has(key)) errors.push('This stop is in the file twice — tick Leave out on the row you don\'t want'); else stSeen.add(key);
+      return { values: v, errors, warnings };
+    },
+    match: (v) => stLocs.find(l => l.customer_id === v.customer_id && ((v.code && (l.code || '').toLowerCase() === v.code.toLowerCase()) || (v.name && stNorm(l.name) === stNorm(v.name)))) || null,
+    describe: (v) => [v.name, v.code && '#' + v.code, v.address, v.window_start && `${v.window_start}–${v.window_end || ''}`, v.route_no && `${v.route_no}·${v.sort_code || ''}`,
+                      (v.door_code || v.gate_code || v.other_code) && 'codes ✓', v.active === false && 'inactive', v._cust && '→ ' + v._cust].filter(Boolean).join(' · '),
+    save: async (rows) => {
+      const groups = new Map();
+      for (const r of rows) { const { customer_id, _cust, ...rest } = r.values; if (!groups.has(customer_id)) groups.set(customer_id, []); groups.get(customer_id).push({ ...rest, line: r.line }); }
+      let added = 0, updated = 0; const failed = [];
+      for (const [cid, list] of groups) {
+        const { data, error } = await sb.rpc('upsert_delivery_locations', { p_customer_id: cid, p_rows: list.map(({ line, ...x }) => x) });
+        if (error) failed.push({ line: list[0].line, message: `${customers.find(c => c.id === cid)?.name || 'Customer'}: ${error.message}` });
+        else { added += data.added || 0; updated += data.updated || 0; }
+      }
+      return { added, updated, failed };
+    },
+    after: () => { if (typeof loadDl === 'function') loadDl(); },
+  });
+}
+$('st-up-btn').onclick = () => openStopUpload();
+
+// the "Upload stops for this customer" button further down: spreadsheets go to the new upload, PDFs to the PDF reader
+{ const legacyDl = $('dl-file').onchange;
+  $('dl-file').onchange = (e) => { const f = $('dl-file').files[0]; if (!f) return; if (/\.pdf$/i.test(f.name)) return legacyDl(e); $('dl-file').value = ''; openStopUpload(f); }; }
 
 start();
 </script>
