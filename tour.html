@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoadCoda · Take the tour</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<meta name="theme-color" content="#070c14">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<link rel="stylesheet" href="app.css">
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{margin:0;min-height:100%}
+  body{background:var(--ground,#070c14);color:var(--ink,#e8edf5);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;
+       display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;padding:24px 16px}
+  .box{max-width:460px;width:100%;background:var(--surface,#0d1420);border:1px solid var(--line,#1e2a3b);border-radius:14px;padding:26px 24px}
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:24px;letter-spacing:-.01em}.brand span{color:var(--accent-hi,#a58bff)}
+  h1{font-family:Archivo,sans-serif;font-size:22px;margin:18px 0 8px}
+  p{margin:0 0 10px;line-height:1.55;color:var(--ink-2,#b8c2d3)}
+  .go{margin-top:16px;width:100%;height:46px;border:0;border-radius:10px;background:var(--accent,#7c5cff);color:#fff;font:600 16px 'IBM Plex Sans',system-ui,sans-serif;cursor:pointer}
+  .go[disabled]{opacity:.6;cursor:default}
+  .msg{margin-top:12px;font-size:14px;min-height:20px}
+  .err{color:var(--late,#ff7a6e)}
+  .small{font-size:13px;color:var(--ink-3,#8a96aa);margin-top:14px}
+  .small a{color:var(--accent-hi,#a58bff)}
+  #captcha{margin-top:14px}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="brand">Road<span>Coda</span></div>
+  <h1>Have a look around</h1>
+  <p>You'll go straight into <b>Ridgeline Dedicated</b>, a sample carrier with drivers, trucks, customers, today's loads, invoices and payroll already in it.</p>
+  <p>Click anything and try it. <b>Nothing you do is saved</b>, so you can't break it.</p>
+  <div id="captcha" hidden></div>
+  <button class="go" id="go">Start the tour</button>
+  <div class="msg" id="msg"></div>
+  <div class="small">No sign-up and no email needed. Already a customer? <a href="index.html">Sign in here</a>.</div>
+</div>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const msg = (t, bad) => { $('msg').innerHTML = t ? `<span class="${bad ? 'err' : ''}">${t}</span>` : ''; };
+  const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+  const siteKey = RC_CONFIG.TURNSTILE_SITE_KEY || '';
+  let captchaToken = null;
+
+  // Optional bot check (Cloudflare Turnstile) — on when config.js has TURNSTILE_SITE_KEY
+  if (siteKey) {
+    $('captcha').hidden = false; $('go').disabled = true;
+    window.rcTurnstile = () => window.turnstile.render('#captcha', { sitekey: siteKey, theme: 'auto',
+      callback: (t) => { captchaToken = t; $('go').disabled = false; },
+      'expired-callback': () => { captchaToken = null; $('go').disabled = true; } });
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=rcTurnstile'; s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+
+  async function enter() {
+    const { data, error } = await sb.rpc('tour_start');
+    if (error) throw error;
+    location.replace('dispatch.html');
+  }
+
+  // Someone already on this device?
+  (async () => {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return;
+    const anon = !!(session.user && session.user.is_anonymous);
+    if (anon) {
+      $('go').disabled = true; msg('Opening the tour…');
+      try { await enter(); } catch (e) { await sb.auth.signOut(); $('go').disabled = !!siteKey && !captchaToken; msg(''); }
+      return;
+    }
+    // a real RoadCoda sign-in: don't turn it into a guest
+    $('go').textContent = 'Open RoadCoda';
+    $('go').onclick = () => { location.href = 'dispatch.html'; };
+    msg('You\'re already signed in to RoadCoda on this device.');
+  })();
+
+  $('go').onclick = async () => {
+    $('go').disabled = true; msg('Setting up your tour…');
+    try {
+      const { error } = await sb.auth.signInAnonymously(captchaToken ? { options: { captchaToken } } : undefined);
+      if (error) throw error;
+      await enter();
+    } catch (e) {
+      const t = String((e && e.message) || e || '');
+      msg(/anonymous/i.test(t) && /disabled|not enabled/i.test(t) ? 'The tour isn\'t open yet. Please check back soon.'
+        : /captcha/i.test(t) ? 'Please tick the check above, then try again.' : (t || 'Something went wrong. Please try again.'), true);
+      try { await sb.auth.signOut(); } catch (_) {}
+      if (siteKey && window.turnstile) { window.turnstile.reset('#captcha'); captchaToken = null; }
+      $('go').disabled = !!siteKey;
+      if (!siteKey) $('go').disabled = false;
+    }
+  };
+})();
+</script>
+</body>
+</html>

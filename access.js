@@ -4,6 +4,33 @@
 // - Money (prices, revenue, costs) and driver pay stay hidden unless the user may see them.
 // The database enforces all of this too; this script only keeps the screens tidy.
 (function () {
+  // 100: the website tour. A tour guest's requests run read-only in the database, so a save
+  // comes back as Postgres' "read-only transaction" error — show it as the tour's own words.
+  // Wraps every client the page makes; does nothing for anyone who isn't on the tour.
+  const TOUR_MSG = 'This is the RoadCoda tour — try anything you like, but nothing is saved. Talk to us to run it with your own data.';
+  if (window.supabase && window.supabase.createClient && !window.supabase.__rcTourWrapped) {
+    const orig = window.supabase.createClient;
+    const tourFetch = async (input, init) => {
+      const res = await fetch(input, init);
+      if (res.status >= 400 && res.status < 500 && (res.status === 405 || (window.RC_ACCESS && window.RC_ACCESS.guest))) {
+        let txt = '';
+        try { txt = await res.clone().text(); } catch (_) { return res; }
+        if (/25006|read-only transaction|row-level security|tour/i.test(txt)) {
+          let j; try { j = JSON.parse(txt); } catch (_) { j = {}; }
+          j.message = TOUR_MSG; j.error = TOUR_MSG; j.details = null; j.hint = null;
+          return new Response(JSON.stringify(j), { status: res.status, statusText: res.statusText, headers: res.headers });
+        }
+      }
+      return res;
+    };
+    window.supabase.createClient = function (url, key, opts) {
+      opts = opts || {};
+      return orig(url, key, Object.assign({}, opts, { global: Object.assign({}, opts.global || {}, { fetch: opts.global && opts.global.fetch || tourFetch }) }));
+    };
+    window.supabase.__rcTourWrapped = true;
+  }
+  window.RC_TOUR_MSG = TOUR_MSG;
+
   const SCREEN_OF = {
     'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'safety.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
@@ -120,14 +147,15 @@
     // A new carrier picks a preset first (owner, or whoever may switch features)
     if (data.features && !data.feature_preset && (data.owner || can('users', 'edit')) && pageFile !== 'features.html') { location.href = 'features.html?welcome=1'; return; }
     window.RC_ACCESS = data;
-    if (!(await twoFactorGate(data))) return;   // 95: ask for the code, or send them to set it up
+    if (data.guest) tourMode(c, data);
+    else if (!(await twoFactorGate(data))) return;   // 95: ask for the code, or send them to set it up
     if (data.money) document.documentElement.classList.add('rc-money');
     if (data.pay) document.documentElement.classList.add('rc-pay');
 
     // Menu: remove screens they can't open; add Users (if allowed) and My account
     const nav = document.querySelector('header nav');
     if (nav) {
-      nav.querySelectorAll('a').forEach((a) => { const h = a.getAttribute('href'), s = SCREEN_OF[h]; if ((s && s !== 'home' && !can(s)) || (FEATURE_OF[h] && !data.feature(FEATURE_OF[h]))) a.remove(); });
+      nav.querySelectorAll('a').forEach((a) => { const h = a.getAttribute('href'), s = SCREEN_OF[h]; if ((s && s !== 'home' && !can(s)) || (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) || (data.guest && (h === 'driver.html' || h === 'account.html'))) a.remove(); });
       // Every page gets the same full menu: add any standard page this page's own list left out,
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
@@ -141,6 +169,7 @@
         const s = SCREEN_OF[h];
         if (s && s !== 'home' && !can(s)) return;
         if (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) return;
+        if (data.guest && h === 'driver.html') return;
         const a = document.createElement('a'); a.href = h; a.textContent = t; if (h === here) a.className = 'on';
         nav.appendChild(a);
       });
@@ -148,7 +177,7 @@
         const a = document.createElement('a'); a.href = 'users.html'; a.textContent = 'Users'; if (page === 'users') a.className = 'on';
         const drv = nav.querySelector('a[href="driver.html"]'); nav.insertBefore(a, drv || null);
       }
-      if (!nav.querySelector('a[href="account.html"]')) {
+      if (!data.guest && !nav.querySelector('a[href="account.html"]')) {
         const a = document.createElement('a'); a.href = 'account.html'; a.textContent = 'My account'; nav.appendChild(a);
       }
     }
@@ -166,5 +195,32 @@
     }
     resolveReady(data);
   }
+  // 100: tour mode — a slim bar on every page, and Sign out becomes Leave the tour
+  function tourMode(c, data) {
+    document.documentElement.classList.add('rc-guest');
+    if (pageFile === 'account.html' || pageFile === 'driver.html') { location.href = 'dispatch.html'; return; }
+    const st = document.createElement('style');
+    st.textContent = '.rc-tour{position:sticky;top:0;z-index:30;margin:0 0 12px;padding:10px 14px;border-radius:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;' +
+      'background:linear-gradient(90deg,color-mix(in srgb,var(--accent,#7c5cff) 22%,var(--surface,#fff)),var(--surface,#fff));border:1px solid color-mix(in srgb,var(--accent,#7c5cff) 45%,var(--line,#ddd));' +
+      'color:var(--ink,#111);font-size:13.5px;line-height:1.4}.rc-tour b{font-weight:700}.rc-tour .rc-tour-go{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}' +
+      '.rc-tour a{display:inline-flex;align-items:center;height:30px;padding:0 12px;border-radius:8px;font-weight:600;text-decoration:none;border:1px solid var(--line,#ccc);color:var(--ink,#111)}' +
+      '.rc-tour a.rc-tour-talk{background:var(--accent,#7c5cff);border-color:transparent;color:#fff}';
+    document.head.appendChild(st);
+    const bar = document.createElement('div');
+    bar.className = 'rc-tour';
+    bar.innerHTML = '<span><b>You\'re on the RoadCoda tour.</b> This is ' + (data.tour_carrier || 'a sample company').replace(/\s*\(sample\)\s*$/i, '') +
+      ', a sample carrier. Click anything and try it — nothing you do is saved.</span><span class="rc-tour-go">' +
+      '<a class="rc-tour-talk" href="mailto:support@roadcoda.com?subject=RoadCoda%20%E2%80%94%20I%20took%20the%20tour">Talk to us</a>' +
+      '<a class="rc-tour-leave" href="#">Leave the tour</a></span>';
+    const place = () => { const main = document.querySelector('main'); if (main && !main.querySelector('.rc-tour')) main.insertBefore(bar, main.firstChild); };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', place); else place();
+    const leave = async (e) => { e.preventDefault(); e.stopImmediatePropagation(); try { await c.auth.signOut(); } catch (_) {} location.href = 'https://roadcoda.com/'; };
+    bar.querySelector('.rc-tour-leave').addEventListener('click', leave);
+    // the page's own Sign out button leaves the tour instead of showing a sign-in form
+    document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('#signout'); if (b) leave(e); }, true);
+    const relabel = () => { const b = document.getElementById('signout'); if (b) b.textContent = 'Leave the tour'; };
+    relabel(); setTimeout(relabel, 800); setTimeout(relabel, 3000);
+  }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
 })();

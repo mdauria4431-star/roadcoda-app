@@ -194,7 +194,7 @@
       pv.target = '_blank'; pv.rel = 'noopener';
       nav.appendChild(pv); links['privacy.html'] = pv;
     }
-    if (!links['rc-report-link']) {
+    if (!links['rc-report-link'] && !(acc && acc.guest)) {
       var rp = document.createElement('a');
       rp.href = '#'; rp.textContent = 'Report a problem';
       rp.onclick = function (e) { e.preventDefault(); reportProblem(); };

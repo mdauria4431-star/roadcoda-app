@@ -7,6 +7,166 @@
 drop view if exists public.load_profit;
 -- 25: customer notification log (was left behind by earlier resets)
 drop table if exists public.notification_queue cascade;
+-- 100: website tour
+alter role authenticator reset pgrst.db_pre_request;
+select pg_notify('pgrst', 'reload config');
+do $$ begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobname) from cron.job where jobname = 'roadcoda-tour';
+  end if;
+  if to_regclass('storage.objects') is not null then
+    execute 'drop policy if exists tour_no_upload on storage.objects';
+    execute 'drop policy if exists tour_no_change on storage.objects';
+    execute 'drop policy if exists tour_no_delete on storage.objects';
+  end if;
+end $$;
+drop function if exists public.tour_status(), public.tour_nightly(), public.tour_cleanup(), public.tour_roll_dates(int),
+  public.tour_start(), public.rc_pre_request(), public.app_is_guest() cascade;
+do $$ begin
+  if to_regprocedure('public.my_access_before_tour()') is not null then
+    drop function if exists public.my_access();
+    alter function public.my_access_before_tour() rename to my_access;
+    grant execute on function public.my_access() to authenticated;
+  end if;
+end $$;
+drop table if exists public.tour_settings cascade;
+-- 99: price cap
+drop view if exists public.roadcoda_price_check;
+drop function if exists public.roadcoda_price_for(int) cascade;
+-- 98: export
+drop function if exists public.export_parts(), public.export_part(text, int, int), public.export_summary() cascade;
+-- 97: billing usage
+drop view if exists public.roadcoda_billing;
+drop function if exists public.carrier_truck_days(uuid, date, date), public.carrier_billing(uuid, date),
+  public.roadcoda_billing_month(date), public.carrier_usage(text, int) cascade;
+drop table if exists public.roadcoda_price_bands, public.roadcoda_price_settings cascade;
+-- 96: EDI
+drop table if exists public.edi_messages, public.edi_status_map, public.edi_charge_map, public.edi_ref_map, public.edi_connections cascade;
+drop sequence if exists public.edi_control_seq;
+drop function if exists public.edi_queue(uuid, text, jsonb, uuid, uuid, uuid, text), public.edi_status_payload(uuid, uuid, text),
+  public.edi_stop_event(), public.edi_invoice_event(), public.edi_inbound(jsonb), public.edi_respond(uuid, boolean, text),
+  public.edi_claim(int), public.edi_mark(uuid, boolean, text, text), public.edi_home(int),
+  public.set_edi_connection(jsonb), public.edi_test_tender(uuid, int) cascade;
+-- 95: two-factor (my_access is dropped with 68's entry; carriers.require_mfa goes with the table)
+drop function if exists public.set_require_mfa(boolean) cascade;
+-- 94: report a problem
+drop view if exists public.roadcoda_problems, public.roadcoda_problems_all;
+drop table if exists public.problem_reports cascade;
+drop function if exists public.report_problem(text, text, jsonb, text), public.roadcoda_problem_answer(text, text) cascade;
+-- 93: getting-started links (getting_started() is dropped with 58's entry below)
+-- 92: starting a new carrier
+drop view if exists public.roadcoda_carriers;
+drop function if exists public.roadcoda_new_carrier(text, text, text, text, text) cascade;
+-- 91: ask RoadCoda (add-on requests and contact details)
+drop view if exists public.addon_requests_open;
+drop table if exists public.addon_requests cascade;
+drop function if exists public.ask_roadcoda(text, text), public.roadcoda_contact(), public.roadcoda_contact_set(text, text, text), public.roadcoda_answered(text, text) cascade;
+-- 89: text messages
+drop table if exists public.sms_messages, public.sms_optouts, public.roadcoda_settings cascade;
+drop function if exists public.sms_e164(text), public.delivery_locations_sms(), public.sms_shared_number(), public.roadcoda_sms(text, int, text, boolean),
+  public.sms_month_count(uuid), public.sms_driver_ok(uuid, text), public.loads_sms_driver(), public.trip_changes_sms_driver(), public.messages_sms_driver(),
+  public.driver_sms_settings(boolean, boolean, boolean, boolean), public.driver_sms_get(), public.office_driver_sms(uuid, boolean),
+  public.sms_store_body(uuid, text), public.sms_driver_body(public.sms_messages), public.sms_claim(int), public.sms_mark(uuid, boolean, text, text),
+  public.sms_status(text, text, text), public.sms_inbound(text, text, text, text), public.texts_home(int) cascade;
+select cron.unschedule('roadcoda-texts') where exists (select 1 from cron.job where jobname = 'roadcoda-texts');
+-- 88: dock & load-out scanning
+drop table if exists public.dock_returns, public.loadout_scans, public.load_loadouts, public.dock_workers cascade;
+drop function if exists public.dock_carrier(boolean), public.dock_worker_ok(uuid, uuid), public.set_dock_pin(uuid, text),
+  public.dock_supervisor_check(uuid, uuid, text), public.dock_home(date), public.dock_load(uuid), public.loadout_scan(uuid, text, uuid),
+  public.loadout_remove(uuid, text, uuid), public.loadout_release(uuid, uuid, uuid, text, text), public.loadout_reopen(uuid, uuid),
+  public.loads_loadout_gate(), public.driver_loadout(uuid), public.driver_loadout_ack(uuid), public.follow_list(), public.follow_send(uuid[], uuid),
+  public.follow_cancel(uuid[], text), public.dock_return_scan(text, uuid, text, text), public.dock_returns_day(date),
+  public.set_dock_settings(boolean), public.set_short_rule(uuid, text, int, numeric), public.dock_summary(date, date) cascade;
+-- 87: live tracking
+drop table if exists public.track_links cascade;
+drop function if exists public.roadcoda_addon(text, text, boolean), public.make_track_link(uuid, text), public.create_track_link(uuid),
+  public.office_track_link(uuid), public.portal_tracking_on(), public.portal_track_link(uuid), public.track_lookup(text), public.live_map(),
+  public.driver_ping(double precision, double precision, numeric, numeric, numeric) cascade;
+-- 86: safety dashboard + OSHA logs
+drop table if exists public.incident_injuries, public.osha_years cascade;
+drop function if exists public.safety_data(date, date), public.osha_log(int, uuid), public.osha_summary(int, uuid), public.incidents_find_location(), public.incident_injuries_before() cascade;
+-- 84: route planning
+drop table if exists public.unit_profiles cascade;
+drop function if exists public.save_geocode(uuid, uuid, double precision, double precision), public.plan_apply(jsonb), public.set_plan_settings(numeric, numeric, int, numeric, numeric, time, boolean);
+-- 83: dock scanning add-on (a catalog row; the table is dropped with 82 below)
+-- 82: feature modules (my_access and the guarded functions are recreated by 68, 73, 74, 77, 79, 81)
+drop table if exists public.carrier_features, public.feature_catalog cascade;
+drop function if exists public.set_feature(text, boolean), public.apply_feature_preset(text), public.my_features(), public.driver_features(),
+  public.feature_can_change(), public.app_feature(text), public.carrier_feature(uuid, text), public.my_addons() cascade;   -- my_addons: 90
+-- 81: manifests
+drop view if exists public.stop_label_status;
+drop table if exists public.stop_expected_labels, public.manifest_batches cascade;
+drop function if exists public.manifest_import(date, text, jsonb), public.driver_expected_labels(uuid), public.label_key(text) cascade;
+-- 79: load documents (portal_photo_ok is recreated by 56; load_documents by 67)
+drop function if exists public.driver_add_document(uuid, uuid, text, text, text), public.driver_documents(uuid), public.portal_documents(uuid);
+-- 78: per-customer tolerances (the close-out views are rebuilt by 41 / 67 / 73)
+drop function if exists public.set_close_defaults(numeric, int, numeric, numeric, int), public.load_tolerances(uuid);
+-- 77: guest load links (the six copied functions / view are recreated by 58, 60, 66, 70)
+do $$ begin perform cron.unschedule('roadcoda-guest-drivers') where exists (select 1 from cron.job where jobname = 'roadcoda-guest-drivers'); exception when others then null; end $$;
+drop trigger if exists loads_guest_reassigned on public.loads;
+drop trigger if exists loads_guest_one_load on public.loads;
+drop function if exists public.guest_driver_create(uuid, text, text, text, text), public.guest_driver_end(uuid), public.guest_drivers_sweep(),
+  public.loads_guest_reassigned(), public.loads_guest_one_load(), public.driver_is_guest() cascade;
+-- 76: portal signed POD
+drop function if exists public.portal_signatures(uuid);
+-- 75: receiver exceptions
+drop trigger if exists auto_invoice_receiver_notes on public.loads;
+drop function if exists public.auto_invoice_receiver_notes() cascade;
+-- 74: delivery signatures and invoice drafts
+do $$ begin perform cron.unschedule('roadcoda-auto-invoice') where exists (select 1 from cron.job where jobname = 'roadcoda-auto-invoice'); exception when others then null; end $$;
+drop trigger if exists auto_invoice_after_stop on public.stops;
+drop table if exists public.stop_signatures cascade;
+drop function if exists public.customer_delivery_rules(uuid), public.driver_signature_rule(uuid), public.driver_sign_stop(uuid, text, text, text, boolean, text, double precision, double precision), public.driver_sign_stop(uuid, text, text, text, boolean, text, double precision, double precision, text, text[]),
+  public.office_edit_signature(uuid, text, text), public.auto_invoice_missing(uuid), public.auto_invoice_make(uuid, boolean), public.create_auto_load_invoice(uuid, boolean),
+  public.auto_invoice_sweep(uuid), public.auto_invoice_kick(), public.auto_invoice_queue() cascade;
+-- 73: GPS stop times (the close-out views are rebuilt by 41 / 67)
+do $$ begin perform cron.unschedule('roadcoda-learn-locations') where exists (select 1 from cron.job where jobname = 'roadcoda-learn-locations'); exception when others then null; end $$;
+drop trigger if exists truck_positions_geofence on public.truck_positions;
+drop table if exists public.stop_geofence_events, public.stop_gps cascade;
+drop function if exists public.truck_positions_geofence(), public.learn_location_coords(uuid), public.learn_location_coords_all(), public.learn_location_coords_one(uuid),
+  public.set_location_coords(uuid, double precision, double precision, int), public.geo_meters(double precision, double precision, double precision, double precision);
+delete from public.trip_check_codes where code = 'GT';
+-- 72: portal tabs (the seven portal functions are recreated by 56, 59, 62, 63)
+drop function if exists public.portal_team(), public.portal_set_hidden(uuid, text[]), public.portal_set_admin(uuid, boolean), public.set_portal_default_tabs(text[]),
+  public.portal_tab_need(text), public.portal_tab_ok(text), public.portal_tabs_for(uuid), public.portal_allowed_tabs(uuid, uuid) cascade;
+-- 71: claims
+drop table if exists public.claim_layouts, public.claim_subrogation, public.claim_transactions, public.claim_valuations, public.claim_batches, public.claims cascade;
+drop function if exists public.claims_import(date, text, text, jsonb), public.claims_as_of(date), public.claims_by_year(date, text), public.claims_triangle(text, text), public.claim_coverage(text), public.claim_manual_value(uuid, date);
+-- 70: compliance & safety
+drop policy if exists compliance_docs_read on storage.objects;
+drop policy if exists compliance_docs_write on storage.objects;
+drop view if exists public.compliance_status;
+drop table if exists public.compliance_files, public.compliance_records, public.compliance_items cascade;
+drop function if exists public.safety_summary(), public.compliance_doc_ok(text, boolean), public.seed_compliance_items(uuid);
+-- 69: QuickBooks export
+drop table if exists public.qb_item_map, public.qb_settings cascade;
+drop function if exists public.qb_invoice_lines(date, date, boolean), public.qb_payments(date, date, boolean), public.qb_payroll(date, date, boolean), public.qb_mark_exported(text, uuid[]), public.invoice_payment_ref(uuid, text), public.qb_line_key(text, text);
+-- 68: IFTA
+drop view if exists public.ifta_fuel_all;
+drop table if exists public.ifta_rates, public.ifta_layouts, public.ifta_fuel, public.ifta_miles, public.ifta_batches, public.ifta_jurisdictions cascade;
+drop function if exists public.ifta_report(date, date), public.ifta_trucks(date, date), public.ifta_import(text, text, jsonb), public.ifta_match_unit(text, uuid), public.ifta_truck_for(uuid, text), public.ifta_jur(text), public.ifta_counts(text);
+-- 67: trip sheets (the close-out views are rebuilt by 41)
+drop table if exists public.load_documents, public.load_fuel cascade;
+drop function if exists public.load_is_paper(uuid);
+-- 66: handbooks
+drop table if exists public.handbook_acks, public.handbook_versions, public.handbook_setup cascade;
+drop function if exists public.handbook_publish(text, text, text), public.handbook_mark_paper(uuid, uuid, uuid, text), public.handbook_unmark_paper(uuid),
+  public.handbook_status(text), public.driver_handbook_pending(), public.driver_handbook_sign(uuid, text, text), public.my_handbook_pending(), public.my_handbook_sign(uuid, text, text);
+-- 65: office staff payroll
+drop table if exists public.office_pay_lines, public.office_pay_periods, public.office_pay_adjustments, public.office_time, public.office_pay_codes, public.office_staff cascade;
+drop function if exists public.office_pay_lines(date, date), public.office_pay_lines_core(uuid, date, date), public.office_period(date), public.office_period_of(date, text, date),
+  public.approve_office_period(date), public.reopen_office_period(uuid, text), public.office_period_exported(uuid, text), public.my_office_clock(), public.office_clock(boolean),
+  public.office_staff_link(uuid, text), public.office_staff_logins(), public.set_office_pay_schedule(text, date), public.seed_office_pay_codes(uuid);
+-- 64: payroll company files
+drop table if exists public.payroll_export_settings cascade;
+drop function if exists public.pay_week_exported(uuid, text);
+-- 63: returnable containers
+drop view if exists public.container_balance, public.container_inventory, public.container_list;
+drop table if exists public.container_moves, public.containers, public.container_types cascade;
+drop function if exists public.portal_containers();
+-- 62: route # and sort code (portal_list gained a column, so a reinstall of 56 needs it gone)
+drop function if exists public.portal_list(date, date);
+drop function if exists public.load_route(uuid);
 -- 61: trip types
 drop table if exists public.trip_type_rates, public.trip_types cascade;
 -- 60: payroll rules
@@ -14,6 +174,7 @@ drop table if exists public.yard_shifts, public.driver_time_off cascade;
 -- 59: toll factor per vehicle, monthly toll reconciliation
 drop table if exists public.toll_reconciliations, public.toll_vehicle_types cascade;
 -- 58: onboarding & retention
+drop function if exists public.getting_started() cascade;   -- 93 redefines it; it lives with 58
 drop table if exists public.retention_checkins, public.retention_questions, public.driver_checks, public.carrier_setup_ticks, public.onboarding_items cascade;
 -- 57: delivery ratings
 drop view if exists public.delivery_rating_list;
