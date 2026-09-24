@@ -450,3 +450,8 @@ html[data-rc-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator
   cursor: pointer;
 }
 input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* Tell the browser which mode the page is in, so its own pop-ups (time and date pickers,
+   dropdown lists, scrollbars) are drawn dark in dark mode instead of white. */
+:root, html[data-rc-theme="dark"]{ color-scheme: dark; }
+html[data-rc-theme="light"]{ color-scheme: light; }
