@@ -102,6 +102,7 @@
       <div class="pad">
         <label>Remit-to address <span class="mini">where checks go, if it isn't the office</span><textarea id="f-remit_address" placeholder="Blank = office address"></textarea></label>
         <label style="max-width:260px">Payment terms (days)<input id="f-terms_days" type="number" min="0" max="180" placeholder="30"></label>
+        <label style="max-width:320px">Hours-of-service cycle <span class="mini">for drivers without ELD data</span><select id="f-hos_cycle"><option value="">Not set (60 / 7 is assumed)</option><option value="70_8">70 hours / 8 days — trucks run every day</option><option value="60_7">60 hours / 7 days</option></select></label>
       </div>
     </div>
 
@@ -141,7 +142,7 @@ if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const FIELDS = ['name', 'remit_name', 'office_address', 'yard_address', 'time_zone', 'office_phone', 'remit_email', 'remit_address', 'terms_days', 'brand_color'];
+const FIELDS = ['name', 'remit_name', 'office_address', 'yard_address', 'time_zone', 'office_phone', 'remit_email', 'remit_address', 'terms_days', 'brand_color', 'hos_cycle'];
 let me = null, carrier = null, canEdit = false;
 
 async function start() {

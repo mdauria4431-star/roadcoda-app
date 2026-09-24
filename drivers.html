@@ -133,6 +133,9 @@
         <label>Home terminal<select id="f-home_terminal_id"><option value="">–</option></select></label>
         <label>Hire date<input id="f-hire_date" type="date"></label>
         <label>Driver type<select id="f-driver_type"><option value="road">Road driver</option><option value="team">Team driver</option><option value="yard">Yard jockey (clocks in / out, hourly)</option></select></label>
+        <label>Hours-of-service rule<select id="f-hos_rule"><option value="company">Company default</option><option value="70_8">70 hours / 8 days</option><option value="60_7">60 hours / 7 days</option><option value="short_haul">Short-haul (150 air-miles)</option><option value="intrastate">Intrastate (state rules)</option></select>
+          <span class="mini" id="hos-hint">Used when there's no ELD data for this driver.</span></label>
+        <label id="hos-state-l" hidden>State (intrastate)<input id="f-hos_state" maxlength="2" placeholder="CT" style="text-transform:uppercase"></label>
         <label>Trip sheets<select id="f-trip_mode"><option value="app">Uses the driver app (sheet = audit copy)</option><option value="paper">Paper trip sheets (office enters trips)</option></select></label>
         <label id="end-wrap" hidden>End date<input id="f-end_date" type="date"></label>
         <label class="span2" style="grid-column:1/-1">Notes<textarea id="f-notes"></textarea></label>
@@ -258,7 +261,8 @@ const fmtDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString(undefine
 const UNITS = { mile: 'mile', stop: 'stop', day: 'day', hour: 'hour', load: 'load', each: 'each time', week: 'week', percent: '% of revenue' };
 const fmtRate = (r, unit) => r == null ? '' : unit === 'percent' ? `${Number(r)}%` : `$${Number(r) < 1 ? Number(r).toFixed(3).replace(/0$/, '') : Number(r).toFixed(2)}/${unit}`;
 const FIELDS = ['full_name', 'employee_no', 'phone', 'email', 'address', 'emergency_name', 'emergency_phone', 'cdl_number', 'cdl_class', 'cdl_state',
-                'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'home_customer_id', 'home_terminal_id', 'hire_date', 'end_date', 'notes', 'driver_type'];
+                'cdl_endorsements', 'cdl_expires', 'med_card_expires', 'home_customer_id', 'home_terminal_id', 'hire_date', 'end_date', 'notes', 'driver_type',
+                'hos_rule', 'hos_state'];
 const MANAGERS = ['owner', 'dispatcher', 'safety'];
 const SOON_DAYS = 30;
 let cards = [], openEvents = [], events = [];
@@ -420,6 +424,13 @@ function edit(d, quiet) {
   cur = d;
   FIELDS.forEach(f => { $('f-' + f).value = d && d[f] != null ? d[f] : ''; });
   if (!$('f-driver_type').value) $('f-driver_type').value = 'road';
+  if (!$('f-hos_rule').value) $('f-hos_rule').value = 'company';
+  $('f-hos_rule').closest('label').hidden = !!(d && !('hos_rule' in d)); hosVis();
+  if (d && d.id) sb.rpc('driver_hos_rule', { p_driver: d.id }).then(({ data }) => {
+    if (!data) return;
+    $('hos-hint').textContent = data.eld ? 'This driver has ELD data — the ELD\'s own hours are used while it\'s connected. This rule is the fallback.'
+      : data.assumed ? 'Company cycle not set yet, so 60 hours / 7 days is assumed. Set it on the Company page.' : 'Used when there\'s no ELD data for this driver.';
+  });
   $('f-trip_mode').value = (d && d.trip_mode) || 'app';
   $('f-trip_mode').closest('label').hidden = !!(d && !('trip_mode' in d));   // before 67_trip_sheets.sql
   $('f-driver_type').closest('label').hidden = !!(d && !('driver_type' in d));   // before 60_payroll_rules.sql
@@ -484,6 +495,8 @@ $('events').onclick = async (ev) => {
   const id = cur.id; await load(); edit(drivers.find(d => d.id === id), true);
 };
 
+function hosVis() { $('hos-state-l').hidden = $('f-hos_rule').value !== 'intrastate'; }
+$('f-hos_rule').onchange = hosVis;
 function readForm() {
   const v = {};
   FIELDS.forEach(f => { const x = $('f-' + f).value.trim(); v[f] = x === '' ? null : x; });
@@ -491,6 +504,8 @@ function readForm() {
   if (v.email) v.email = v.email.toLowerCase();
   if (cur && cur.active) delete v.end_date;   // only editable once inactive
   if (!v.driver_type || (cur && !('driver_type' in cur))) delete v.driver_type;
+  if (cur && !('hos_rule' in cur)) { delete v.hos_rule; delete v.hos_state; }   // before 109_hos_rules.sql
+  else { v.hos_rule = v.hos_rule || 'company'; v.hos_state = v.hos_rule === 'intrastate' && v.hos_state ? v.hos_state.toUpperCase() : null; }
   if (!cur || 'trip_mode' in cur) v.trip_mode = $('f-trip_mode').value || 'app';
   return v;
 }
@@ -776,6 +791,8 @@ $('up-btn').onclick = () => RCUpload.open({
     { key: 'cdl_class', label: 'CDL Class', re: /class/i, rec: true },
     { key: 'med_card_expires', label: 'Medical Card Expires', re: /med|dot ?phys|physical/i, rec: true },
     { key: 'home_terminal', label: 'Home Terminal', re: /terminal|home ?base|yard|location/i },
+    { key: 'hos_rule', label: 'HOS Rule', re: /hos|hours.?of.?service|cycle|duty ?rule/i },
+    { key: 'hos_state', label: 'HOS State (intrastate)', re: /intra|hos ?state/i },
     { key: 'notes', label: 'Notes', re: /note|comment/i },
   ],
   begin: () => { drvSeen = new Set(); },
@@ -806,6 +823,13 @@ $('up-btn').onclick = () => RCUpload.open({
     const cc = T(get('cdl_class')).toUpperCase().replace(/^CLASS\s*/, ''); v.cdl_class = !cc ? null : /^[ABC]$/.test(cc) ? cc : /NONE|N\/A/.test(cc) ? 'none' : (warnings.push(`CDL class "${cc}" not recognised — left blank`), null);
     const term = T(get('home_terminal'));
     if (term) { const t = terminals.find(x => (x.name || '').toLowerCase() === term.toLowerCase()); if (t) v.home_terminal_id = t.id; else warnings.push(`No terminal called "${term}" — add it under Terminals, then set it on the driver`); }
+    const hr = T(get('hos_rule')).toLowerCase();
+    if (hr) {
+      v.hos_rule = /intra|state rule/.test(hr) ? 'intrastate' : /short|150|100/.test(hr) ? 'short_haul' : /70|8 ?day/.test(hr) ? '70_8' : /60|7 ?day/.test(hr) ? '60_7' : /company|default/.test(hr) ? 'company' : null;
+      if (!v.hos_rule) { warnings.push(`HOS rule "${T(get('hos_rule'))}" not recognised — the company default is used`); v.hos_rule = 'company'; }
+      const hs = T(get('hos_state')).toUpperCase();
+      if (v.hos_rule === 'intrastate') { if (/^[A-Z]{2}$/.test(hs)) v.hos_state = hs; else warnings.push('Intrastate rule without a two-letter state — add the state on the driver'); }
+    }
     v.emergency_name = T(get('emergency_name')) || null; v.emergency_phone = T(get('emergency_phone')) || null;
     v.notes = T(get('notes')) || null;
     if (!v.cdl_expires && !v.med_card_expires) warnings.push('No CDL or medical card expiry — no compliance alerts for this driver');
