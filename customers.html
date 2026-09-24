@@ -712,7 +712,7 @@ $('dl-save').onclick = async () => {
     phone: $('dl-phone').value.trim() || null, email: $('dl-email').value.trim().toLowerCase() || null,
     notify: $('dl-notify').checked, notify_email: $('dl-nemail').value.trim().toLowerCase() || null };
   // 89: a text number, and whether its owner agreed (the database stamps who and when; a new number needs a fresh tick)
-  if ($('dl-sms')) {
+  if ($('dl-sms') && window.RC_ACCESS && window.RC_ACCESS.feature && window.RC_ACCESS.feature('texts')) {   // 106: only when the texts add-on is on
     row.notify_sms = $('dl-sms').value.trim() || null;
     if (row.notify_sms && !$('dl-smsok').checked) { $('dl-msg').innerHTML = '<span class="error">Tick “They agreed to get texts” — texts can only go to a number whose owner agreed.</span>'; return; }
     row.notify_sms_consent_at = row.notify_sms && $('dl-smsok').checked ? (d0 => d0 && d0.notify_sms === row.notify_sms ? d0.notify_sms_consent_at || new Date().toISOString() : new Date().toISOString())(dlRows.find(x => x.id === dlEditing)) : null;
