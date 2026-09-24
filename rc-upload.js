@@ -138,6 +138,12 @@
     }
     function draw() {
       const h = head(), rows = parsed();
+      // the same note on 3+ rows ("No name in the file — named …") is said once at the top, not on every row
+      const pat = (w) => w.replace(/"[^"]*"/g, '"…"').replace(/\d+/g, '#');
+      const counts = {}; rows.forEach(r => (r.warnings || []).forEach(w => { if (!/^Corrected here/.test(w)) counts[pat(w)] = (counts[pat(w)] || 0) + 1; }));
+      const common = Object.keys(counts).filter(k => counts[k] >= 3);
+      rows.forEach(r => { r.shown = (r.warnings || []).filter(w => !common.includes(pat(w))); });
+      const summary = common.map(k => `${counts[k]} rows: ${k.replace(/"…"/g, '…').replace(/#/g, 'N')}`);
       const ok = rows.filter(r => !r.left && !r.errors.length), add = ok.filter(r => !r.existing), upd = ok.filter(r => r.existing), bad = rows.filter(r => r.errors.length), gone = rows.filter(r => r.left);
       const opts = (sel) => '<option value="">(not in file)</option>' + h.map((x, j) => st.blockedCols.includes(j) ? '' : `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(x || 'Column ' + (j + 1))}</option>`).join('');
       // a file that belongs somewhere else: just say so, instead of a screen of red rows
@@ -153,6 +159,8 @@
         ${(cfg.options || []).length ? `<div class="rowx">${cfg.options.map(o => `<label style="display:flex;flex-direction:column;font-size:12px;gap:2px">${esc(o.label)}<select data-opt="${o.key}" style="height:30px">${o.choices.map(([v, t]) => `<option value="${esc(v)}" ${st.opts[o.key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`).join('')}</div>` : ''}
         <div class="mini" style="margin-top:6px"><span class="req">Purple</span> = required · <span class="rec">yellow</span> = recommended. Change any match that's wrong.</div>
         <div class="map">${cfg.fields.map(f => `<label><span class="${f.required ? 'req' : f.rec ? 'rec' : ''}">${esc(f.label)}${f.required ? ' *' : ''}</span><select data-map="${f.key}">${opts(st.map[f.key])}</select></label>`).join('')}</div>
+        ${cfg.banner ? (cfg.banner(st) || '') : ''}
+        ${summary.length ? `<div class="mini" style="margin:6px 0;padding:8px 10px;border:1px solid var(--line,#ccc);border-radius:8px">Done for you: ${summary.map(esc).join(' · ')}</div>` : ''}
         <div class="rowx"><b>${rows.length} row${rows.length === 1 ? '' : 's'}</b>
           <span class="tag t-new">${add.length} new</span><span class="tag t-upd">${upd.length} update${upd.length === 1 ? '' : 's'}</span><span class="tag t-bad">${bad.length} need fixing</span>${gone.length ? `<span class="tag" style="color:var(--ink-3,#888);border-color:var(--ink-3,#888)">${gone.length} left out</span>` : ''}
           <span class="mini">Click <b>Fix ›</b> to correct a row right here, or tick <b>Leave out</b> on a row you don't want (an old duplicate, a closed account). Rows still needing fixes aren't saved.${skipped ? ` ${skipped} heading, note or total line${skipped === 1 ? '' : 's'} skipped.` : ''}</span></div>
@@ -160,10 +168,11 @@
           ${rows.map(r => `<tr style="${r.left ? 'opacity:.45' : ''}"><td>${r.line}</td><td><input type="checkbox" data-leave="${r.line}" ${r.left ? 'checked' : ''} title="Don't load this row"></td>
             <td>${r.left ? '<span class="mini">left out</span>' : `<button type="button" data-open="${r.line}" class="tag ${r.errors.length ? 't-bad' : r.existing ? 't-upd' : 't-new'}" style="cursor:pointer;background:transparent" title="Click to correct this row">${r.errors.length ? 'Fix ›' : r.existing ? 'Update' : 'New'}</button>`}</td>
             <td>${r.left ? '' : esc(cfg.describe(r.values))}</td>
-            <td>${r.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}${(r.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join('')}</td></tr>${st.open === r.line && !r.left ? editor(r) : ''}`).join('') || '<tr><td colspan="5" class="mini">No rows under the header.</td></tr>'}
+            <td>${r.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}${(r.shown || []).map(w => `<div class="warn">${esc(w)}</div>`).join('')}</td></tr>${st.open === r.line && !r.left ? editor(r) : ''}`).join('') || '<tr><td colspan="5" class="mini">No rows under the header.</td></tr>'}
         </tbody></table></div>
         <div class="rowx"><button class="btn primary" data-go ${ok.length ? '' : 'disabled'}>${ok.length ? `Add ${add.length} and update ${upd.length}` : 'Nothing to save yet'}</button><span data-msg></span></div>`;
       back.querySelectorAll('[data-opt]').forEach(s => s.onchange = () => { st.opts[s.dataset.opt] = s.value; draw(); });
+      back.querySelectorAll('[data-setopt]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.setopt.split('='); st.opts[k] = v; st.opts['asked_' + k] = '1'; draw(); });
       back.querySelectorAll('[data-map]').forEach(s => s.onchange = () => { const k = s.dataset.map; if (s.value === '') delete st.map[k]; else st.map[k] = +s.value; draw(); });
       const keepScroll = (fn) => { const y = q('.scroll').scrollTop; fn(); draw(); q('.scroll').scrollTop = y; };
       back.querySelectorAll('[data-open]').forEach(b => b.onclick = () => keepScroll(() => { const n = +b.dataset.open; st.open = st.open === n ? null : n; }));

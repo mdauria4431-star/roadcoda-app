@@ -1152,6 +1152,18 @@ async function openStopUpload(file) {
       { key: 'name', label: 'Name', re: /name|consignee|location|ship ?to|deliver|yard|store/i },
     ],
     checkRequired: false,
+    // store numbers typed as plain numbers (7, 12, 170): Excel drops leading zeros — ask once, clearly
+    banner: (st) => {
+      if (st.opts.pad || st.opts.asked_pad || st.map.code == null) return '';
+      const first = st.header + (st.two ? 2 : 1), vals = st.rows.slice(first).map(r => r[st.map.code]).filter(v => typeof v === 'number' && Number.isInteger(v));
+      const lens = new Set(vals.map(v => String(v).length));
+      if (vals.length < 3 || lens.size < 2) return '';
+      const have = stLocs.filter(l => /^\d+$/.test(l.code || '')).map(l => l.code.length), guess = have.length ? Math.max(...have) : Math.max(4, ...lens);
+      const eg = vals.slice(0, 3).join(', ');
+      return `<div class="blocked" style="background:#a07800">Store numbers look like Excel dropped their leading zeros (${esc(eg)}…). How many digits should a store number have?
+        ${[3, 4, 5].map(n => `<button type="button" class="btn small" data-setopt="pad=${n}" style="margin-left:6px${n === guess ? ';outline:2px solid #fff' : ''}">${n} digits (${String(vals[0]).padStart(n, '0')})</button>`).join('')}
+        <button type="button" class="btn small" data-setopt="pad=" style="margin-left:6px">Keep as they are</button></div>`;
+    },
     begin: () => { stSeen = new Set(); stTabNote = false; },
     parse: (get, raw, prev, opts) => {
       const T = RCUpload.txt, errors = [], warnings = [], v = {};
@@ -1171,7 +1183,6 @@ async function openStopUpload(file) {
       let code = T(get('code')).replace(/^#\s*/, '');
       const numeric = /^\d+$/.test(code);
       if (numeric && opts.pad) code = code.padStart(+opts.pad, '0');
-      else if (numeric && typeof get('code') === 'number' && code.length < 4 && !opts.pad) warnings.push(`Store # ${code} may have lost its leading zeros in Excel — if so, choose "Pad to 4 digits" above`);
       let name = T(get('name')).replace(/\s+/g, ' ');
       if (/^#?\d+$/.test(name) && !code) { code = name.replace('#', ''); if (opts.pad) code = code.padStart(+opts.pad, '0'); name = ''; }
       if (!name && code && cust) { name = `${stPrefix(cust)} Store #${code}`; warnings.push(`No name in the file — named "${name}"`); }
