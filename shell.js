@@ -420,8 +420,49 @@
     try { if (typeof el.showPicker === 'function') el.showPicker(); } catch (_) { /* older browsers: the icon still works */ }
   });
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', dayArrows);
-  else dayArrows();
+  // ---- Typed times (Sep 24): every time box takes what dispatch types — 7a, 0700, 7:30 pm, 1930,
+  // noon — and turns it into 07:00 on leaving the box. Replaces the browser's scrolling picker.
+  // The box's value stays HH:MM (24-hour), exactly what the pages already read and write.
+  function readTime(t) {
+    t = String(t || '').trim().toLowerCase().replace(/\s+/g, '').replace(/\./g, '');
+    if (!t) return '';
+    if (t === 'noon') return '12:00'; if (t === 'midnight') return '00:00';
+    var m = t.match(/^(\d{1,2}):?(\d{2})?(a|am|p|pm)?$/) || t.match(/^(\d{1,2})(\d{2})(a|am|p|pm)?$/);
+    if (!m && /^\d{3}$/.test(t)) m = [t, t.slice(0, 1), t.slice(1), ''];          // 730 → 7:30
+    if (!m) return null;
+    var h = +m[1], mi = +(m[2] || 0), ap = m[3] || '';
+    if (ap) { if (h < 1 || h > 12) return null; if (ap[0] === 'p' && h < 12) h += 12; if (ap[0] === 'a' && h === 12) h = 0; }
+    if (h > 23 || mi > 59) return null;
+    return (h < 10 ? '0' : '') + h + ':' + (mi < 10 ? '0' : '') + mi;
+  }
+  function timeBox(el) {
+    if (!el || el.dataset.rcTime) return;
+    el.dataset.rcTime = '1';
+    var v = el.value; el.type = 'text'; el.value = v ? v.slice(0, 5) : '';
+    el.setAttribute('autocomplete', 'off'); el.setAttribute('inputmode', 'text');
+    if (!el.placeholder) el.placeholder = 'e.g. 7a, 0700, 7:30 pm';
+    el.title = el.title || 'Type a time: 7a, 0700, 7:30 pm, 1930';
+    el.style.fontVariantNumeric = 'tabular-nums';
+  }
+  function fixTime(el) {
+    var t = readTime(el.value);
+    if (t === null) { el.style.outline = '2px solid #c62828'; el.setCustomValidity('Can\'t read that time — try 7a, 0700 or 7:30 pm'); el.title = 'Can\'t read "' + el.value + '" — try 7a, 0700 or 7:30 pm'; return; }
+    el.style.outline = ''; el.setCustomValidity(''); el.title = 'Type a time: 7a, 0700, 7:30 pm, 1930';
+    el.value = t;
+  }
+  function timeBoxes(root) { var l = (root || document).querySelectorAll('input[type="time"]'); for (var i = 0; i < l.length; i++) timeBox(l[i]); }
+  // before the page's own change handlers see it (capture phase), tidy what was typed
+  document.addEventListener('change', function (e) { if (e.target && e.target.dataset && e.target.dataset.rcTime) fixTime(e.target); }, true);
+  document.addEventListener('blur', function (e) { if (e.target && e.target.dataset && e.target.dataset.rcTime) fixTime(e.target); }, true);
+  function watchTimes() {
+    timeBoxes(document);
+    try { new MutationObserver(function (ms) { for (var i = 0; i < ms.length; i++) for (var j = 0; j < ms[i].addedNodes.length; j++) { var n = ms[i].addedNodes[j]; if (n.nodeType === 1) { if (n.matches && n.matches('input[type="time"]')) timeBox(n); else timeBoxes(n); } } })
+      .observe(document.body, { childList: true, subtree: true }); } catch (_) {}
+  }
+  window.RC_READ_TIME = readTime;
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { dayArrows(); watchTimes(); });
+  else { dayArrows(); watchTimes(); }
   window.RC_DAY_ARROWS = dayArrows;   // pages that draw their toolbar later can call this again
 
 
