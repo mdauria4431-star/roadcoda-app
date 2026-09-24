@@ -11,7 +11,9 @@
 <meta name="theme-color" content="#070c14">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <script src="config.js"></script>
+<script src="rc-upload.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <style>
@@ -110,6 +112,7 @@
       <div class="hint" id="req-mfa-msg" style="margin:4px 0 0"></div>
     </div>
       <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Deactivated</option><option value="all">All</option></select>
+      <button class="btn" id="up-btn" type="button">Upload spreadsheet</button>
       <button class="btn primary" id="new-btn" type="button">+ Invite a user</button>
     </div>
     <p class="hint" style="margin:0">Office staff sign in with their work email and a password. Drivers are set up on the <a href="drivers.html">Drivers</a> page (no passwords).</p>
@@ -354,6 +357,49 @@ $('req-mfa').onchange = async () => {
 
 start();
 if (window.RC_ACCESS_READY) window.RC_ACCESS_READY.then(mfaCardDraw);
+
+// ---------- 109: invite office staff from a spreadsheet. Asks before any invitation is sent. ----------
+const U_ROLES = { owner: 'owner', dispatch: 'dispatcher', billing: 'billing', 'a/r': 'billing', ar: 'billing', safety: 'safety', payroll: 'payroll', account: 'accountant', bookkeep: 'accountant' };
+let uSeen = null;
+$('up-btn').onclick = () => RCUpload.open({
+  title: 'Invite office staff',
+  template: 'templates/RoadCoda-template-Office-staff.xlsx',
+  blocked: /ssn|social|soc\.? ?sec|tax ?id|\btin\b|routing|\baba\b|bank|account ?(#|no|num)|acct|direct ?dep|salary|wage|hourly|rate|pay/i,
+  fields: [
+    { key: 'full_name', label: 'Full Name', re: /full ?name|^name$|employee ?name/i, required: true },
+    { key: 'email', label: 'Email', re: /e-?mail/i, required: true },
+    { key: 'role', label: 'Role', re: /role|position|job/i, required: true },
+    { key: 'super_user', label: 'Super User (Y/N)', re: /super/i },
+  ],
+  begin: () => { uSeen = new Set(); },
+  parse: (get) => {
+    const T = RCUpload.txt, errors = [], warnings = [], v = {};
+    for (const k of ['full_name', 'email', 'role']) if (/\b\d{3}-\d{2}-\d{4}\b/.test(T(get(k)))) errors.push('Something shaped like a Social Security number is in this row. RoadCoda won\'t take it: remove it from the file');
+    v.full_name = T(get('full_name')).replace(/\s+/g, ' ') || null;
+    v.email = T(get('email')).toLowerCase().replace(/^mailto:/, '') || null;
+    if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) errors.push(`Email "${v.email}" doesn't look right`);
+    const r = T(get('role')).toLowerCase();
+    v.role = r ? (Object.entries(U_ROLES).find(([k]) => r.includes(k)) || [])[1] || null : null;
+    if (r && !v.role) errors.push(`Role "${T(get('role'))}" — use Owner, Dispatcher, Billing, Safety, Payroll or Accountant`);
+    if (v.role === 'owner' && myRole !== 'owner') errors.push('Only an owner can add another owner');
+    v.super_user = /^(y|yes|true|1|x)$/i.test(T(get('super_user')));
+    if (v.email) { if (uSeen.has(v.email)) errors.push('This email is in the file twice'); else uSeen.add(v.email); }
+    return { values: v, errors, warnings };
+  },
+  match: (v) => users.find(u => (u.email || '').toLowerCase() === v.email) || null,
+  describe: (v) => [v.full_name, v.email, v.role, v.super_user && 'super user'].filter(Boolean).join(' · '),
+  confirmText: (nAdd) => nAdd ? `Send ${nAdd} invitation${nAdd === 1 ? '' : 's'}? Each person gets an email to set their password. People already on the Users list are left as they are.` : null,
+  save: async (rows) => {
+    let added = 0; const failed = [];
+    for (const r of rows) {
+      if (r.existing) { failed.push({ line: r.line, message: `${r.values.email} already has a login — change them on this screen instead` }); continue; }
+      try { await fn({ action: 'invite', ...r.values, access: { ...(PRESETS[r.values.role] || {}) } }); added++; }
+      catch (e) { failed.push({ line: r.line, message: e.message }); }
+    }
+    return { added, updated: 0, failed };
+  },
+  after: () => load(),
+});
 </script>
 </body>
 </html>

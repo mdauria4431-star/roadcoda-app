@@ -12,7 +12,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <script src="config.js"></script>
+<script src="rc-upload.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <style>
@@ -97,6 +99,7 @@
       <input id="q" type="search" placeholder="Search name, phone, CDL…" aria-label="Search drivers" style="width:240px">
       <select id="acct" aria-label="Home account"><option value="">All accounts</option></select>
       <select id="show" aria-label="Show"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option><option value="guests" data-feature="guest_drivers">Guest drivers</option></select>
+      <button class="btn" id="up-btn" type="button">Upload spreadsheet</button>
       <button class="btn primary" id="new-btn" type="button">+ New driver</button>
     </div>
 
@@ -749,6 +752,82 @@ $('terms-body').onclick = async (ev) => {
   await load(); if (cur) edit(drivers.find(d => d.id === cur.id));
   $('terms-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
+
+// ---------- 109: upload a spreadsheet of drivers. Social Security and bank numbers are never read. ----------
+const SSN_COL = /ssn|social|soc\.? ?sec|tax ?id|\btin\b|routing|\baba\b|bank|account ?(#|no|num)|acct|direct ?dep/i;
+const SSN_VAL = /\b\d{3}-\d{2}-\d{4}\b/;
+let drvSeen = null;
+$('up-btn').onclick = () => RCUpload.open({
+  title: 'Upload drivers',
+  template: 'templates/RoadCoda-template-Drivers.xlsx',
+  blocked: SSN_COL,
+  fields: [
+    { key: 'full_name', label: 'Full Name', re: /full ?name|^name$|driver ?name|^driver$/i, required: true },
+    { key: 'emergency_phone', label: 'Emergency Phone', re: /emerg.*(phone|tel|cell|number)/i, rec: true },
+    { key: 'emergency_name', label: 'Emergency Contact', re: /emerg/i, rec: true },
+    { key: 'phone', label: 'Phone', re: /phone|cell|mobile|tel/i, required: true },
+    { key: 'email', label: 'Email', re: /e-?mail/i },
+    { key: 'employee_no', label: 'Employee #', re: /emp|payroll ?(#|id|no)|badge|file ?#/i, rec: true },
+    { key: 'driver_type', label: 'Driver Type', re: /driver ?type|^type$/i },
+    { key: 'hire_date', label: 'Hire Date', re: /hire|start ?date|date ?hired/i, required: true },
+    { key: 'cdl_expires', label: 'CDL Expires', re: /(cdl|licen[cs]e).*(exp|renew)/i, rec: true },
+    { key: 'cdl_number', label: 'CDL Number', re: /cdl ?(#|no|num)|licen[cs]e ?(#|no|num)|^cdl$|dl ?#/i, rec: true },
+    { key: 'cdl_state', label: 'CDL State', re: /(cdl|licen[cs]e|dl).*st(ate)?\b|issuing/i, rec: true },
+    { key: 'cdl_class', label: 'CDL Class', re: /class/i, rec: true },
+    { key: 'med_card_expires', label: 'Medical Card Expires', re: /med|dot ?phys|physical/i, rec: true },
+    { key: 'home_terminal', label: 'Home Terminal', re: /terminal|home ?base|yard|location/i },
+    { key: 'notes', label: 'Notes', re: /note|comment/i },
+  ],
+  begin: () => { drvSeen = new Set(); },
+  parse: (get) => {
+    const T = RCUpload.txt, errors = [], warnings = [], v = {};
+    // any cell shaped like a Social Security number stops the row, whatever column it's in
+    for (const k of ['full_name', 'phone', 'email', 'employee_no', 'cdl_number', 'notes', 'emergency_name', 'emergency_phone'])
+      if (SSN_VAL.test(T(get(k)))) errors.push(`Something shaped like a Social Security number is in "${k.replace(/_/g, ' ')}". RoadCoda won't take it: remove it from the file`);
+    v.full_name = T(get('full_name')).replace(/\s+/g, ' ') || null;
+    if (v.full_name && /,/.test(v.full_name)) { const [l, f] = v.full_name.split(/\s*,\s*/); if (f) { v.full_name = `${f} ${l}`; warnings.push(`Name "${T(get('full_name'))}" read as "${v.full_name}"`); } }
+    v.phone = T(get('phone')) || null;
+    if (v.phone && v.phone.replace(/\D/g, '').length < 10) errors.push(`Phone "${v.phone}" is too short — the driver signs in with it`);
+    v.email = T(get('email')).toLowerCase().replace(/^mailto:/, '') || null;
+    if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) { warnings.push(`Email "${v.email}" doesn't look right — left blank`); v.email = null; }
+    v.employee_no = T(get('employee_no')) || null;
+    const ty = T(get('driver_type')).toLowerCase();
+    v.driver_type = !ty ? null : /team/.test(ty) ? 'team' : /yard|jock|hostler|shunt/.test(ty) ? 'yard' : 'road';
+    for (const [k, lab, req] of [['hire_date', 'Hire date', true], ['cdl_expires', 'CDL expiry', false], ['med_card_expires', 'Medical card expiry', false]]) {
+      const d = RCUpload.date(get(k));
+      if (d === undefined) (req ? errors : warnings).push(`${lab} "${T(get(k))}" can't be read${req ? ' — use MM/DD/YYYY' : ', so it was left blank'}`);
+      v[k] = d || null;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (v.cdl_expires && v.cdl_expires < today) warnings.push(`CDL expired ${v.cdl_expires}`);
+    if (v.med_card_expires && v.med_card_expires < today) warnings.push(`Medical card expired ${v.med_card_expires}`);
+    v.cdl_number = T(get('cdl_number')) || null;
+    const cs = T(get('cdl_state')).toUpperCase(); if (cs && !/^[A-Z]{2}$/.test(cs)) warnings.push(`CDL state "${cs}" should be two letters — left blank`); v.cdl_state = /^[A-Z]{2}$/.test(cs) ? cs : null;
+    const cc = T(get('cdl_class')).toUpperCase().replace(/^CLASS\s*/, ''); v.cdl_class = !cc ? null : /^[ABC]$/.test(cc) ? cc : /NONE|N\/A/.test(cc) ? 'none' : (warnings.push(`CDL class "${cc}" not recognised — left blank`), null);
+    const term = T(get('home_terminal'));
+    if (term) { const t = terminals.find(x => (x.name || '').toLowerCase() === term.toLowerCase()); if (t) v.home_terminal_id = t.id; else warnings.push(`No terminal called "${term}" — add it under Terminals, then set it on the driver`); }
+    v.emergency_name = T(get('emergency_name')) || null; v.emergency_phone = T(get('emergency_phone')) || null;
+    v.notes = T(get('notes')) || null;
+    if (!v.cdl_expires && !v.med_card_expires) warnings.push('No CDL or medical card expiry — no compliance alerts for this driver');
+    const key = (v.employee_no || v.email || v.full_name || '').toLowerCase();
+    if (key) { if (drvSeen.has(key)) errors.push('This driver is in the file twice'); else drvSeen.add(key); }
+    return { values: v, errors, warnings };
+  },
+  match: (v) => (v.employee_no && drivers.find(d => (d.employee_no || '').toLowerCase() === v.employee_no.toLowerCase()))
+             || (v.email && drivers.find(d => (d.email || '').toLowerCase() === v.email))
+             || drivers.find(d => (d.full_name || '').toLowerCase().replace(/\s+/g, ' ') === (v.full_name || '').toLowerCase()) || null,
+  describe: (v) => [v.full_name, v.phone, v.employee_no && '#' + v.employee_no, v.cdl_class && 'CDL ' + v.cdl_class, v.hire_date && 'hired ' + v.hire_date].filter(Boolean).join(' · '),
+  save: async (rows) => {
+    let added = 0, updated = 0; const failed = [];
+    for (const r of rows) {
+      const v = Object.fromEntries(Object.entries(r.values).filter(([, x]) => x !== null && x !== undefined));
+      const { error } = r.existing ? await sb.from('drivers').update(v).eq('id', r.existing.id) : await sb.from('drivers').insert(v);
+      if (error) failed.push({ line: r.line, message: niceError(error) }); else r.existing ? updated++ : added++;
+    }
+    return { added, updated, failed };
+  },
+  after: () => load(),
+});
 
 start();
 </script>

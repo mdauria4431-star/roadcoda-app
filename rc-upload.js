@@ -55,7 +55,8 @@
         q('[data-sheet]').innerHTML = names.map((n, i) => `<option value="${i}">${esc(n)}</option>`).join('');
         q('[data-sheetwrap]').hidden = names.length < 2;
         q('[data-sheet]').onchange = () => loadSheet(+q('[data-sheet]').value);
-        loadSheet(0);
+        const pref = cfg.preferSheet ? Math.max(0, names.findIndex(n => cfg.preferSheet.test(n))) : 0;
+        q('[data-sheet]').value = String(pref); loadSheet(pref);
       } catch (err) { q('[data-body]').innerHTML = `<div class="err">${esc(err.message || err)}</div>`; }
     };
 
@@ -70,8 +71,26 @@
       guess(); draw();
     }
 
-    function head() { return (st.rows[st.header] || []).map(h => String(h).replace(/\s*\*\s*$/, '').trim()); }
+    // A header split over two rows ("BILL TO" over "Address | City | Zip") is read as one: "BILL TO Address"…
+    function twoRows() {
+      const H = st.rows[st.header] || [], N = st.rows[st.header + 1] || [];
+      const txt = N.filter(c => typeof c === 'string' && /[A-Za-z]/.test(c) && c.length < 40);
+      const fillsGap = N.some((c, j) => String(c).trim() && !String(H[j] ?? '').trim());
+      return txt.length >= 2 && txt.length === N.filter(c => String(c).trim()).length && fillsGap;
+    }
+    function head() {
+      const H = st.rows[st.header] || [];
+      if (!st.two) return H.map(h => String(h).replace(/\s*\*\s*$/, '').trim());
+      const N = st.rows[st.header + 1] || [], out = []; let group = '';
+      for (let j = 0; j < Math.max(H.length, N.length); j++) {
+        const h = String(H[j] ?? '').trim(), n = String(N[j] ?? '').trim();
+        if (h && n) group = h; else if (h) group = '';
+        out.push((n ? [h || group, n].filter(Boolean).join(' ') : h).replace(/\s*\*\s*$/, ''));
+      }
+      return out;
+    }
     function guess() {
+      st.two = twoRows();
       const h = head(), used = new Set();
       st.blockedCols = cfg.blocked ? h.map((x, j) => cfg.blocked.test(x) ? j : -1).filter(j => j >= 0) : [];
       st.blockedCols.forEach(j => used.add(j));
@@ -81,17 +100,18 @@
     function parsed() {
       const out = []; skipped = 0;
       if (cfg.begin) cfg.begin();                                                 // e.g. reset duplicate checks
-      st.rows.slice(st.header + 1).forEach((r, i) => {
+      const first = st.header + (st.two ? 2 : 1);
+      st.rows.slice(first).forEach((r, i) => {
         if (!r.some(c => String(c).trim() !== '')) return;                        // blank row
         if (r.filter(c => String(c).trim() !== '').length === 1 && cfg.fields.filter(f => st.map[f.key] != null).length > 2) { skipped++; return; }  // "=== TRACTORS ===", a note line
         const get = (k) => st.map[k] != null ? r[st.map[k]] : '';
         const p = cfg.parse(get, r) || { values: {}, errors: [], warnings: [] };
         if (p.skip) return;
-        for (const f of cfg.fields) if (f.required && (p.values[f.key] == null || p.values[f.key] === '')) {
+        if (cfg.checkRequired !== false) for (const f of cfg.fields) if (f.required && (p.values[f.key] == null || p.values[f.key] === '')) {
           if (!p.errors.some(e => e.startsWith(f.label))) p.errors.push(`${f.label} is required`);
         }
         const existing = p.errors.length ? null : cfg.match(p.values);
-        out.push({ line: st.header + 2 + i, ...p, existing });
+        out.push({ line: first + 1 + i, ...p, existing });
       });
       return out;
     }
@@ -101,6 +121,7 @@
       const opts = (sel) => '<option value="">(not in file)</option>' + h.map((x, j) => st.blockedCols.includes(j) ? '' : `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(x || 'Column ' + (j + 1))}</option>`).join('');
       q('[data-body]').innerHTML = `
         ${st.blockedCols.length ? `<div class="blocked">Not read: ${st.blockedCols.map(j => esc(h[j])).join(', ')}. RoadCoda never reads or stores Social Security or bank numbers. Please delete that column from your file.</div>` : ''}
+        ${st.two ? '<div class="mini" style="margin-top:6px">The header takes two rows here, so they were read together.</div>' : ''}
         <div class="mini" style="margin-top:6px"><span class="req">Purple</span> = required · <span class="rec">yellow</span> = recommended. Change any match that's wrong.</div>
         <div class="map">${cfg.fields.map(f => `<label><span class="${f.required ? 'req' : f.rec ? 'rec' : ''}">${esc(f.label)}${f.required ? ' *' : ''}</span><select data-map="${f.key}">${opts(st.map[f.key])}</select></label>`).join('')}</div>
         <div class="rowx"><b>${rows.length} row${rows.length === 1 ? '' : 's'}</b>

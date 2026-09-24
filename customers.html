@@ -17,6 +17,7 @@
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <script src="new-customer.js"></script>
+<script src="rc-upload.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
   *{box-sizing:border-box}
@@ -105,6 +106,7 @@
         <label for="cust" style="flex:1 1 260px">Customer (bill to)<select id="cust"></select></label>
         <label for="parent" style="flex:0 1 240px">Part of<select id="parent"></select></label>
         <button class="btn" id="nc-btn" type="button">+ New customer</button>
+        <button class="btn" id="cu-up-btn" type="button">Upload customers</button>
         <a class="btn" id="rates-link" href="rates.html" style="display:inline-flex;align-items:center;text-decoration:none">Rates &amp; billing settings</a>
       </div>
       <p class="hint" id="cust-info" style="margin:10px 0 0"></p>
@@ -834,10 +836,11 @@ $('dl-file').onchange = async () => {
   try {
     const buf = await f.arrayBuffer();
     let rows;
-    if (/\.pdf$/i.test(f.name)) rows = await pdfRows(buf);
+    if (/\.pdf$/i.test(f.name)) { rows = await pdfRows(buf); dlUp.wb = null; }
     else {
       if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Check your internet connection and refresh.');
       const wb = XLSX.read(buf, { type: 'array', raw: /\.(csv|txt)$/i.test(f.name) });
+      dlUp.wb = wb; dlUp.sheet = 0;                                              // 109: any tab, not just the first
       rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
     }
     rows = rows.map(r => r.map(c => (c == null ? '' : c))).filter(r => r.some(c => String(c).trim() !== ''));
@@ -868,7 +871,18 @@ function dlParsed() {
       delivery_instructions: String(g(r, 'delivery_instructions')).trim(), door_code: String(g(r, 'door_code')).trim(), gate_code: String(g(r, 'gate_code')).trim(),
       other_code_name: String(g(r, 'other_code_name')).trim(), other_code: String(g(r, 'other_code')).trim(),
       after_hours_contact: String(g(r, 'after_hours_contact')).trim(), after_hours_phone: String(g(r, 'after_hours_phone')).trim() };
-    row.ok = !!(row.name || row.code);
+    // 109: codes typed into notes or instructions go to their own fields, and come out of the text
+    const pull = (re) => { for (const f of ['notes', 'delivery_instructions']) { const m = row[f].match(re); if (m) { row[f] = row[f].replace(m[0], '').replace(/^[\s\/;,|–-]+|[\s\/;,|–-]+$/g, '').replace(/\s*[\/;|]\s*[\/;|]\s*/g, ' / '); return m[1]; } } return ''; };
+    if (!row.gate_code) row.gate_code = pull(/\bgate(?:\s*code)?\s*[:#-]?\s*([0-9*#]{3,8}#?)/i);
+    if (!row.door_code) row.door_code = pull(/\b(?:door(?:\s*code)?|dr|code)\s*[:#-]?\s*([0-9*]{3,8}#?)/i);
+    if (!row.other_code) { const k = pull(/\b(?:key ?box|lock ?box|key ?safe)\s*[:#-]?\s*([0-9]{2,8})/i); if (k) { row.other_code = k; row.other_code_name = row.other_code_name || 'Key box'; } }
+    if (!row.other_code) { const a = pull(/\balarm(?:\s*code)?\s*[:#-]?\s*([0-9]{3,8})/i); if (a) { row.other_code = a; row.other_code_name = row.other_code_name || 'Alarm'; } }
+    // "R01-S1", "1/2", "R1 S3" in one route column → route and sort
+    const rs = (row.route_no && !row.sort_code) ? row.route_no : (!row.route_no && row.sort_code) ? row.sort_code : '';
+    if (rs) { const m = rs.match(/^R?0*(\d+)\s*[-\/ ]\s*S?0*(\d+)$/i); if (m) { row.route_no = 'R' + m[1].padStart(2, '0'); row.sort_code = 'S' + m[2]; } }
+    // a heading line ("--- SHORELINE REGION ---") or a note on its own isn't a stop
+    if (r.filter(c => String(c).trim() !== '').length === 1 && Object.keys(dlUp.map).length > 2) row.heading = true;
+    row.ok = !!(row.name || row.code) && !row.heading;
     row.badEmail = [row.email, row.notify_email].some(e => e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
     row.match = row.ok ? (dlRows.find(d => row.code && (d.code || '').toLowerCase() === row.code.toLowerCase()) || dlRows.find(d => row.name && nkey(d.name) === nkey(row.name))) : null;
     return row;
@@ -880,8 +894,8 @@ function dlDraw() {
   const rows = dlParsed(), ok = rows.filter(r => r.ok), bad = ok.filter(r => r.badEmail);
   $('dl-up').innerHTML = `
     <div class="row" style="justify-content:space-between"><b>Upload delivery customers</b><button class="btn small" id="dl-up-x" type="button">Close</button></div>
-    <details style="margin-top:8px" ${Object.keys(dlUp.map).length < 3 ? 'open' : ''}><summary style="cursor:pointer;font-weight:600">Match the file's columns (${Object.keys(dlUp.map).length} found automatically)</summary>
-      <div class="row" style="margin-top:8px"><label>Header row<select id="dl-head">${dlUp.rows.slice(0, 15).map((r, i) => `<option value="${i}" ${i === dlUp.header ? 'selected' : ''}>Row ${i + 1}: ${esc(r.filter(Boolean).slice(0, 3).join(' | ').slice(0, 50))}</option>`).join('')}</select></label></div>
+    <details style="margin-top:8px" ${Object.keys(dlUp.map).length < 3 || (dlUp.wb && dlUp.wb.SheetNames.length > 1) ? 'open' : ''}><summary style="cursor:pointer;font-weight:600">Match the file's columns (${Object.keys(dlUp.map).length} found automatically)</summary>
+      <div class="row" style="margin-top:8px">${dlUp.wb && dlUp.wb.SheetNames.length > 1 ? `<label>Tab<select id="dl-sheet">${dlUp.wb.SheetNames.map((n, i) => `<option value="${i}" ${i === dlUp.sheet ? 'selected' : ''}>${esc(n)}${(dlUp.wb.Workbook?.Sheets?.[i]?.Hidden) ? ' (hidden tab)' : ''}</option>`).join('')}</select></label>` : ''}<label>Header row<select id="dl-head">${dlUp.rows.slice(0, 15).map((r, i) => `<option value="${i}" ${i === dlUp.header ? 'selected' : ''}>Row ${i + 1}: ${esc(r.filter(Boolean).slice(0, 3).join(' | ').slice(0, 50))}</option>`).join('')}</select></label></div>
       <div class="grid" style="margin-top:8px">${DL_FIELDS.map(([k, label]) => `<label>${label}<select data-dlmap="${k}">${opts(dlUp.map[k])}</select></label>`).join('')}</div>
     </details>
     <p style="margin-top:10px"><b>${ok.length}</b> rows · <span class="current">${ok.filter(r => !r.match).length} new</span> ·
@@ -897,6 +911,13 @@ function dlDraw() {
     <div class="row" style="margin-top:10px"><button class="btn primary" id="dl-up-go" ${ok.length && !bad.length ? '' : 'disabled'}>Save ${ok.length} delivery customer${ok.length === 1 ? '' : 's'}</button><span id="dl-up-msg"></span></div>`;
   $('dl-up-x').onclick = () => { $('dl-up').hidden = true; };
   $('dl-head').onchange = () => { dlUp.header = parseInt($('dl-head').value, 10); dlGuess(); dlDraw(); };
+  if ($('dl-sheet')) $('dl-sheet').onchange = () => {
+    dlUp.sheet = +$('dl-sheet').value;
+    dlUp.rows = XLSX.utils.sheet_to_json(dlUp.wb.Sheets[dlUp.wb.SheetNames[dlUp.sheet]], { header: 1, raw: true, defval: '' })
+      .map(r => r.map(c => (c == null ? '' : c))).filter(r => r.some(c => String(c).trim() !== ''));
+    dlUp.header = Math.max(0, dlUp.rows.slice(0, 15).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
+    dlGuess(); dlDraw();
+  };
   document.querySelectorAll('[data-dlmap]').forEach(sel => sel.onchange = () => { if (sel.value === '') delete dlUp.map[sel.dataset.dlmap]; else dlUp.map[sel.dataset.dlmap] = parseInt(sel.value, 10); dlDraw(); });
   $('dl-up-go').onclick = async () => {
     $('dl-up-go').disabled = true;
@@ -963,6 +984,93 @@ $('act-body').onclick = async (ev) => {
   await loadAct();
   $('act-msg').innerHTML = `<span class="ok">${esc(t.name)} saved.</span>`;
 };
+
+// ---------- 109: upload a spreadsheet of bill-to customers ----------
+const CU_DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+let cuSeen = null;
+$('cu-up-btn').onclick = () => RCUpload.open({
+  title: 'Upload customers (bill-to)',
+  template: 'templates/RoadCoda-template-Customers.xlsx',
+  fields: [
+    { key: 'name', label: 'Customer Name', re: /customer ?name|^customer$|company|bill ?to ?name|^name$/i, required: true },
+    { key: 'parent', label: 'Parent Account Code', re: /parent/i },
+    { key: 'code', label: 'Account Code', re: /acc(oun)?t ?(code|#|no)|cust(omer)? ?(code|#|id)|^code$/i },
+    { key: 'street', label: 'Bill-To Street', re: /street|address|bill ?to(?! ?name)/i, required: true },
+    { key: 'city', label: 'City', re: /city|town/i, required: true },
+    { key: 'state', label: 'State', re: /^st$|state/i, required: true },
+    { key: 'zip', label: 'Zip', re: /zip|postal/i, required: true },
+    { key: 'terms', label: 'Payment Terms (days)', re: /terms/i, required: true },
+    { key: 'billing', label: 'Billing', re: /billing|bill ?(method|type|how)|invoic/i, required: true },
+    { key: 'week', label: 'Week Starts', re: /week/i },
+    { key: 'po', label: 'PO Number', re: /\bpo\b|purchase/i },
+    { key: 'ap_email', label: 'AP Email', re: /e-?mail/i, required: true },
+    { key: 'ap_phone', label: 'AP Phone', re: /phone|tel/i },
+    { key: 'ap_name', label: 'AP Contact', re: /contact|attn|\bap\b/i, rec: true },
+    { key: 'notes', label: 'Notes', re: /note|comment/i },
+  ],
+  checkRequired: false,                                        // this screen checks its own, since address parts combine
+  begin: () => { cuSeen = new Set(); },
+  parse: (get) => {
+    const T = RCUpload.txt, errors = [], warnings = [], v = {};
+    v.name = T(get('name')).replace(/^[\s\-–•›]+/, '').replace(/\s+/g, ' ') || null;
+    if (v.name && v.name === v.name.toUpperCase() && /[A-Z]{4}/.test(v.name)) { v.name = v.name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); warnings.push(`Name in capitals changed to "${v.name}"`); }
+    v.customer_code = T(get('code')).toUpperCase() || null;
+    v.parent_code = T(get('parent')).toUpperCase() || null;
+    let city = T(get('city')), state = T(get('state')).toUpperCase(), zip = T(get('zip'));
+    const cs = city.match(/^(.+?),?\s+([A-Za-z]{2})$/); if (cs && !state) { city = cs[1]; state = cs[2].toUpperCase(); }
+    if (/^\d{3,4}$/.test(zip)) { zip = zip.padStart(5, '0'); warnings.push(`Zip padded to ${zip}`); }
+    const street = T(get('street'));
+    if (/^same as/i.test(street)) errors.push('Address says "same as above" — put the real address on every row');
+    if (state && !/^[A-Z]{2}$/.test(state)) errors.push(`State "${state}" should be two letters`);
+    v.bill_address = street && city ? `${street}, ${city}, ${state} ${zip}`.trim() : null;
+    if (!street) errors.push('Bill-To Street is required'); if (!city) errors.push('City is required');
+    if (!state) errors.push('State is required'); if (!zip) errors.push('Zip is required');
+    const tRaw = T(get('terms')); let t = null;
+    if (/receipt|cod|cash|due now/i.test(tRaw)) t = 0; else { const m = tRaw.match(/(\d{1,3})/); if (m) t = +m[1]; }
+    if (tRaw && t === null) errors.push(`Payment terms "${tRaw}" — use a number of days (30, 45, 0 for due on receipt)`);
+    else if (t !== null && String(t) !== tRaw) warnings.push(`Payment terms "${tRaw}" read as ${t} days`);
+    v.terms_days = t; if (!tRaw) errors.push('Payment Terms is required (0 = due on receipt)');
+    if (!v.name) errors.push('Customer Name is required');
+    const bRaw = T(get('billing'));
+    if (/parent|not billed/i.test(bRaw)) { v.master_bill = false; warnings.push('Marked as a parent account: add its DCs with this code as their Parent Account Code'); }
+    else if (/week|master/i.test(bRaw)) v.master_bill = true; else if (/load|each|per/i.test(bRaw)) v.master_bill = false;
+    else if (bRaw) errors.push(`Billing "${bRaw}" — use Per load or Weekly`); else errors.push('Billing is required');
+    const w = T(get('week')).slice(0, 3).toLowerCase() || (bRaw.match(/\b(sun|mon|tue|wed|thu|fri|sat)/i) || [])[1]?.toLowerCase();
+    if (w && CU_DOW[w] !== undefined) v.week_start_dow = CU_DOW[w];
+    v.po_number = T(get('po')) || null;
+    let em = T(get('ap_email')).replace(/^mailto:/i, '').split(/[;,\s]+/).filter(Boolean);
+    if (em.length > 1) warnings.push(`Two emails given — used the first (${em[0]})`);
+    v.contact_email = (em[0] || '').toLowerCase() || null;
+    if (v.contact_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.contact_email)) errors.push(`AP email "${v.contact_email}" doesn't look right`);
+    if (!v.contact_email && !/parent|not billed/i.test(bRaw)) errors.push('AP Email is required — invoices are emailed there');
+    v.contact_phone = T(get('ap_phone')) || null; v.contact_name = T(get('ap_name')) || null;
+    const note = T(get('notes')); if (note) warnings.push(`Note not loaded: "${note.slice(0, 60)}"`);
+    const key = (v.customer_code || v.name || '').toLowerCase();
+    if (key) { if (cuSeen.has(key)) errors.push('This customer is in the file twice'); else cuSeen.add(key); }
+    return { values: v, errors, warnings };
+  },
+  match: (v) => (v.customer_code && customers.find(c => (c.customer_code || '').toUpperCase() === v.customer_code))
+             || customers.find(c => (c.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === (v.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')) || null,
+  describe: (v) => [v.name, v.customer_code, v.bill_address, v.terms_days != null && `Net ${v.terms_days}`, v.master_bill ? 'weekly' : 'per load', v.parent_code && 'under ' + v.parent_code].filter(Boolean).join(' · '),
+  save: async (rows) => {
+    let added = 0, updated = 0; const failed = [], codes = new Map(customers.filter(c => c.customer_code).map(c => [c.customer_code.toUpperCase(), c.id]));
+    for (const r of rows) {                                   // parents first, so their DCs can point at them
+      const { parent_code, ...rest } = r.values;
+      const v = Object.fromEntries(Object.entries(rest).filter(([, x]) => x !== null && x !== undefined));
+      const q = r.existing ? sb.from('customers').update(v).eq('id', r.existing.id).select('id').single() : sb.from('customers').insert(v).select('id').single();
+      const { data, error } = await q;
+      if (error) { failed.push({ line: r.line, message: error.message }); continue; }
+      r.id = data.id; if (v.customer_code) codes.set(v.customer_code, data.id); r.existing ? updated++ : added++;
+    }
+    for (const r of rows) if (r.id && r.values.parent_code) {
+      const pid = codes.get(r.values.parent_code);
+      if (!pid) { failed.push({ line: r.line, message: `No customer with Account Code ${r.values.parent_code}, so it wasn't put under a parent` }); continue; }
+      if (pid !== r.id) { const { error } = await sb.from('customers').update({ parent_customer_id: pid }).eq('id', r.id); if (error) failed.push({ line: r.line, message: error.message }); }
+    }
+    return { added, updated, failed };
+  },
+  after: async () => { await loadCustList(); if (typeof pickCustomer === 'function') pickCustomer(); },
+});
 
 start();
 </script>

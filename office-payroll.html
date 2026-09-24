@@ -10,7 +10,9 @@
 <meta name="theme-color" content="#070c14">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <script src="config.js"></script>
+<script src="rc-upload.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <script src="payroll-export.js"></script>
@@ -124,7 +126,7 @@
 
     <!-- Staff -->
     <div class="card" data-pane="staff">
-      <header><h2>Office staff</h2><span class="sp"></span><label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="st-inact" style="height:auto"> Show inactive</label><button class="btn primary small ed" id="st-new">+ Add person</button></header>
+      <header><h2>Office staff</h2><span class="sp"></span><label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="st-inact" style="height:auto"> Show inactive</label><button class="btn small ed" id="st-up">Upload spreadsheet</button><button class="btn primary small ed" id="st-new">+ Add person</button></header>
       <div id="st-form" class="pad" hidden></div>
       <div class="wrap"><table class="t"><thead><tr><th>Name</th><th>Title</th><th>Employee #</th><th>Pay</th><th>Hours come from</th><th>Overtime</th><th>Login</th></tr></thead><tbody id="st-rows"></tbody></table></div>
     </div>
@@ -426,6 +428,63 @@ $('s-codes-save').onclick = async () => {
   });
   const bad = (await Promise.all(jobs)).find(r => r.error); if (bad) return fail(bad.error); toast('Codes saved.'); load();
 };
+
+// ---------- 109: office pay from the Office staff template's pay tab (uploaded here, never emailed) ----------
+let opSeen = null;
+$('st-up').onclick = () => RCUpload.open({
+  title: 'Upload office pay',
+  template: 'templates/RoadCoda-template-Office-staff.xlsx',
+  preferSheet: /pay/i,
+  blocked: /ssn|social|soc\.? ?sec|tax ?id|\btin\b|routing|\baba\b|bank|account ?(#|no|num)|acct|direct ?dep/i,
+  fields: [
+    { key: 'full_name', label: 'Full Name', re: /full ?name|^name$|employee ?name/i, required: true },
+    { key: 'email', label: 'Email', re: /e-?mail/i, required: true },
+    { key: 'pay_type', label: 'Pay Type', re: /pay ?type|hourly ?or|salar(y|ied) ?or|^type$/i, required: true },
+    { key: 'hourly_rate', label: 'Hourly Rate', re: /hourly ?rate|rate|per ?hour|wage/i },
+    { key: 'annual_salary', label: 'Annual Salary', re: /salary|annual/i },
+    { key: 'ot', label: 'Overtime Eligible (Y/N)', re: /overtime|\bot\b|exempt/i },
+    { key: 'time_entry', label: 'Time Entry', re: /time ?entry|hours|clock/i },
+    { key: 'hire_date', label: 'Hire Date', re: /hire|start ?date/i },
+  ],
+  begin: () => { opSeen = new Set(); },
+  parse: (get) => {
+    const T = RCUpload.txt, errors = [], warnings = [], v = {};
+    if (['full_name', 'email', 'pay_type'].some(k => /\b\d{3}-\d{2}-\d{4}\b/.test(T(get(k))))) errors.push('Something shaped like a Social Security number is in this row. RoadCoda won\'t take it: remove it from the file');
+    v.full_name = T(get('full_name')).replace(/\s+/g, ' ') || null;
+    v.email = T(get('email')).toLowerCase().replace(/^mailto:/, '') || null;
+    if (v.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) errors.push(`Email "${v.email}" doesn't look right`);
+    const pt = T(get('pay_type')).toLowerCase(); v.pay_type = /sal/.test(pt) ? 'salary' : /hour/.test(pt) ? 'hourly' : null;
+    if (pt && !v.pay_type) errors.push(`Pay type "${T(get('pay_type'))}" — use Hourly or Salary`);
+    const hr = RCUpload.num(get('hourly_rate')), sal = RCUpload.num(get('annual_salary'));
+    if (Number.isNaN(hr) || Number.isNaN(sal)) errors.push('Rate or salary isn\'t a number');
+    v.hourly_rate = Number.isNaN(hr) ? null : hr; v.annual_salary = Number.isNaN(sal) ? null : sal;
+    if (v.pay_type === 'hourly' && !(v.hourly_rate > 0)) errors.push('Hourly staff need an hourly rate');
+    if (v.pay_type === 'salary' && !(v.annual_salary > 0)) errors.push('Salaried staff need an annual salary');
+    const ot = T(get('ot')); v.ot_eligible = ot ? /^(y|yes|true|1|x)$/i.test(ot) : v.pay_type === 'hourly';
+    const te = T(get('time_entry')).toLowerCase(); v.time_entry = /clock/.test(te) ? 'clock' : /none|salar/.test(te) ? 'none' : 'typed';
+    const hd = RCUpload.date(get('hire_date')); if (hd === undefined) warnings.push('Hire date can\'t be read, so it was left blank'); v.hire_date = hd || null;
+    if (v.email) { if (opSeen.has(v.email)) errors.push('This person is in the file twice'); else opSeen.add(v.email); }
+    return { values: v, errors, warnings };
+  },
+  match: (v) => STAFF.find(s => (s.email || '').toLowerCase() === v.email) || STAFF.find(s => (s.full_name || '').toLowerCase() === (v.full_name || '').toLowerCase()) || null,
+  describe: (v) => [v.full_name, v.email, v.pay_type, v.time_entry === 'clock' ? 'clocks in' : v.time_entry === 'none' ? 'no hours' : 'hours typed', v.ot_eligible ? 'overtime' : 'exempt'].join(' · '),
+  save: async (rows) => {
+    let added = 0, updated = 0; const failed = [];
+    for (const r of rows) {
+      const { time_entry, ...row } = r.values; row.time_entry = time_entry === 'clock' ? 'typed' : time_entry;   // clock only after the login is linked
+      const x = r.existing ? await sb.from('office_staff').update(row).eq('id', r.existing.id).select().single() : await sb.from('office_staff').insert({ ...row, active: true }).select().single();
+      if (x.error) { failed.push({ line: r.line, message: x.error.message }); continue; }
+      r.existing ? updated++ : added++;
+      if (time_entry === 'clock') {
+        const l = await sb.rpc('office_staff_link', { p_staff: x.data.id, p_email: row.email });
+        if (l.error) { failed.push({ line: r.line, message: `Saved, but can't clock in yet: ${l.error.message} (invite them on the Users screen first)` }); continue; }
+        const c = await sb.from('office_staff').update({ time_entry: 'clock' }).eq('id', x.data.id); if (c.error) failed.push({ line: r.line, message: c.error.message });
+      }
+    }
+    return { added, updated, failed };
+  },
+  after: () => load(),
+});
 
 start();
 </script>
