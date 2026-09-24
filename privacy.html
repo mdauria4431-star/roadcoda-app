@@ -6,13 +6,25 @@
 <title>Privacy Policy · RoadCoda</title>
 <meta name="description" content="How RoadCoda LLC handles the information in its transportation management software.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>/* Match the app's look: the choice made in RoadCoda wins; a signed-in office user with no choice follows
+   the device like the app does; everyone else (website visitors, the tour) gets dark, like the website. */
+(function(){var t='dark';try{var p=localStorage.getItem('rc-theme');
+ var k=Object.keys(localStorage).filter(function(x){return /^sb-.*-auth-token$/.test(x);})[0];var s=k&&JSON.parse(localStorage.getItem(k));
+ var dev=window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
+ if(p==='light'||p==='dark')t=p;else if(p==='auto')t=dev;else if(s&&s.user&&!s.user.is_anonymous)t=dev;}catch(e){}
+ document.documentElement.setAttribute('data-rc-theme',t);})();</script>
 <style>
-  :root{--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--bg:#f6f4ef;--brand:#5b3cc4}
+  :root{--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--bg:#f6f4ef;--brand:#5b3cc4;--card:#fff;--th:#faf8f4;--foot:#a09c94;color-scheme:light}
+  html[data-rc-theme="dark"]{--ink:#e8edf5;--muted:#9aa6b8;--line:#1f2b3d;--bg:#070c14;--brand:#a58bff;--card:#0d1420;--th:#111b2a;--foot:#6f7c90;color-scheme:dark}
+  .top{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .back{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 16px;border-radius:10px;
+        background:var(--brand);color:#fff!important;font-weight:600;font-size:15px;text-decoration:none}
+  html[data-rc-theme="dark"] .back{color:#0b0716!important}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,'Segoe UI',Arial,sans-serif}
   .wrap{max-width:780px;margin:0 auto;padding:28px 20px 60px}
-  .brand{font-weight:800;font-size:20px;color:var(--brand);text-decoration:none;display:inline-block;margin-bottom:18px}
-  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 28px}
+  .brand{font-weight:800;font-size:20px;color:var(--brand);text-decoration:none;display:inline-block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 28px}
   h1{font-size:26px;margin:0 0 6px}
   h2{font-size:18px;margin:26px 0 8px;padding-top:6px;border-top:1px solid var(--line)}
   h2:first-of-type{border-top:0}
@@ -22,15 +34,16 @@
   hr{border:0;border-top:1px solid var(--line);margin:18px 0}
   table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14.5px}
   th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:#faf8f4;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  th{background:var(--th);font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
   a{color:var(--brand)}
-  .foot{text-align:center;color:#a09c94;font-size:13px;margin-top:22px}
-  @media print{body{background:#fff}.card{border:0;padding:0}.brand{color:#000}}
+  .foot{text-align:center;color:var(--foot);font-size:13px;margin-top:22px}
+  @media print{html[data-rc-theme]{--ink:#1c1f24;--card:#fff;--line:#e2ddd3;--th:#faf8f4}body{background:#fff;color:#1c1f24}.top{display:none}.card{border:0;padding:0}.brand{color:#000}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <a class="brand" href="index.html">RoadCoda</a>
+  <div class="top"><a class="brand" href="https://roadcoda.com/">RoadCoda</a>
+    <a class="back" id="rc-back" href="https://roadcoda.com/">← Back</a></div>
   <div class="card">
 <h1>RoadCoda Privacy Policy</h1>
 <p><strong>Version 1.0 · Adopted and effective 23 September 2026 · Next review: 23 September 2027</strong></p>
@@ -84,5 +97,14 @@
   </div>
   <div class="foot">RoadCoda LLC · <a href="mailto:support@roadcoda.com">support@roadcoda.com</a> · 860-338-8189</div>
 </div>
+<script>
+/* ← Back: to wherever they came from; opened on its own, a signed-in user goes to RoadCoda, anyone else to the website */
+(function(){var b=document.getElementById('rc-back');var app=false;
+ try{var k=Object.keys(localStorage).filter(function(x){return /^sb-.*-auth-token$/.test(x);})[0];var s=k&&JSON.parse(localStorage.getItem(k));app=!!(s&&s.user);}catch(e){}
+ var fromHere=document.referrer&&history.length>1;
+ if(!fromHere&&app){b.href='dispatch.html';b.textContent='← Back to RoadCoda';}
+ else if(!fromHere){b.textContent='← Back to RoadCoda';}
+ b.addEventListener('click',function(e){if(fromHere){e.preventDefault();history.back();}});})();
+</script>
 </body>
 </html>

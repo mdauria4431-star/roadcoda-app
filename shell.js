@@ -16,6 +16,14 @@
   var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
   var pref = 'auto';
   try { var saved = localStorage.getItem('rc-theme'); if (saved === 'light' || saved === 'dark' || saved === 'auto') pref = saved; } catch (e) {}
+  // 100: the website tour opens in dark (the look on the website) until the visitor picks otherwise
+  if (!saved) {
+    try {
+      var tk = Object.keys(localStorage).filter(function (k) { return /^sb-.*-auth-token$/.test(k); })[0];
+      var ts = tk && JSON.parse(localStorage.getItem(tk));
+      if (ts && ts.user && ts.user.is_anonymous) pref = 'dark';
+    } catch (e) {}
+  }
   function applyTheme() {
     var t = pref === 'auto' ? (mq && mq.matches ? 'light' : 'dark') : pref;
     html.setAttribute('data-rc-theme', t);
@@ -191,7 +199,6 @@
     if (!links['privacy.html']) {
       var pv = document.createElement('a');
       pv.href = 'privacy.html'; pv.textContent = 'Privacy';
-      pv.target = '_blank'; pv.rel = 'noopener';
       nav.appendChild(pv); links['privacy.html'] = pv;
     }
     if (!links['rc-report-link'] && !(acc && acc.guest)) {
