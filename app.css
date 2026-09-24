@@ -287,7 +287,12 @@ html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
   /* the menu, the who-am-I line and the footer controls only when ☰ is open */
   body > header nav, body > header .who, body > header .rc-foot{display:none!important}
   html.rc-menu-open body > header nav{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;order:2;width:100%;
-         max-height:calc(100vh - 70px);overflow:auto;gap:2px;padding:8px 0}
+         gap:2px;padding:8px 0}
+  /* the whole open menu scrolls as one, so the who line, the footer buttons and Sign out are always reachable;
+     dvh follows the phone's real visible height as the browser bars come and go */
+  html.rc-menu-open body > header{box-sizing:border-box;max-height:100vh;max-height:100dvh;overflow-y:auto!important;overflow-x:hidden!important;
+         -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+         padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))!important}
   html.rc-menu-open body > header .who{display:block!important;order:3;width:100%;font-size:13px;padding:4px 2px}
   html.rc-menu-open body > header .rc-foot{display:flex!important;order:4;width:100%;flex-direction:row!important;flex-wrap:wrap;gap:6px;padding:4px 0 6px}
   body > header nav a{height:44px!important;font-size:15px}
