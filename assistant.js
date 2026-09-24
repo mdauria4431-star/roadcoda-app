@@ -6,20 +6,20 @@
   const DISCLAIMER = 'Estimate only. Drive times don\'t include traffic, weather, loading or stops beyond required breaks. Hours of service are calculated from the figures shown and don\'t apply exceptions (short-haul unless set, adverse conditions, sleeper-berth splits, state rules). The driver\'s ELD is the legal record. The driver and carrier remain responsible for complying with FMCSA rules — never pressure a driver to exceed their hours.';
   const css = `
   .rca-btn{position:fixed;right:18px;bottom:18px;z-index:8000;border-radius:999px;padding:11px 16px;font-weight:700;border:1px solid var(--line,#ccc);
-    background:var(--violet,#6a3fe0);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer;font-size:14px}
+    background:var(--accent,#6a3fe0);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer;font-size:14px}
   .rca{position:fixed;right:18px;bottom:70px;z-index:8001;width:min(420px,calc(100vw - 24px));height:min(560px,calc(100vh - 100px));display:flex;flex-direction:column;
     background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);overflow:hidden}
   .rca .rca-top{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line,#ddd)}.rca .rca-top b{flex:1}
   .rca .log{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;font-size:14px}
-  .rca .me{align-self:flex-end;background:var(--violet,#6a3fe0);color:#fff;border-radius:12px 12px 2px 12px;padding:8px 11px;max-width:85%}
-  .rca .bot{align-self:flex-start;background:var(--surface-2,#f3f3f7);border-radius:12px 12px 12px 2px;padding:8px 11px;max-width:92%;white-space:pre-wrap}
+  .rca .me{align-self:flex-end;background:var(--accent,#6a3fe0);color:#fff;border-radius:12px 12px 2px 12px;padding:8px 11px;max-width:85%}
+  .rca .bot{align-self:flex-start;background:var(--panel-2,#f3f3f7);border-radius:12px 12px 12px 2px;padding:8px 11px;max-width:92%;white-space:pre-wrap}
   .rca .disc{font-size:11px;color:var(--ink-3,#777);margin-top:6px;line-height:1.35;white-space:normal}
   .rca .err{color:#c62828}.rca .hint{font-size:12px;color:var(--ink-3,#777)}
   .rca form{display:flex;gap:6px;padding:10px;border-top:1px solid var(--line,#ddd)}
-  .rca textarea{flex:1;resize:none;height:44px;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line,#ccc);background:var(--bg,#fff);color:inherit}
+  .rca textarea{flex:1;resize:none;height:44px;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line,#ccc);background:var(--well,#fff);color:inherit}
   .rca .mic{width:44px;border-radius:8px;border:1px solid var(--line,#ccc);background:transparent;cursor:pointer;font-size:18px}
   .rca .mic.on{background:#c62828;color:#fff;border-color:#c62828}
-  .rca .go{border-radius:8px;border:0;background:var(--violet,#6a3fe0);color:#fff;font-weight:700;padding:0 14px;cursor:pointer}`;
+  .rca .go{border-radius:8px;border:0;background:var(--accent,#6a3fe0);color:#fff;font-weight:700;padding:0 14px;cursor:pointer}`;
   let sb, open = false, history = [], busy = false, rec = null;
 
   function build() {
@@ -78,7 +78,41 @@
     };
   }
 
+  // Website tour: the panel is there to look at, with worked examples; nothing is sent to the AI.
+  const TOUR_EXAMPLES = [
+    ['If Carlos leaves Hartford at 2 pm, when does he get to Washington, DC?',
+     'About 5 h 50 min of driving (336 miles). Carlos\'s ELD shows 4 h 40 min of driving left today, so he reaches his 11-hour limit around 6:40 pm and needs 10 hours off. He\'d arrive about 5:50 am tomorrow.'],
+    ['A driver has driven 7 hours and been on duty 9 hours. How much time does he have left?',
+     'He can drive 4 more hours today — the 11-hour limit leaves 4 h, and his 14-hour window leaves 5 h, so driving is the limit. If he hasn\'t had a 30-minute break yet, he needs one within the next hour (8 hours of driving). This assumes 60 hours / 7 days for the week.'],
+    ['Who can still take a 4-hour run today?',
+     'From their ELDs: Dana R. (6 h 10 min of driving left), Joe K. (5 h 25 min) and Sam T. (4 h 15 min). Ana P. and Luis G. have less than 4 hours left.'],
+    ['Where is load 1036?',
+     'Load 1036 — Carlos M., stop 2 of 3 (XYZ Retail – Pine St. shop). He arrived at 10:52 for a 10:00–12:00 window, so it\'s on time. Last stop next: XYZ Retail – Route 9 DC.'],
+  ];
+  function tourMode() {
+    const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+    const btn = document.createElement('button'); btn.className = 'rca-btn'; btn.type = 'button'; btn.textContent = '💬 Ask dispatch assistant';
+    const box = document.createElement('div'); box.className = 'rca'; box.hidden = true;
+    box.innerHTML = `<div class="rca-top"><b>Dispatch assistant</b><button type="button" class="btn small" data-x>Close</button></div>
+      <div class="log" data-log><div class="hint">In your own RoadCoda, dispatch asks in plain words — typed, or spoken with 🎤. Drive times, required breaks and hours left are worked out by the rules, not guessed. This tour doesn't send questions; tap an example to see the kind of answer you get.</div>
+        ${TOUR_EXAMPLES.map((e, i) => `<button type="button" class="btn small" data-ex="${i}" style="text-align:left;white-space:normal;height:auto;padding:8px 10px">${esc(e[0])}</button>`).join('')}</div>
+      <form data-f><button type="button" class="mic" disabled title="Speaking works in your own RoadCoda">🎤</button><textarea disabled placeholder="Tap an example above — typing works in your own RoadCoda"></textarea><button class="go" disabled>Ask</button></form>`;
+    document.body.appendChild(btn); document.body.appendChild(box);
+    const log = box.querySelector('[data-log]');
+    btn.onclick = () => { box.hidden = !box.hidden; };
+    box.querySelector('[data-x]').onclick = () => { box.hidden = true; };
+    box.querySelector('[data-f]').onsubmit = (e) => e.preventDefault();
+    box.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => {
+      const [q, a] = TOUR_EXAMPLES[+b.dataset.ex];
+      const me = document.createElement('div'); me.className = 'me'; me.textContent = q; log.appendChild(me);
+      const d = document.createElement('div'); d.className = 'bot';
+      d.innerHTML = esc(a) + `<div class="disc">Example answer from the sample company. ${esc(DISCLAIMER)}</div>`;
+      log.appendChild(d); log.scrollTop = log.scrollHeight;
+    });
+  }
+
   window.RCAssistant = { start() {
+    if (window.RC_ACCESS && window.RC_ACCESS.guest) { tourMode(); return; }
     if (!window.supabase || !window.RC_CONFIG) return;
     sb = window.supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
     build();

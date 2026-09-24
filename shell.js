@@ -372,7 +372,8 @@
     // 110: the dispatch assistant, for office logins whose company has the add-on (never on the tour)
     ready.then(function () {
       var a = window.RC_ACCESS;
-      if (!a || a.guest || !a.features || a.features.assistant !== true || window.RCAssistant) return;
+      // tour guests see it too, in look-only mode with worked examples (assistant.js)
+      if (!a || window.RCAssistant || (!a.guest && (!a.features || a.features.assistant !== true))) return;
       var s = document.createElement('script'); s.src = 'assistant.js'; document.head.appendChild(s);
     }, function () {});
     // and a backstop in case access.js never loaded on this page
