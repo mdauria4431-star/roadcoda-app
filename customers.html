@@ -987,7 +987,7 @@ $('act-body').onclick = async (ev) => {
 
 // ---------- 109: upload a spreadsheet of bill-to customers ----------
 const CU_DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-let cuSeen = null;
+let cuSeen = null, cuTop = null;
 $('cu-up-btn').onclick = () => RCUpload.open({
   title: 'Upload customers (bill-to)',
   template: 'templates/RoadCoda-template-Customers.xlsx',
@@ -1009,22 +1009,33 @@ $('cu-up-btn').onclick = () => RCUpload.open({
     { key: 'notes', label: 'Notes', re: /note|comment/i },
   ],
   checkRequired: false,                                        // this screen checks its own, since address parts combine
-  begin: () => { cuSeen = new Set(); },
-  parse: (get) => {
+  begin: () => { cuSeen = new Set(); cuTop = null; },
+  parse: (get, raw, prev) => {
     const T = RCUpload.txt, errors = [], warnings = [], v = {};
-    v.name = T(get('name')).replace(/^[\s\-–•›]+/, '').replace(/\s+/g, ' ') || null;
+    const rawName = T(get('name')).replace(/^\s+/, m => m) , indented = /^(\s{2,}|[-–•›]\s*)/.test(String(get('name') ?? ''));
+    v.name = rawName.replace(/^[\s\-–•›]+/, '').replace(/\s+/g, ' ') || null;
     if (v.name && v.name === v.name.toUpperCase() && /[A-Z]{4}/.test(v.name)) { v.name = v.name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); warnings.push(`Name in capitals changed to "${v.name}"`); }
     v.customer_code = T(get('code')).toUpperCase() || null;
     v.parent_code = T(get('parent')).toUpperCase() || null;
+    // "    - Hartford DC" indented under a company: a DC of the company above it
+    if (indented && cuTop && !v.parent_code) {
+      v.parent_code = cuTop.customer_code || null; v.parent_name = cuTop.name;
+      if (v.name && !v.name.toLowerCase().includes(String(cuTop.name).toLowerCase())) v.name = `${cuTop.name} - ${v.name}`;
+      warnings.push(`Indented under ${cuTop.name}: added as one of its DCs, named "${v.name}"`);
+    }
     let city = T(get('city')), state = T(get('state')).toUpperCase(), zip = T(get('zip'));
     const cs = city.match(/^(.+?),?\s+([A-Za-z]{2})$/); if (cs && !state) { city = cs[1]; state = cs[2].toUpperCase(); }
     if (/^\d{3,4}$/.test(zip)) { zip = zip.padStart(5, '0'); warnings.push(`Zip padded to ${zip}`); }
     const street = T(get('street'));
-    if (/^same as/i.test(street)) errors.push('Address says "same as above" — put the real address on every row');
-    if (state && !/^[A-Z]{2}$/.test(state)) errors.push(`State "${state}" should be two letters`);
-    v.bill_address = street && city ? `${street}, ${city}, ${state} ${zip}`.trim() : null;
-    if (!street) errors.push('Bill-To Street is required'); if (!city) errors.push('City is required');
-    if (!state) errors.push('State is required'); if (!zip) errors.push('Zip is required');
+    if (/^(same|ditto|see) (as )?above|^"$|^ditto$/i.test(street)) {                // "same as above": the address from the row above
+      if (prev && prev.bill_address) { v.bill_address = prev.bill_address; warnings.push(`Address "same as above" — used ${prev.bill_address}`); }
+      else errors.push('Address says "same as above", but the row above has no address to copy');
+    } else {
+      if (state && !/^[A-Z]{2}$/.test(state)) errors.push(`State "${state}" should be two letters`);
+      v.bill_address = street && city ? `${street}, ${city}, ${state} ${zip}`.trim() : null;
+      if (!street) errors.push('Bill-To Street is required'); if (!city) errors.push('City is required');
+      if (!state) errors.push('State is required'); if (!zip) errors.push('Zip is required');
+    }
     const tRaw = T(get('terms')); let t = null;
     if (/receipt|cod|cash|due now/i.test(tRaw)) t = 0; else { const m = tRaw.match(/(\d{1,3})/); if (m) t = +m[1]; }
     if (tRaw && t === null) errors.push(`Payment terms "${tRaw}" — use a number of days (30, 45, 0 for due on receipt)`);
@@ -1046,7 +1057,8 @@ $('cu-up-btn').onclick = () => RCUpload.open({
     v.contact_phone = T(get('ap_phone')) || null; v.contact_name = T(get('ap_name')) || null;
     const note = T(get('notes')); if (note) warnings.push(`Note not loaded: "${note.slice(0, 60)}"`);
     const key = (v.customer_code || v.name || '').toLowerCase();
-    if (key) { if (cuSeen.has(key)) errors.push('This customer is in the file twice'); else cuSeen.add(key); }
+    if (key) { if (cuSeen.has(key)) errors.push('This customer is in the file twice — tick Leave out on the row you don\'t want'); else cuSeen.add(key); }
+    if (!indented && !errors.length) cuTop = v;
     return { values: v, errors, warnings };
   },
   match: (v) => (v.customer_code && customers.find(c => (c.customer_code || '').toUpperCase() === v.customer_code))
@@ -1055,16 +1067,17 @@ $('cu-up-btn').onclick = () => RCUpload.open({
   save: async (rows) => {
     let added = 0, updated = 0; const failed = [], codes = new Map(customers.filter(c => c.customer_code).map(c => [c.customer_code.toUpperCase(), c.id]));
     for (const r of rows) {                                   // parents first, so their DCs can point at them
-      const { parent_code, ...rest } = r.values;
+      const { parent_code, parent_name, ...rest } = r.values;
       const v = Object.fromEntries(Object.entries(rest).filter(([, x]) => x !== null && x !== undefined));
       const q = r.existing ? sb.from('customers').update(v).eq('id', r.existing.id).select('id').single() : sb.from('customers').insert(v).select('id').single();
       const { data, error } = await q;
       if (error) { failed.push({ line: r.line, message: error.message }); continue; }
       r.id = data.id; if (v.customer_code) codes.set(v.customer_code, data.id); r.existing ? updated++ : added++;
     }
-    for (const r of rows) if (r.id && r.values.parent_code) {
-      const pid = codes.get(r.values.parent_code);
-      if (!pid) { failed.push({ line: r.line, message: `No customer with Account Code ${r.values.parent_code}, so it wasn't put under a parent` }); continue; }
+    const byName = new Map(rows.filter(r => r.id).map(r => [String(r.values.name || '').toLowerCase(), r.id]));
+    for (const r of rows) if (r.id && (r.values.parent_code || r.values.parent_name)) {
+      const pid = (r.values.parent_code && codes.get(r.values.parent_code)) || (r.values.parent_name && byName.get(String(r.values.parent_name).toLowerCase()));
+      if (!pid) { failed.push({ line: r.line, message: `No customer with Account Code ${r.values.parent_code || r.values.parent_name}, so it wasn't put under a parent` }); continue; }
       if (pid !== r.id) { const { error } = await sb.from('customers').update({ parent_customer_id: pid }).eq('id', r.id); if (error) failed.push({ line: r.line, message: error.message }); }
     }
     return { added, updated, failed };
