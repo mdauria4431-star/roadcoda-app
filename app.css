@@ -445,8 +445,9 @@ html[data-rc-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator
 html[data-rc-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator,
 html[data-rc-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 html[data-rc-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1.6);
-  opacity: .85;
+  /* the browser now draws these light itself in dark mode (color-scheme below), so no inverting — that made them vanish */
+  filter: none;
+  opacity: .9;
   cursor: pointer;
 }
 input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
