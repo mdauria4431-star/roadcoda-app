@@ -106,7 +106,7 @@
         <label for="cust" style="flex:1 1 260px">Customer (bill to)<select id="cust"></select></label>
         <label for="parent" style="flex:0 1 240px">Part of<select id="parent"></select></label>
         <button class="btn" id="nc-btn" type="button">+ New customer</button>
-        <button class="btn" id="cu-up-btn" type="button">Upload customers</button>
+        <button class="btn" id="cu-up-btn" type="button" title="The companies you bill — for their stores and DCs use Upload stops, further down">Upload bill-to customers</button>
         <a class="btn" id="rates-link" href="rates.html" style="display:inline-flex;align-items:center;text-decoration:none">Rates &amp; billing settings</a>
       </div>
       <p class="hint" id="cust-info" style="margin:10px 0 0"></p>
@@ -258,10 +258,10 @@
         <thead><tr><th>Name</th><th>Type</th><th>Store #</th><th>Route · Sort</th><th>Address</th><th>Window</th><th>Access</th><th>Phone</th><th>After hours</th><th>Notices</th></tr></thead>
         <tbody id="dl-list"></tbody></table></div>
 
-      <h3>Upload or download the whole list</h3>
+      <h3 id="dl-upload-h">Upload or download this customer's stops</h3>
       <div class="row" style="margin-bottom:10px">
         <button class="btn" id="dl-tpl" type="button">Download template (with this customer's list)</button>
-        <label for="dl-file" class="btn" style="flex-direction:row;align-items:center;cursor:pointer;color:var(--ink);font-size:15px">Upload list (Excel, CSV or PDF)
+        <label for="dl-file" class="btn" style="flex-direction:row;align-items:center;cursor:pointer;color:var(--ink);font-size:15px">Upload stops for this customer (Excel, CSV or PDF)
           <input id="dl-file" type="file" accept=".xlsx,.xls,.csv,.pdf,.txt" style="display:none"></label>
       </div>
       <p class="hint" style="margin-top:0">Tip for missing addresses: download the template, fill in the Address / City / State / Zip columns, and upload it back.</p>
@@ -1014,6 +1014,15 @@ $('cu-up-btn').onclick = () => RCUpload.open({
     { key: 'notes', label: 'Notes', re: /note|comment/i },
   ],
   checkRequired: false,                                        // this screen checks its own, since address parts combine
+  // a list of stores / stops opened here by mistake: say so, and offer the stop upload instead
+  wrongFile: (h) => {
+    const t = h.join(' | ').toLowerCase();
+    const stopish = /store|route|sort|hrs|hours|window|recv|receiving|door|gate|dock/.test(t), billish = /terms|billing|ap |a\/p|invoice|po ?#|remit/.test(t);
+    if (!stopish || billish) return null;
+    const who = $('cust').value ? $('cust').selectedOptions[0].textContent.replace(/^[\s\u00a0›]+/, '') : 'the customer you pick first';
+    return { html: `This looks like a list of <b>stops</b> (stores, DCs, receiving hours), not the companies you bill. Stops are loaded per customer: <button type="button" class="btn small" data-wrong style="margin-left:6px">Upload these as stops for ${esc(who)}</button>`,
+             act: () => { const h3 = document.getElementById('dl-upload-h'); if (h3) h3.scrollIntoView({ behavior: 'smooth', block: 'center' }); $('dl-file').click(); } };
+  },
   begin: () => { cuSeen = new Set(); cuTop = null; },
   parse: (get, raw, prev) => {
     const T = RCUpload.txt, errors = [], warnings = [], v = {};

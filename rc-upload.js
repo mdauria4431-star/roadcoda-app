@@ -139,6 +139,7 @@
       const ok = rows.filter(r => !r.left && !r.errors.length), add = ok.filter(r => !r.existing), upd = ok.filter(r => r.existing), bad = rows.filter(r => r.errors.length), gone = rows.filter(r => r.left);
       const opts = (sel) => '<option value="">(not in file)</option>' + h.map((x, j) => st.blockedCols.includes(j) ? '' : `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(x || 'Column ' + (j + 1))}</option>`).join('');
       q('[data-body]').innerHTML = `
+        ${cfg.wrongFile && cfg.wrongFile(h) ? `<div class="blocked" style="background:#a07800">${cfg.wrongFile(h).html}</div>` : ''}
         ${st.blockedCols.length ? `<div class="blocked">Not read: ${st.blockedCols.map(j => esc(h[j])).join(', ')}. RoadCoda never reads or stores Social Security or bank numbers. Please delete that column from your file.</div>` : ''}
         ${st.two ? '<div class="mini" style="margin-top:6px">The header takes two rows here, so they were read together.</div>' : ''}
         <div class="mini" style="margin-top:6px"><span class="req">Purple</span> = required · <span class="rec">yellow</span> = recommended. Change any match that's wrong.</div>
@@ -153,6 +154,7 @@
             <td>${r.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}${(r.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join('')}</td></tr>${st.open === r.line && !r.left ? editor(r) : ''}`).join('') || '<tr><td colspan="5" class="mini">No rows under the header.</td></tr>'}
         </tbody></table></div>
         <div class="rowx"><button class="btn primary" data-go ${ok.length ? '' : 'disabled'}>${ok.length ? `Add ${add.length} and update ${upd.length}` : 'Nothing to save yet'}</button><span data-msg></span></div>`;
+      if (cfg.wrongFile && cfg.wrongFile(h) && cfg.wrongFile(h).act) back.querySelectorAll('[data-wrong]').forEach(b => b.onclick = () => { close(); cfg.wrongFile(h).act(); });
       back.querySelectorAll('[data-map]').forEach(s => s.onchange = () => { const k = s.dataset.map; if (s.value === '') delete st.map[k]; else st.map[k] = +s.value; draw(); });
       const keepScroll = (fn) => { const y = q('.scroll').scrollTop; fn(); draw(); q('.scroll').scrollTop = y; };
       back.querySelectorAll('[data-open]').forEach(b => b.onclick = () => keepScroll(() => { const n = +b.dataset.open; st.open = st.open === n ? null : n; }));
