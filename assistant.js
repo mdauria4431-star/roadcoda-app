@@ -5,9 +5,10 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const DISCLAIMER = 'Estimate only. Drive times don\'t include traffic, weather, loading or stops beyond required breaks. Hours of service are calculated from the figures shown and don\'t apply exceptions (short-haul unless set, adverse conditions, sleeper-berth splits, state rules). The driver\'s ELD is the legal record. The driver and carrier remain responsible for complying with FMCSA rules — never pressure a driver to exceed their hours.';
   const css = `
-  .rca-btn{position:fixed;right:18px;bottom:18px;z-index:8000;border-radius:999px;padding:11px 16px;font-weight:700;border:1px solid var(--line,#ccc);
-    background:var(--accent,#6a3fe0);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer;font-size:14px}
-  .rca{position:fixed;right:18px;bottom:70px;z-index:8001;width:min(420px,calc(100vw - 24px));height:min(560px,calc(100vh - 100px));display:flex;flex-direction:column;
+  .rca-btn{position:fixed;right:14px;bottom:14px;z-index:8000;border-radius:999px;width:46px;height:46px;padding:0;font-size:20px;border:1px solid var(--line,#ccc);
+    background:var(--accent,#6a3fe0);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer}
+  .rca[hidden],.rca-btn[hidden]{display:none!important}
+  .rca{position:fixed;right:14px;bottom:14px;z-index:8001;width:min(400px,calc(100vw - 24px));height:min(540px,calc(100vh - 40px));display:flex;flex-direction:column;
     background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);overflow:hidden}
   .rca .rca-top{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line,#ddd)}.rca .rca-top b{flex:1}
   .rca .log{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;font-size:14px}
@@ -22,17 +23,41 @@
   .rca .go{border-radius:8px;border:0;background:var(--accent,#6a3fe0);color:#fff;font-weight:700;padding:0 14px;cursor:pointer}`;
   let sb, open = false, history = [], busy = false, rec = null;
 
+
+  // Put "Dispatch assistant" in the sidebar with the other links; only if there's no sidebar, a small round button.
+  function launcher(toggle) {
+    let tries = 0;
+    const place = () => {
+      const foot = document.querySelector('.rc-foot'), tpl = foot && foot.querySelector('a');
+      if (tpl) {
+        const a = tpl.cloneNode(true); a.removeAttribute('id'); a.href = '#'; a.classList.remove('active', 'on', 'current');
+        const lb = a.querySelector('.rc-lbl'), ic = a.querySelector('.rc-ic');
+        if (lb) lb.textContent = 'Dispatch assistant'; else a.textContent = 'Dispatch assistant';
+        if (ic) ic.textContent = '✦';
+        a.title = 'Ask the dispatch assistant (Esc closes it)';
+        a.onclick = (e) => { e.preventDefault(); toggle(); };
+        foot.insertBefore(a, foot.firstChild); return;
+      }
+      if (++tries < 12) return setTimeout(place, 250);
+      const btn = document.createElement('button'); btn.className = 'rca-btn'; btn.type = 'button'; btn.textContent = '✦';
+      btn.title = 'Ask the dispatch assistant'; btn.setAttribute('aria-label', 'Ask the dispatch assistant');
+      btn.onclick = toggle; document.body.appendChild(btn);
+    };
+    place();
+  }
+
   function build() {
     const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
-    const btn = document.createElement('button'); btn.className = 'rca-btn'; btn.type = 'button'; btn.textContent = '💬 Ask dispatch assistant';
     const box = document.createElement('div'); box.className = 'rca'; box.hidden = true;
     box.innerHTML = `<div class="rca-top"><b>Dispatch assistant</b><button type="button" class="btn small" data-h>History</button><button type="button" class="btn small" data-x>Close</button></div>
       <div class="log" data-log><div class="hint">Ask in plain words, or tap 🎤 and speak. For example:<br>• If Carlos leaves Enfield, CT at 2 pm, when does he get to Washington, DC?<br>• A driver has driven 7 h and been on duty 9 h — how much time does he have left?<br>• Who can still take a 4-hour run today?<br>• Where is load 1047?</div></div>
       <form data-f><button type="button" class="mic" data-mic title="Speak">🎤</button><textarea data-q placeholder="Ask about drive times, hours, loads, stops…"></textarea><button class="go">Ask</button></form>`;
-    document.body.appendChild(btn); document.body.appendChild(box);
+    document.body.appendChild(box);
     const q = (s) => box.querySelector(s), log = q('[data-log]'), ta = q('[data-q]');
-    btn.onclick = () => { open = !open; box.hidden = !open; if (open) ta.focus(); };
-    q('[data-x]').onclick = () => { open = false; box.hidden = true; };
+    const show = (on) => { open = on; box.hidden = !on; if (on) ta.focus(); };
+    launcher(() => show(box.hidden));
+    q('[data-x]').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); show(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !box.hidden) show(false); });
     // 111: the company's own record of questions and answers (90 days)
     q('[data-h]').onclick = async () => {
       const { data, error } = await sb.from('assistant_log').select('asked_at, asked_by_name, question, answer').order('asked_at', { ascending: false }).limit(30);
@@ -91,16 +116,16 @@
   ];
   function tourMode() {
     const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
-    const btn = document.createElement('button'); btn.className = 'rca-btn'; btn.type = 'button'; btn.textContent = '💬 Ask dispatch assistant';
     const box = document.createElement('div'); box.className = 'rca'; box.hidden = true;
     box.innerHTML = `<div class="rca-top"><b>Dispatch assistant</b><button type="button" class="btn small" data-x>Close</button></div>
       <div class="log" data-log><div class="hint">In your own RoadCoda, dispatch asks in plain words — typed, or spoken with 🎤. Drive times, required breaks and hours left are worked out by the rules, not guessed. This tour doesn't send questions; tap an example to see the kind of answer you get.</div>
         ${TOUR_EXAMPLES.map((e, i) => `<button type="button" class="btn small" data-ex="${i}" style="text-align:left;white-space:normal;height:auto;padding:8px 10px">${esc(e[0])}</button>`).join('')}</div>
       <form data-f><button type="button" class="mic" disabled title="Speaking works in your own RoadCoda">🎤</button><textarea disabled placeholder="Tap an example above — typing works in your own RoadCoda"></textarea><button class="go" disabled>Ask</button></form>`;
-    document.body.appendChild(btn); document.body.appendChild(box);
+    document.body.appendChild(box);
     const log = box.querySelector('[data-log]');
-    btn.onclick = () => { box.hidden = !box.hidden; };
-    box.querySelector('[data-x]').onclick = () => { box.hidden = true; };
+    launcher(() => { box.hidden = !box.hidden; });
+    box.querySelector('[data-x]').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); box.hidden = true; });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') box.hidden = true; });
     box.querySelector('[data-f]').onsubmit = (e) => e.preventDefault();
     box.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => {
       const [q, a] = TOUR_EXAMPLES[+b.dataset.ex];
