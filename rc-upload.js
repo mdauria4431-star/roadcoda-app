@@ -43,7 +43,7 @@
     const q = (s) => back.querySelector(s);
     const close = () => back.remove();
     q('[data-x]').onclick = close; back.addEventListener('click', (e) => { if (e.target === back) close(); });
-    const st = { wb: null, rows: [], header: 0, map: {}, blockedCols: [], leave: new Set() }; let skipped = 0;
+    const st = { wb: null, rows: [], header: 0, map: {}, blockedCols: [], leave: new Set(), edits: {}, open: null }; let skipped = 0;
 
     q('[data-file]').onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;
@@ -90,7 +90,7 @@
       return out;
     }
     function guess() {
-      st.two = twoRows(); st.leave = new Set();
+      st.two = twoRows(); st.leave = new Set(); st.edits = {}; st.open = null;
       const h = head(), used = new Set();
       st.blockedCols = cfg.blocked ? h.map((x, j) => cfg.blocked.test(x) ? j : -1).filter(j => j >= 0) : [];
       st.blockedCols.forEach(j => used.add(j));
@@ -108,8 +108,11 @@
         if (r.filter(c => String(c).trim() !== '').length === 1 && cfg.fields.filter(f => st.map[f.key] != null).length > 2) { skipped++; return; }  // "=== TRACTORS ===", a note line
         if (/^(grand\s+)?totals?\b/i.test(String(r.find(c => String(c).trim() !== '') || '').trim())) { skipped++; return; }   // "Total active accounts: 8"
         if (st.leave.has(line)) { out.push({ line, left: true, values: {}, errors: [], warnings: [] }); return; }   // the user left it out
-        const get = (k) => st.map[k] != null ? r[st.map[k]] : '';
+        const ed = st.edits[line] || {};                                           // corrections typed in here win over the file
+        const get = (k) => (k in ed) ? ed[k] : (st.map[k] != null ? r[st.map[k]] : '');
         const p = cfg.parse(get, r, prev) || { values: {}, errors: [], warnings: [] };
+        p.raw = r; p.cell = (k) => (k in ed) ? ed[k] : (st.map[k] != null ? r[st.map[k]] : '');
+        if (Object.keys(ed).length) p.warnings = [`Corrected here: ${Object.keys(ed).map(k => (cfg.fields.find(f => f.key === k) || {}).label || k).join(', ')}`, ...(p.warnings || [])];
         if (!p.errors.length) prev = p.values;
         if (p.skip) return;
         if (cfg.checkRequired !== false) for (const f of cfg.fields) if (f.required && (p.values[f.key] == null || p.values[f.key] === '')) {
@@ -119,6 +122,17 @@
         out.push({ line, ...p, existing });
       });
       return out;
+    }
+    function editor(r) {
+      const errs = r.errors.join(' ').toLowerCase();
+      const hit = (f) => errs.includes(f.label.toLowerCase()) || f.label.toLowerCase().split(/[^a-z#]+/).some(w => w.length >= 4 && !['code', 'name', 'date', 'type'].includes(w) && errs.includes(w));
+      const inp = (f) => `<label><span class="${hit(f) ? 'req' : ''}">${esc(f.label)}${hit(f) ? ' — needs fixing' : ''}</span><input data-edit="${f.key}" value="${esc(txt(r.cell(f.key)))}" style="height:30px;${hit(f) ? 'outline:2px solid #c62828' : ''}"></label>`;
+      const need = cfg.fields.filter(hit), rest = cfg.fields.filter(f => !hit(f));
+      return `<tr data-editor><td colspan="5" style="background:var(--panel-2,rgba(127,127,127,.08))">
+        <div class="mini" style="margin:2px 0 6px">Correct row ${r.line} here — the file isn't changed; what you type is what gets saved.${r.errors.some(e => /twice/.test(e)) ? ' <b>A duplicate:</b> tick Leave out on the row you don\'t want instead.' : ''}</div>
+        ${need.length ? `<div class="map">${need.map(inp).join('')}</div>` : ''}
+        <details ${need.length ? '' : 'open'}><summary class="mini" style="cursor:pointer">Other fields</summary><div class="map">${rest.map(inp).join('')}</div></details>
+        <div class="rowx"><button type="button" class="btn primary small" data-apply="${r.line}">Apply</button><button type="button" class="btn small" data-cancel>Cancel</button>${st.edits[r.line] ? `<button type="button" class="btn small" data-undo="${r.line}">Undo my changes</button>` : ''}</div></td></tr>`;
     }
     function draw() {
       const h = head(), rows = parsed();
@@ -131,15 +145,31 @@
         <div class="map">${cfg.fields.map(f => `<label><span class="${f.required ? 'req' : f.rec ? 'rec' : ''}">${esc(f.label)}${f.required ? ' *' : ''}</span><select data-map="${f.key}">${opts(st.map[f.key])}</select></label>`).join('')}</div>
         <div class="rowx"><b>${rows.length} row${rows.length === 1 ? '' : 's'}</b>
           <span class="tag t-new">${add.length} new</span><span class="tag t-upd">${upd.length} update${upd.length === 1 ? '' : 's'}</span><span class="tag t-bad">${bad.length} need fixing</span>${gone.length ? `<span class="tag" style="color:var(--ink-3,#888);border-color:var(--ink-3,#888)">${gone.length} left out</span>` : ''}
-          <span class="mini">Rows that need fixing aren't saved: fix them in the file, or tick <b>Leave out</b> on a row you don't want (an old duplicate, a closed account).${skipped ? ` ${skipped} heading, note or total line${skipped === 1 ? '' : 's'} skipped.` : ''}</span></div>
+          <span class="mini">Click <b>Fix ›</b> to correct a row right here, or tick <b>Leave out</b> on a row you don't want (an old duplicate, a closed account). Rows still needing fixes aren't saved.${skipped ? ` ${skipped} heading, note or total line${skipped === 1 ? '' : 's'} skipped.` : ''}</span></div>
         <div class="scroll"><table><thead><tr><th>Row</th><th>Leave out</th><th></th><th>What</th><th>Notes</th></tr></thead><tbody>
           ${rows.map(r => `<tr style="${r.left ? 'opacity:.45' : ''}"><td>${r.line}</td><td><input type="checkbox" data-leave="${r.line}" ${r.left ? 'checked' : ''} title="Don't load this row"></td>
-            <td>${r.left ? '<span class="mini">left out</span>' : r.errors.length ? '<span class="tag t-bad">Fix</span>' : r.existing ? '<span class="tag t-upd">Update</span>' : '<span class="tag t-new">New</span>'}</td>
+            <td>${r.left ? '<span class="mini">left out</span>' : `<button type="button" data-open="${r.line}" class="tag ${r.errors.length ? 't-bad' : r.existing ? 't-upd' : 't-new'}" style="cursor:pointer;background:transparent" title="Click to correct this row">${r.errors.length ? 'Fix ›' : r.existing ? 'Update' : 'New'}</button>`}</td>
             <td>${r.left ? '' : esc(cfg.describe(r.values))}</td>
-            <td>${r.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}${(r.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join('')}</td></tr>`).join('') || '<tr><td colspan="5" class="mini">No rows under the header.</td></tr>'}
+            <td>${r.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}${(r.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join('')}</td></tr>${st.open === r.line && !r.left ? editor(r) : ''}`).join('') || '<tr><td colspan="5" class="mini">No rows under the header.</td></tr>'}
         </tbody></table></div>
         <div class="rowx"><button class="btn primary" data-go ${ok.length ? '' : 'disabled'}>${ok.length ? `Add ${add.length} and update ${upd.length}` : 'Nothing to save yet'}</button><span data-msg></span></div>`;
       back.querySelectorAll('[data-map]').forEach(s => s.onchange = () => { const k = s.dataset.map; if (s.value === '') delete st.map[k]; else st.map[k] = +s.value; draw(); });
+      const keepScroll = (fn) => { const y = q('.scroll').scrollTop; fn(); draw(); q('.scroll').scrollTop = y; };
+      back.querySelectorAll('[data-open]').forEach(b => b.onclick = () => keepScroll(() => { const n = +b.dataset.open; st.open = st.open === n ? null : n; }));
+      back.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => keepScroll(() => { st.open = null; }));
+      back.querySelectorAll('[data-undo]').forEach(b => b.onclick = () => keepScroll(() => { delete st.edits[+b.dataset.undo]; st.open = null; }));
+      back.querySelectorAll('[data-apply]').forEach(b => b.onclick = () => keepScroll(() => {
+        const n = +b.dataset.apply, row = parsed().find(x => x.line === n), ed = { ...(st.edits[n] || {}) };
+        back.querySelectorAll('[data-editor] [data-edit]').forEach(i => { const k = i.dataset.edit; if (i.value !== txt(row ? row.cell(k) : '') || k in ed) ed[k] = i.value; });
+        for (const k of Object.keys(ed)) if (row && st.map[k] != null && ed[k] === txt(row.raw[st.map[k]])) delete ed[k];   // unchanged from the file
+        if (Object.keys(ed).length) st.edits[n] = ed; else delete st.edits[n];
+        st.open = null;
+      }));
+      setTimeout(() => { const f = back.querySelector('[data-editor] input[style*="outline"]') || back.querySelector('[data-editor] input'); if (f) f.focus(); }, 0);
+      back.querySelectorAll('[data-editor] input').forEach(i => i.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); back.querySelector('[data-apply]').click(); }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); back.querySelector('[data-cancel]').click(); }
+      });
       back.querySelectorAll('[data-leave]').forEach(c => c.onchange = () => { const n = +c.dataset.leave; if (c.checked) st.leave.add(n); else st.leave.delete(n); const y = q('.scroll').scrollTop; draw(); q('.scroll').scrollTop = y; });
       q('[data-go]').onclick = async () => {
         if (cfg.confirmText) { const t = cfg.confirmText(add.length, upd.length); if (t && !confirm(t)) return; }
