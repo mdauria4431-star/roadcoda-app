@@ -40,7 +40,7 @@
   <div id="captcha" hidden></div>
   <button class="go" id="go">Start the tour</button>
   <div class="msg" id="msg"></div>
-  <div class="small">No sign-up and no email needed. Already a customer? <a href="index.html">Sign in here</a>.</div>
+  <div class="small">No sign-up and no email needed. Already a customer? <a href="index.html">Sign in here</a>. · <a href="https://roadcoda.com/">Back to roadcoda.com</a></div>
 </div>
 <script>
 (function () {
@@ -80,7 +80,7 @@
     // a real RoadCoda sign-in: don't turn it into a guest
     $('go').textContent = 'Open RoadCoda';
     $('go').onclick = () => { location.href = 'dispatch.html'; };
-    msg('You\'re already signed in to RoadCoda on this device.');
+    msg('You\'re signed in to RoadCoda on this browser, so the tour would open your own company. To see the tour as a visitor does, open this page in a private window. <a href="https://roadcoda.com/" style="color:inherit">Back to roadcoda.com</a>');
   })();
 
   $('go').onclick = async () => {

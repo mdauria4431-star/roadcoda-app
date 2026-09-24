@@ -17,6 +17,9 @@
 (function () {
   var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)'), pref = 'auto';
   try { pref = localStorage.getItem('rc-drv-theme') || 'auto'; } catch (e) {}
+  // 101: the website tour opens dark, like the rest of the tour, until the visitor picks
+  try { if (!localStorage.getItem('rc-drv-theme')) { var tk = Object.keys(localStorage).filter(function (k) { return /^sb-.*-auth-token$/.test(k); })[0];
+    var ts = tk && JSON.parse(localStorage.getItem(tk)); if (ts && ts.user && ts.user.is_anonymous) pref = 'dark'; } } catch (e) {}
   window.RC_DRV_THEME = {
     pref: function () { return pref; },
     apply: function () { var t = pref === 'auto' ? (mq && mq.matches ? 'dark' : 'light') : pref; document.documentElement.setAttribute('data-theme', t); return t; },
@@ -30,9 +33,9 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
 <script src="config.js"></script>
-<script>/* 100: a tour guest has no account or driver login — back to the board */
-(function(){try{var k=Object.keys(localStorage).filter(function(x){return /^sb-.*-auth-token$/.test(x);})[0];
-var s=k&&JSON.parse(localStorage.getItem(k));if(s&&s.user&&s.user.is_anonymous)location.replace('dispatch.html');}catch(e){}})();</script>
+<script>/* 100/101: a website tour visitor sees one sample driver's phone, read-only */
+window.RC_TOUR = (function(){try{var k=Object.keys(localStorage).filter(function(x){return /^sb-.*-auth-token$/.test(x);})[0];
+var s=k&&JSON.parse(localStorage.getItem(k));return !!(s&&s.user&&s.user.is_anonymous);}catch(e){return false;}})();</script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;--ok:#1e6b34}
   *{box-sizing:border-box}
@@ -499,7 +502,25 @@ if (phoneLink || cardCode) history.replaceState(null, '', location.pathname);
 const tokenHash = phoneLink ? '' : (QS.get('th') || ''), tokenType = /^(invite|recovery)$/.test(QS.get('t') || '') ? QS.get('t') : '', tokenEmail = QS.get('e') || '';
 const linkType = tokenType || (/[#&?]type=(invite|recovery)/.exec(location.hash) || [])[1] || '';
 const linkError = decodeURIComponent(((/[#&?]error_description=([^&]+)/.exec(location.hash + location.search)) || [])[1] || '').replace(/\+/g, ' ');
-const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+// 101: on the tour, requests say "driver app" so the database shows the sample driver, and a refused
+// save reads as the tour's own words instead of a database error
+const TOUR_MSG = 'This is the RoadCoda tour — try anything you like, but nothing is saved.';
+async function tourFetch(input, init) {
+  const res = await fetch(input, init);
+  if (res.status >= 400 && res.status < 500) {
+    let txt = ''; try { txt = await res.clone().text(); } catch (_) { return res; }
+    if (/25006|read-only transaction|row-level security|RoadCoda tour/i.test(txt)) {
+      let j; try { j = JSON.parse(txt); } catch (_) { j = {}; }
+      j.message = TOUR_MSG; j.error = TOUR_MSG; j.details = null; j.hint = null;
+      return new Response(JSON.stringify(j), { status: res.status, statusText: res.statusText, headers: res.headers });
+    }
+  }
+  return res;
+}
+const sb = window.RC_TOUR
+  ? supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY, { global: { headers: { 'x-rc-view': 'driver' }, fetch: tourFetch } })
+  : supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+let TOUR_DRIVER = null;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = (t) => t ? new Date(t).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '–';
@@ -618,6 +639,7 @@ async function start() {
     $('pw-who').textContent = `Signing in as ${session.user.email}`;
     $('pw-view').hidden = false; $('login-view').hidden = true; $('pw1').focus(); return;
   }
+  if (window.RC_TOUR) return startTour();
   const { data: p } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name, office_phone)').eq('user_id', session.user.id).single();
   if (!p) { $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return; }
   if (p.role !== 'driver') { $('login-error').innerHTML = 'This page is for driver logins. <a href="index.html">Office sign-in</a>'; $('login-view').hidden = false; return; }
@@ -638,6 +660,31 @@ async function start() {
   checkHandbook();
   // A guest driver (77) runs one load from a link: no pay screen (they aren't on payroll)
   sb.rpc('driver_is_guest').then(({ data }) => { if (data === true) $('pay-btn').hidden = true; }).catch(() => {});
+  checkShift();
+}
+// 101: the tour's driver view — the sample driver's day, with a way back to the office tour
+async function startTour() {
+  const { data: t, error } = await sb.rpc('tour_driver');
+  if (error || !t || !t.driver_id) { location.replace('dispatch.html'); return; }
+  TOUR_DRIVER = t;
+  me = { full_name: t.full_name, carrier_id: t.carrier_id, carriers: { name: t.carrier, office_phone: t.office_phone } };
+  officePhone = t.office_phone || '';
+  $('who').innerHTML = `${esc(t.full_name)}<br>${esc(t.carrier || '')}`;
+  hideAll(); $('app').hidden = false; $('devbar').hidden = true;
+  if (!document.getElementById('rc-tourbar')) {
+    const st = document.createElement('style');
+    st.textContent = '#rc-tourbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.4;' +
+      'background:linear-gradient(90deg,rgba(139,92,246,.28),rgba(139,92,246,.08));border:1px solid rgba(155,107,255,.55)}' +
+      '#rc-tourbar a{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border-radius:10px;font-weight:700;text-decoration:none;' +
+      'background:#8b5cf6;color:#fff;margin-left:auto;white-space:nowrap}';
+    document.head.appendChild(st);
+    const bar = document.createElement('div'); bar.id = 'rc-tourbar';
+    bar.innerHTML = `<span><b>Driver app tour.</b> This is ${esc(t.full_name)}'s phone. Tap anything — nothing is saved.</span><a href="dispatch.html">← Back to the tour</a>`;
+    $('app').insertBefore(bar, $('app').firstChild);
+  }
+  loadStops();
+  startMessages();
+  checkHandbook();
   checkShift();
 }
 $('login-btn').onclick = async () => {
@@ -852,7 +899,7 @@ async function loadStops() {
   if (!window.__smsLoaded) { window.__smsLoaded = true; smsLoad(); }
   let { data: loads, error } = await sb.from('loads')
     .select('id, load_no, status, truck_id, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
-    .eq('service_date', todayISO()).neq('status', 'cancelled').order('load_no');
+    .eq('service_date', todayISO()).neq('status', 'cancelled').eq(TOUR_DRIVER ? 'driver_id' : 'service_date', TOUR_DRIVER ? TOUR_DRIVER.driver_id : todayISO()).order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
   // Truck device: only this driver's loads on THIS truck
   const devL = getDevice();

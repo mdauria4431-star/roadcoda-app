@@ -7,6 +7,8 @@
 drop view if exists public.load_profit;
 -- 25: customer notification log (was left behind by earlier resets)
 drop table if exists public.notification_queue cascade;
+-- 101: driver app on the tour (app_driver_id is put back as it was by re-running 32 on reinstall)
+drop function if exists public.tour_driver(), public.tour_driver_id(), public.app_tour_driver_view() cascade;
 -- 100: website tour
 alter role authenticator reset pgrst.db_pre_request;
 select pg_notify('pgrst', 'reload config');

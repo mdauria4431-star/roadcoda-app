@@ -155,7 +155,7 @@
     // Menu: remove screens they can't open; add Users (if allowed) and My account
     const nav = document.querySelector('header nav');
     if (nav) {
-      nav.querySelectorAll('a').forEach((a) => { const h = a.getAttribute('href'), s = SCREEN_OF[h]; if ((s && s !== 'home' && !can(s)) || (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) || (data.guest && (h === 'driver.html' || h === 'account.html'))) a.remove(); });
+      nav.querySelectorAll('a').forEach((a) => { const h = a.getAttribute('href'), s = SCREEN_OF[h]; if ((s && s !== 'home' && !can(s)) || (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) || (data.guest && h === 'account.html')) a.remove(); });
       // Every page gets the same full menu: add any standard page this page's own list left out,
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
@@ -169,7 +169,6 @@
         const s = SCREEN_OF[h];
         if (s && s !== 'home' && !can(s)) return;
         if (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) return;
-        if (data.guest && h === 'driver.html') return;
         const a = document.createElement('a'); a.href = h; a.textContent = t; if (h === here) a.className = 'on';
         nav.appendChild(a);
       });
@@ -198,7 +197,7 @@
   // 100: tour mode — a slim bar on every page, and Sign out becomes Leave the tour
   function tourMode(c, data) {
     document.documentElement.classList.add('rc-guest');
-    if (pageFile === 'account.html' || pageFile === 'driver.html') { location.href = 'dispatch.html'; return; }
+    if (pageFile === 'account.html') { location.href = 'dispatch.html'; return; }
     const st = document.createElement('style');
     st.textContent = '.rc-tour{position:sticky;top:0;z-index:30;margin:0 0 12px;padding:10px 14px;border-radius:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;' +
       'background:linear-gradient(90deg,color-mix(in srgb,var(--accent,#7c5cff) 22%,var(--surface,#fff)),var(--surface,#fff));border:1px solid color-mix(in srgb,var(--accent,#7c5cff) 45%,var(--line,#ddd));' +
@@ -210,8 +209,9 @@
     bar.className = 'rc-tour';
     bar.innerHTML = '<span><b>You\'re on the RoadCoda tour.</b> This is ' + (data.tour_carrier || 'a sample company').replace(/\s*\(sample\)\s*$/i, '') +
       ', a sample carrier. Click anything and try it — nothing you do is saved.</span><span class="rc-tour-go">' +
+      '<a href="driver.html">See the driver\'s phone</a>' +
       '<a class="rc-tour-talk" href="mailto:support@roadcoda.com?subject=RoadCoda%20%E2%80%94%20I%20took%20the%20tour">Talk to us</a>' +
-      '<a class="rc-tour-leave" href="#">Leave the tour</a></span>';
+      '<a class="rc-tour-leave" href="#">Back to roadcoda.com</a></span>';
     const place = () => { const main = document.querySelector('main'); if (main && !main.querySelector('.rc-tour')) main.insertBefore(bar, main.firstChild); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', place); else place();
     const leave = async (e) => { e.preventDefault(); e.stopImmediatePropagation(); try { await c.auth.signOut(); } catch (_) {} location.href = 'https://roadcoda.com/'; };
