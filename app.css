@@ -1,6 +1,6 @@
 /* RoadCoda — shared look and feel.
    Load this AFTER each page's own <style> block: it redefines the tokens the
-   pages already use, so every existing rule re-colours itself, and it restyles
+   pages already use, so every existing rule re-colors itself, and it restyles
    the shared furniture (header, buttons, cards, tables) into the new console.
    Page-specific rules that this file does not name keep working as they are.
 
@@ -250,7 +250,7 @@ tr.click:hover{background:var(--row-hover)}
 html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
 .s-cancelled{background:rgba(244,104,95,.16);color:var(--late)}
 
-/* everything the pages hardcoded to a light colour */
+/* everything the pages hardcoded to a light color */
 .note{background:var(--well);color:var(--muted)}
 .att li,.detail-stop{border-bottom-color:var(--row-line)}
 .bar{background:var(--panel-2)}
@@ -318,9 +318,9 @@ html[data-rc-theme="light"] .s-delivered{color:var(--accent)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 :focus-visible{outline:2px solid var(--accent-hi);outline-offset:2px}
 
-/* ── Status fills the pages hardcoded to pale colours ────────────────
+/* ── Status fills the pages hardcoded to pale colors ────────────────
    Generated from the pages' own stylesheets and grouped by what each
-   colour meant. Keeping the meaning, swapping the paper for glass.
+   color meant. Keeping the meaning, swapping the paper for glass.
    QR codes are deliberately left white so they still scan.        */
 /* late / error */
 .alert.over,
@@ -407,7 +407,7 @@ input,select,textarea {
 /* tokens some pages declare for themselves and app.css did not cover */
 :root, html[data-rc-theme="dark"]{ --late-bg:color-mix(in srgb,#f4685f 14%,transparent); --late-line:color-mix(in srgb,#f4685f 42%,#21323f); --warn:#e9a23b; }
 html[data-rc-theme="light"]{ --late-bg:#fdf1ef; --late-line:#f0c9c2; --warn:#9a6208; }
-/* pale text colours that were chosen for a light card */
+/* pale text colors that were chosen for a light card */
 .banner, .alert, .issue{ color:var(--ink); }
 
 /* ── Dispatch: the one-line summary for issues that can wait ───────── */

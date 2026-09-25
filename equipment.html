@@ -610,7 +610,7 @@ $('up-btn').onclick = () => RCUpload.open({
     const tag = get('toll_tag');
     if (typeof tag === 'number' && (!Number.isInteger(tag) || tag >= 1e14 && tag % 1000 === 0)) warnings.push('Toll tag lost its last digits in Excel (shows like 1.2E+14), so it was left blank. Add it from your toll statement');
     else v.toll_tag = T(tag) || null;
-    const ow = pick(UP_OWN, get('ownership')); if (ow === undefined) warnings.push(`Ownership "${T(get('ownership'))}" not recognised — left blank`); v.ownership = ow || null;
+    const ow = pick(UP_OWN, get('ownership')); if (ow === undefined) warnings.push(`Ownership "${T(get('ownership'))}" not recognized — left blank`); v.ownership = ow || null;
     v.notes = T(get('notes')) || null;
     if (/\bsold\b|scrapp|retired/i.test(v.notes || '')) { v.active = false; warnings.push('Notes say sold / retired — added as retired'); }
     if (v.unit_no) { const k = v.unit_no.toLowerCase(); if (upSeen.unit.has(k)) errors.push(`Unit ${v.unit_no} is in the file twice`); else upSeen.unit.set(k, 1); }

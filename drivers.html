@@ -820,13 +820,13 @@ $('up-btn').onclick = () => RCUpload.open({
     if (v.med_card_expires && v.med_card_expires < today) warnings.push(`Medical card expired ${v.med_card_expires}`);
     v.cdl_number = T(get('cdl_number')) || null;
     const cs = T(get('cdl_state')).toUpperCase(); if (cs && !/^[A-Z]{2}$/.test(cs)) warnings.push(`CDL state "${cs}" should be two letters — left blank`); v.cdl_state = /^[A-Z]{2}$/.test(cs) ? cs : null;
-    const cc = T(get('cdl_class')).toUpperCase().replace(/^CLASS\s*/, ''); v.cdl_class = !cc ? null : /^[ABC]$/.test(cc) ? cc : /NONE|N\/A/.test(cc) ? 'none' : (warnings.push(`CDL class "${cc}" not recognised — left blank`), null);
+    const cc = T(get('cdl_class')).toUpperCase().replace(/^CLASS\s*/, ''); v.cdl_class = !cc ? null : /^[ABC]$/.test(cc) ? cc : /NONE|N\/A/.test(cc) ? 'none' : (warnings.push(`CDL class "${cc}" not recognized — left blank`), null);
     const term = T(get('home_terminal'));
     if (term) { const t = terminals.find(x => (x.name || '').toLowerCase() === term.toLowerCase()); if (t) v.home_terminal_id = t.id; else warnings.push(`No terminal called "${term}" — add it under Terminals, then set it on the driver`); }
     const hr = T(get('hos_rule')).toLowerCase();
     if (hr) {
       v.hos_rule = /intra|state rule/.test(hr) ? 'intrastate' : /short|150|100/.test(hr) ? 'short_haul' : /70|8 ?day/.test(hr) ? '70_8' : /60|7 ?day/.test(hr) ? '60_7' : /company|default/.test(hr) ? 'company' : null;
-      if (!v.hos_rule) { warnings.push(`HOS rule "${T(get('hos_rule'))}" not recognised — the company default is used`); v.hos_rule = 'company'; }
+      if (!v.hos_rule) { warnings.push(`HOS rule "${T(get('hos_rule'))}" not recognized — the company default is used`); v.hos_rule = 'company'; }
       const hs = T(get('hos_state')).toUpperCase();
       if (v.hos_rule === 'intrastate') { if (/^[A-Z]{2}$/.test(hs)) v.hos_state = hs; else warnings.push('Intrastate rule without a two-letter state — add the state on the driver'); }
     }
