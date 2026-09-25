@@ -1,5 +1,5 @@
 // RoadCoda: stamp every script and stylesheet link with this deploy's version (119).
-// Render runs it on each deploy (Build Command: node build/stamp.js). It changes only
+// Render runs it on each deploy (Build Command: node build/stamp.js). It changes only 
 // Render's copy of the files, never GitHub's.
 //   <script src="shell.js">      → <script src="shell.js?v=<commit>">
 //   <link href="app.css">        → <link href="app.css?v=<commit>">
