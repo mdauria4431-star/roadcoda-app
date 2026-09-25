@@ -1,5 +1,5 @@
 // RoadCoda: stamp every script and stylesheet link with this deploy's version (119).
-// Render runs it on each deploy (Build Command: node build/stamp.js). It changes only 
+// Render runs it on each deploy (Build Command: node build/stamp.js). It changes only
 // Render's copy of the files, never GitHub's.
 //   <script src="shell.js">      → <script src="shell.js?v=<commit>">
 //   <link href="app.css">        → <link href="app.css?v=<commit>">
@@ -37,11 +37,15 @@ if (process.env.RENDER || process.env.RENDER_GIT_COMMIT || process.env.RENDER_SE
   let gone = 0;
   for (const f of fs.readdirSync(root)) {
     const p = path.join(root, f);
-    if (fs.statSync(p).isFile() && dropExt.test(f)) { fs.rmSync(p); gone++; }
+    if (fs.statSync(p).isFile() && dropExt.test(f)) { fs.writeFileSync(p, ''); gone++; }   // emptied, not deleted: see below
   }
+  // Render keeps serving a file that an earlier deploy published, even after it's deleted.
+  // Publishing an empty file under the same name replaces that old copy. Any file that was
+  // ever on the website goes in this list, so it stays empty even once it's gone from GitHub.
+  for (const f of ['00_reset.sql']) fs.writeFileSync(path.join(root, f), '');
   for (const d of dropDirs) {
     const p = path.join(root, d);
     if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); gone++; }
   }
-  console.log(`RoadCoda: ${gone} build files and folders kept off the website.`);
+  console.log(`RoadCoda: ${gone} build files and folders kept off the website (build files emptied).`);
 }
