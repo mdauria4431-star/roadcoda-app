@@ -111,6 +111,11 @@
         <a class="btn" id="rates-link" href="rates.html" style="display:inline-flex;align-items:center;text-decoration:none">Rates &amp; billing settings</a>
       </div>
       <p class="hint" id="cust-info" style="margin:10px 0 0"></p>
+      <div id="cust-note" hidden style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+        <label style="flex:1;min-width:260px;font-size:12.5px;font-weight:600">Office notes <span class="hint" style="font-weight:400">(not printed on invoices)</span>
+          <textarea id="cust-note-t" rows="2" style="width:100%;margin-top:4px;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit"></textarea></label>
+        <button class="btn" id="cust-note-save" type="button" style="margin-top:22px">Save note</button><span class="hint" id="cust-note-msg" style="margin-top:28px"></span>
+      </div>
     </section>
 
     <section class="card money" id="act-card">
@@ -313,7 +318,10 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 
 // ---------- Bill-to customers ----------
 async function loadCustList() {
-  let { data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min').order('name');
+  let { data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min, notes').order('name');
+  if (error && /notes/.test(error.message)) {   // before 117_upload_fixes.sql
+    ({ data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min').order('name'));
+  }
   if (error && /free_time_plant_min/.test(error.message)) {   // before 40_delays.sql
     ({ data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis').order('name'));
   }
@@ -330,6 +338,10 @@ async function loadCustList() {
 }
 function pickCustomer() {
   const c = customers.find(x => x.id === $('cust').value);
+  // 117: the office note (only when the column exists)
+  $('cust-note').hidden = !c || !('notes' in c);
+  if (c && 'notes' in c) { $('cust-note-t').value = c.notes || ''; $('cust-note-msg').textContent = '';
+    const ed = !window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit'); $('cust-note-t').disabled = !ed; $('cust-note-save').hidden = !ed; }
   $('rates-link').href = c ? `rates.html?customer=${encodeURIComponent(c.id)}` : 'rates.html';
   $('cust-info').innerHTML = c ? [c.customer_code && `Code ${esc(c.customer_code)}`, c.contact_name && esc(c.contact_name), c.contact_phone && esc(c.contact_phone), c.contact_email && esc(c.contact_email),
     c.master_bill ? 'Weekly master bill' : 'Invoice per load',
@@ -361,6 +373,13 @@ $('parent').onchange = async () => {
   flash($('parent').value ? `${c.name} is now an account under ${customers.find(p => p.id === $('parent').value)?.name}.` : `${c.name} is now a main customer.`);
 };
 $('cust').onchange = () => { dlFilter = 'all'; $('dl-edit').open = false; pickCustomer(); };
+$('cust-note-save').onclick = async () => {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const notes = $('cust-note-t').value.trim() || null;
+  const { error } = await sb.from('customers').update({ notes }).eq('id', c.id);
+  if (error) { $('cust-note-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  c.notes = notes; $('cust-note-msg').innerHTML = '<span class="ok">Saved.</span>';
+};
 $('nc-btn').onclick = () => RCNewCustomer.open(sb, async (c) => { await loadCustList(); $('cust').value = c.id; pickCustomer(); flash(`${c.name} added.`); });
 document.querySelectorAll('.kpi').forEach(k => k.onclick = () => { dlFilter = k.dataset.f; drawDl(); });
 $('dl-add').onclick = () => { clearDl(); $('dl-msg').innerHTML = ''; $('dl-edit').open = true; $('dl-name').focus(); };
@@ -703,10 +722,15 @@ $('dl-check').onclick = async () => {
     if (!hit) { out.innerHTML = '<span class="error">Google couldn\'t find that address.</span>'; return; }
     dlPoint = { lat: hit.lat, lon: hit.lng };
     const same = (hit.formatted || '').toLowerCase().replace(/[.,]/g, '') === typed.toLowerCase().replace(/[.,]/g, '');
+    // a street name repeats from town to town: if Google answered with another town (or zip), say so loudly
+    const townMoved = otherTown(typed, hit.formatted), tZip = zipOf(typed), gZip = zipOf(hit.formatted);
+    const moved = townMoved || (tZip && gZip && tZip !== gZip);
+    if (moved) dlPoint = null;   // don't keep a map point in the wrong town
     out.innerHTML = same ? '<span class="ok">Found — map point saved with this stop.</span>'
+      : moved ? `<span class="error"><b>Careful:</b> Google's match is in a different ${townMoved ? 'town' : 'zip code'}: <b>${esc(hit.formatted || '')}</b>. The same street name is in many towns, so check the address with the customer.</span> <button class="btn small" type="button" id="dl-use">Use it anyway</button>`
       : `Google matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not exact)</span>' : ''} <button class="btn" type="button" id="dl-use">Use this</button>`;
     const use = document.getElementById('dl-use');
-    if (use) use.onclick = () => { $('dl-addr').value = hit.formatted; out.innerHTML = '<span class="ok">Updated — save to keep it.</span>'; };
+    if (use) use.onclick = () => { $('dl-addr').value = hit.formatted; dlPoint = { lat: hit.lat, lon: hit.lng }; out.innerHTML = '<span class="ok">Updated — save to keep it.</span>'; };
   } catch (e) { out.innerHTML = `<span class="error">${esc((e && e.message) || 'Address check unavailable')}</span>`; }
 };
 
@@ -1070,7 +1094,7 @@ $('cu-up-btn').onclick = () => RCUpload.open({
     if (v.contact_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.contact_email)) errors.push(`AP email "${v.contact_email}" doesn't look right`);
     if (!v.contact_email && !/parent|not billed/i.test(bRaw)) errors.push('AP Email is required — invoices are emailed there');
     v.contact_phone = T(get('ap_phone')) || null; v.contact_name = T(get('ap_name')) || null;
-    const note = T(get('notes')); if (note) warnings.push(`Note not loaded: "${note.slice(0, 60)}"`);
+    v.notes = T(get('notes')) || undefined;   // 117: kept as the customer's office note
     const key = (v.customer_code || v.name || '').toLowerCase();
     if (key) { if (cuSeen.has(key)) errors.push('This customer is in the file twice — tick Leave out on the row you don\'t want'); else cuSeen.add(key); }
     if (!indented && !errors.length) cuTop = v;
@@ -1084,8 +1108,9 @@ $('cu-up-btn').onclick = () => RCUpload.open({
     for (const r of rows) {                                   // parents first, so their DCs can point at them
       const { parent_code, parent_name, ...rest } = r.values;
       const v = Object.fromEntries(Object.entries(rest).filter(([, x]) => x !== null && x !== undefined));
-      const q = r.existing ? sb.from('customers').update(v).eq('id', r.existing.id).select('id').single() : sb.from('customers').insert(v).select('id').single();
-      const { data, error } = await q;
+      const q = (x) => r.existing ? sb.from('customers').update(x).eq('id', r.existing.id).select('id').single() : sb.from('customers').insert(x).select('id').single();
+      let { data, error } = await q(v);
+      if (error && 'notes' in v && /notes/.test(error.message)) { delete v.notes; ({ data, error } = await q(v)); }   // before 117
       if (error) { failed.push({ line: r.line, message: error.message }); continue; }
       r.id = data.id; if (v.customer_code) codes.set(v.customer_code, data.id); r.existing ? updated++ : added++;
     }
@@ -1116,6 +1141,35 @@ function stCustomer(v) {                                        // "HFD", "Hartf
                  c => stNorm(c.name).includes(n) && n.length >= 3];
   for (const t of tests) { const hits = customers.filter(t); const f = hits.filter(inFam); if (f.length === 1) return f[0]; if (hits.length === 1) return hits[0]; }
   return null;
+}
+// Stand-in zips people type to get past a missing one (Sep 25 rehearsal: 12345)
+const FAKE_ZIP = /^(12345|00000|11111|99999|55555|01234|54321)$/;
+// The town a typed address names, and the one Google's answer names ("701 Farmington Ave, West Hartford, CT 06119, USA")
+const townOf = (a) => { const p = String(a || '').split(',').map(x => x.trim()).filter(x => x && !/^usa$/i.test(x));
+  const i = p.findIndex(x => /^[A-Z]{2}(\s+\d{5}(-\d{4})?)?$/i.test(x)); return (i > 0 ? p[i - 1] : p.length > 2 ? p[p.length - 2] : '').toLowerCase().replace(/[^a-z]/g, ''); };
+const zipOf = (a) => { const m = [...String(a || '').matchAll(/\b[A-Z]{2}\s+(\d{5})(?:-\d{4})?\b/gi)]; return m.length ? m[m.length - 1][1] : ''; };
+// did Google answer in a town the typed address doesn't name? ("379 High St Westfield, MA" names Westfield even without a comma)
+const otherTown = (typed, formatted) => { const g = townOf(formatted); return !!g && !String(typed || '').toLowerCase().replace(/[^a-z]/g, '').includes(g); };
+// Look up missing zips with Google (50 at a time). Only a match in the SAME town is used: a street name
+// repeats from town to town, and Google will happily answer with the wrong one.
+async function fillZips(list) {
+  const out = new Map();
+  for (let i = 0; i < list.length; i += 50) {
+    const part = list.slice(i, i + 50);
+    let pts = [];
+    try { const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'geocode', addresses: part.map(x => `${x.street}, ${x.city}, ${x.st}`) } });
+      if (error) throw error; pts = (data && data.points) || []; }
+    catch (e) { part.forEach(x => out.set(x, { why: 'the address lookup is unavailable' })); continue; }
+    part.forEach((x, j) => {
+      const h = pts[j];
+      if (!h || !h.formatted) { out.set(x, { why: 'Google couldn\'t find the address' }); return; }
+      const z = zipOf(h.formatted);
+      if (otherTown(`${x.street} ${x.city}`, h.formatted)) { out.set(x, { why: `Google put it in ${h.formatted.replace(/, USA$/, '')}, a different town` }); return; }
+      if (!z) { out.set(x, { why: 'Google\'s answer had no zip' }); return; }
+      out.set(x, { zip: z, point: { lat: h.lat, lon: h.lng } });
+    });
+  }
+  return out;
 }
 async function openStopUpload(file) {
   const { data } = await sb.from('delivery_locations').select('id, customer_id, name, code');
@@ -1225,7 +1279,9 @@ async function openStopUpload(file) {
       }
       if (!street) errors.push('Address is required');
       else if (!st) errors.push('No state in the address — add it');
-      else if (!/^\d{5}$/.test(zip)) errors.push('No zip code — add it (maps and mileage need it)');
+      else if (FAKE_ZIP.test(zip)) errors.push(`Zip ${zip} isn't a real zip code. Leave it blank and RoadCoda looks it up from the address when you save`);
+      else if (zip && !/^\d{5}(-\d{4})?$/.test(zip)) errors.push(`Zip "${zip}" should be five digits`);
+      else if (!zip) { v._findZip = { street, city, st }; warnings.push('No zip code: RoadCoda looks it up from the address when you save'); }
       v.address = street ? [street, city, [st, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : null;
       // receiving window
       const h1 = get('wstart'), h2 = get('wend');
@@ -1266,15 +1322,25 @@ async function openStopUpload(file) {
     describe: (v) => [v.name, v.code && '#' + v.code, v.address, v.window_start && `${v.window_start}–${v.window_end || ''}`, v.route_no && `${v.route_no}·${v.sort_code || ''}`,
                       (v.door_code || v.gate_code || v.other_code) && 'codes ✓', v.active === false && 'inactive', v._cust && '→ ' + v._cust].filter(Boolean).join(' · '),
     save: async (rows) => {
-      const groups = new Map();
-      for (const r of rows) { const { customer_id, _cust, ...rest } = r.values; if (!groups.has(customer_id)) groups.set(customer_id, []); groups.get(customer_id).push({ ...rest, line: r.line }); }
+      const groups = new Map(), notes = [];
+      // missing zips: look them up now, and say which couldn't be found
+      const need = rows.filter(r => r.values._findZip);
+      if (need.length) {
+        const got = await fillZips(need.map(r => r.values._findZip));
+        for (const r of need) {
+          const f = r.values._findZip, g = got.get(f) || {};
+          if (g.zip) { r.values.address = [f.street, f.city, `${f.st} ${g.zip}`].filter(Boolean).join(', '); notes.push({ line: r.line, message: `Zip ${g.zip} looked up from the address` }); }
+          else notes.push({ line: r.line, message: `No zip: ${g.why || 'not found'}. Add it by hand` });
+        }
+      }
+      for (const r of rows) { const { customer_id, _cust, _findZip, ...rest } = r.values; if (!groups.has(customer_id)) groups.set(customer_id, []); groups.get(customer_id).push({ ...rest, line: r.line }); }
       let added = 0, updated = 0; const failed = [];
       for (const [cid, list] of groups) {
         const { data, error } = await sb.rpc('upsert_delivery_locations', { p_customer_id: cid, p_rows: list.map(({ line, ...x }) => x) });
         if (error) failed.push({ line: list[0].line, message: `${customers.find(c => c.id === cid)?.name || 'Customer'}: ${error.message}` });
         else { added += data.added || 0; updated += data.updated || 0; }
       }
-      return { added, updated, failed };
+      return { added, updated, failed, notes };
     },
     after: () => { if (typeof loadDl === 'function') loadDl(); },
   });

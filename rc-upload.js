@@ -271,7 +271,8 @@
           messages: ['Left out when the data was loaded'], cells: cellsOf(r), problems: [] });
         for (const f of ((res && res.failed) || [])) { const r = rows.find(x => x.line === f.line); if (r) rowsOut.push({ status: 'needs_fix', line: r.line, key: keyOf(r), scope: scopeOf(r),
           label: labelOf(r), messages: [f.message], cells: cellsOf(r), problems: [] }); }
-        for (const r of savedRows) { if (failedLines.has(r.line)) continue; const w = (r.shown || []).concat((r.warnings || []).filter(x => /^Corrected here/.test(x)));
+        const after = new Map(); for (const n of ((res && res.notes) || [])) after.set(n.line, [...(after.get(n.line) || []), n.message]);   // what the save itself found (e.g. zips looked up)
+        for (const r of savedRows) { if (failedLines.has(r.line)) continue; const w = (r.shown || []).filter(x => !/when you save$/.test(x)).concat((r.warnings || []).filter(x => /^Corrected here/.test(x)), after.get(r.line) || []);
           if (w.length) rowsOut.push({ status: 'noted', line: r.line, key: keyOf(r), scope: scopeOf(r), label: labelOf(r), messages: w, cells: {}, problems: [] }); }
         const saved = savedRows.filter(r => !failedLines.has(r.line)).map(r => ({ key: keyOf(r), scope: scopeOf(r) }));
         const { error } = await client.rpc('setup_record_upload', { p: {
@@ -292,7 +293,9 @@
         try {
           const res = await cfg.save(ok.map(r => ({ values: r.values, existing: r.existing, line: r.line })));
           let rep = ''; try { rep = await record(ok, res); } catch (e) { rep = ''; }
+          const nt = res.notes || [], np = {}; nt.forEach(n => { const k = n.message.replace(/\d{5}/g, '#').replace(/: .*$/, ''); np[k] = (np[k] || 0) + 1; });
           q('[data-msg]').innerHTML = `<span class="ok">${res.added} added, ${res.updated} updated.</span>` + rep +
+            (nt.length ? `<div class="warn">${Object.entries(np).map(([k, n]) => `${n} row${n === 1 ? '' : 's'}: ${esc(k)}`).join(' · ')}</div>` : '') +
             (res.failed && res.failed.length ? `<div class="err">${res.failed.map(f => `Row ${f.line}: ${esc(f.message)}`).join('<br>')}</div>` : '');
           if (rq) rq.hidden = true;
           if (cfg.after) cfg.after();

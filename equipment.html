@@ -237,6 +237,11 @@ async function start() {
   me = p;
   $('who').textContent = `${p.full_name || session.user.email} · ${p.carriers?.name || ''} · ${p.role}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
+  try {
+    const { data: co } = await sb.from('carriers').select('office_address, yard_address, remit_address').limit(1);
+    const a = [co?.[0]?.office_address, co?.[0]?.yard_address, co?.[0]?.remit_address].find(x => /\b[A-Z]{2}\s+\d{5}\b/.test(x || ''));
+    if (a) HOME_ST = a.match(/\b([A-Z]{2})\s+\d{5}\b/)[1];
+  } catch (e) { /* the company's state only fills a missing plate state */ }
   await load();
   const want = new URLSearchParams(location.search).get('id');
   if (want) { const u = units.find(x => x.id === want); if (u) { if (!u.active) $('show').value = 'all'; edit(u); } }
@@ -559,6 +564,25 @@ const UP_BODY = [[/curtain|soft ?side/i, 'Curtainside'], [/reefer|refrig/i, 'Ree
 const UP_OWN = [[/owner.?op/i, 'owner_operator'], [/lease|^l$/i, 'leased'], [/rent/i, 'rented'], [/own|^o$/i, 'owned']];
 const pick = (list, v) => { const s = String(v || '').trim(); if (!s) return null; for (const [re, x] of list) if (re.test(s)) return x; return undefined; };
 let upSeen = null;
+// Makes as the office writes them → as the manufacturer spells it (Sep 25 rehearsal: FRHT, INTL, KW, UTIL, GDane…)
+const UP_MAKE = [[/^(frht|frtlnr|frtl|frtln|freight ?liner|fl|fcc)$/i, 'Freightliner'], [/^(intl|int'?l|inter|international|navistar|ihc)$/i, 'International'],
+  [/^(kw|kenw|kenworth)$/i, 'Kenworth'], [/^(pete|pb|peterbilt|peter ?bilt)$/i, 'Peterbilt'], [/^(vol|volvo)$/i, 'Volvo'], [/^mack$/i, 'Mack'],
+  [/^(ws|wstar|western ?star)$/i, 'Western Star'], [/^(isz|isuzu)$/i, 'Isuzu'], [/^hino$/i, 'Hino'], [/^(gd|gdane|grt ?dane|great ?dane)$/i, 'Great Dane'],
+  [/^(util|utl|utility)$/i, 'Utility'], [/^(wab|wabash)$/i, 'Wabash'], [/^(hyundai|hyundai ?translead|translead)$/i, 'Hyundai Translead'],
+  [/^stoughton$/i, 'Stoughton'], [/^vanguard$/i, 'Vanguard'], [/^fontaine$/i, 'Fontaine'], [/^(chevy|chevrolet)$/i, 'Chevrolet'], [/^ford$/i, 'Ford'],
+  [/^(mitsu|mitsubishi|mitsubishi ?fuso|fuso)$/i, 'Mitsubishi Fuso'], [/^(ram|dodge ?ram)$/i, 'Ram'], [/^(mb|mercedes|mercedes-benz)$/i, 'Mercedes-Benz']];
+function makeName(raw) {
+  const s = String(raw || '').trim().replace(/\s+/g, ' '); if (!s) return null;
+  for (const [re, x] of UP_MAKE) if (re.test(s)) return x;
+  return /^[A-Z][A-Z\s.-]{3,}$/.test(s) ? s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()) : s;   // WABCO → Wabco; GMC stays GMC
+}
+// A plate with no state is almost always registered where the company is
+let HOME_ST = null;
+function homeState() {
+  if (HOME_ST) return HOME_ST;
+  const n = {}; units.forEach(u => { if (u.plate_state) n[u.plate_state] = (n[u.plate_state] || 0) + 1; });
+  return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || null;
+}
 $('up-btn').onclick = () => RCUpload.open({
   title: 'Upload trucks and trailers',
   report: { kind: 'equipment', key: (v, c) => v.unit_no || c('unit_no') },
@@ -641,16 +665,25 @@ $('up-btn').onclick = () => RCUpload.open({
     }
     // a "26' reefer" with no trailer word is a straight truck, not a trailer
     if (v.unit_type === 'trailer' && !/trailer|trlr|pup/i.test(tyText) && v.length_ft && v.length_ft <= 26) { v.unit_type = 'straight_truck'; warnings.push(`"${tyText}" read as a straight truck (26 ft or less) — check it`); }
+    // the length is often in the type too ("48' reefer", "53 dry", "26' box"); a pup is 28'
+    if (v.length_ft == null && (v.unit_type === 'trailer' || v.unit_type === 'straight_truck')) {
+      const lm = tyText.match(/\b(\d{2})\s*(?:'|ft\b|foot\b|-foot\b)/i) || tyText.match(/^\s*(53|48|45|40|28)\b/);
+      if (lm) { v.length_ft = +lm[1]; warnings.push(`Length taken from the type: ${lm[1]}'`); }
+      else if (v.unit_type === 'trailer' && /\bpup\b/i.test(tyText)) { v.length_ft = 28; warnings.push("Pup: length set to 28'"); }
+    }
+    if (v.unit_type === 'trailer' && !v.body_type && /\bpup\b/i.test(tyText)) { v.body_type = 'Dry van'; warnings.push('Pup with no body given: set to dry van. Check it'); }
     if ((v.unit_type === 'trailer' || v.unit_type === 'straight_truck') && !v.body_type) warnings.push('No body (dry van, reefer, flatbed…): capacity and stop checks won\'t work for this unit');
     if (v.unit_type === 'trailer' && (T(get('toll_tag')) || RCUpload.num(get('odometer_miles')) > 0)) warnings.push('Has a toll tag or odometer, which trailers don\'t — is it really a trailer?');
     if (v.year != null && (v.year < 1950 || v.year > 2100)) errors.push('Check the year');
     v.make = T(get('make')) || null; v.model = T(get('model')) || null;
+    { const mk = makeName(v.make); if (mk && mk !== v.make) { warnings.push(`Make "${v.make}" saved as ${mk}`); v.make = mk; } }
     v.vin = T(get('vin')).replace(/[\s-]/g, '').toUpperCase() || null;
     if (v.vin) { const p = RCUpload.vinProblem(v.vin); if (p) (/check digit/.test(p) ? warnings : errors).push(p); }
     let plate = T(get('plate')), st = T(get('plate_state')).toUpperCase();
     const m = plate.match(/^([A-Za-z]{2})\s+(\S+)$/) || plate.match(/^(\S+)\s*\(([A-Za-z]{2})\)$/);
     if (m) { if (/^[A-Za-z]{2}$/.test(m[1]) && !/\d/.test(m[1])) { st = st || m[1].toUpperCase(); plate = m[2]; } else { plate = m[1]; st = st || m[2].toUpperCase(); } }
     v.plate = plate || null; v.plate_state = st || null;
+    if (v.plate && !v.plate_state && homeState()) { v.plate_state = homeState(); warnings.push(`No plate state: set to ${v.plate_state}, where the company is. Check it`); }
     if (v.plate_state && !/^[A-Z]{2}$/.test(v.plate_state)) errors.push(`Plate state "${v.plate_state}" should be two letters`);
     { const pd = RCUpload.date(get('last_pm_date')); if (pd === undefined) warnings.push(`Last PM date "${T(get('last_pm_date'))}" can't be read — left blank`); if (pd) v.last_pm_date = pd;
       const pm = RCUpload.num(get('last_pm_miles')); if (!Number.isNaN(pm) && pm > 0) v.last_pm_miles = pm;
