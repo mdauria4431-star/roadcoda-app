@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings check · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap;cursor:pointer}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px;max-width:1100px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px}
+  h1{margin:0;font-size:19px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .mini{font-size:12px;color:var(--ink-3)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+  .tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+  .tile.on{outline:2px solid var(--accent)}
+  .tile .n{font-size:24px;font-weight:700;font-family:'Archivo',sans-serif}
+  .tile .l{font-size:12px;color:var(--ink-3)}
+  .item{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line-soft)}
+  .item:last-child{border-bottom:0}
+  .item .w{flex:1;min-width:0}
+  .item .t{font-weight:600}
+  .item .e{margin-top:3px}
+  .item details{margin-top:6px}
+  .item summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent)}
+  .item ol{margin:6px 0 0;padding-left:20px;font-size:13px}
+  .item ol li{margin:2px 0}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid;white-space:nowrap}
+  .s-missing{color:var(--late,#c62828);border-color:var(--late,#c62828)}
+  .s-fix{color:#b26a00;border-color:#b26a00}
+  .s-consider{color:#1a73e8;border-color:#1a73e8}
+  .s-info{color:var(--ink-3);border-color:var(--line)}
+  .s-ok{color:var(--ok,#1e8e3e);border-color:var(--ok,#1e8e3e)}
+  .ex{font-size:12px;color:var(--ink-3);margin-top:3px}
+  .error{color:var(--late)} .ok{color:var(--ok)}
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="getting-started.html">Getting started</a><a class="on" href="settings-check.html">Settings check</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <h1 style="flex:1">Settings check</h1>
+      <button class="btn" id="google-btn" title="Looks up your office address once, to prove miles, prices and address checks work">Test Google maps</button>
+      <a class="btn" href="RoadCoda-Setup-Guide.pdf" target="_blank" rel="noopener">Setup guide (PDF)</a>
+    </div>
+    <div class="mini">Everything RoadCoda needs to be set up, checked against your company's own settings and records. <b>Missing</b> means a core job (dispatch, invoicing, payroll) won't work until it's set. <b>Fix</b> means something important works badly. <b>Consider</b> is worth doing. <b>Know this</b> is how RoadCoda behaves. It updates as you fix things; press a heading's <b>How to fix it</b> for the steps.</div>
+    <div class="mini" id="google-msg"></div>
+    <div class="tiles" id="tiles"></div>
+    <div id="list"></div>
+  </section>
+</main>
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let ME = null, ROWS = [], SHOW = 'todo';
+const LABEL = { missing: 'Missing', fix: 'Fix', consider: 'Consider', info: 'Know this', ok: 'OK' };
+const AREAS = ['Company', 'People and access', 'Connections', 'Billing', 'Driver pay', 'Drivers', 'Trucks and trailers', 'Customers and stops', 'Modules'];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name, office_address)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  ME = data; $('who').textContent = `${data.full_name || ''} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  $('app').hidden = false; load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load() {
+  const { data, error } = await sb.rpc('settings_review');
+  if (error) { $('list').innerHTML = `<div class="card" style="padding:16px"><span class="error">${esc(error.message)}</span>${/settings_review|schema cache/.test(error.message) ? ' — run 118_settings_review.sql in the Supabase SQL Editor.' : ''}</div>`; return; }
+  ROWS = data || []; draw();
+}
+
+function draw() {
+  const c = (s) => ROWS.filter(r => r.status === s).length;
+  const tile = (key, n, l, cls) => `<button class="tile ${SHOW === key ? 'on' : ''}" data-show="${key}"><div class="n ${cls}">${n}</div><div class="l">${l}</div></button>`;
+  $('tiles').innerHTML = tile('missing', c('missing'), 'missing — a core job won\'t work', c('missing') ? 's-missing' : '') +
+    tile('fix', c('fix'), 'to fix — works badly', c('fix') ? 's-fix' : '') + tile('consider', c('consider'), 'to consider') +
+    tile('info', c('info'), 'to know') + tile('ok', c('ok'), 'set up well', 's-ok') + tile('todo', ROWS.length - c('ok'), 'everything to look at');
+  const want = (r) => SHOW === 'todo' ? r.status !== 'ok' : r.status === SHOW;
+  const order = { missing: 0, fix: 1, consider: 2, info: 3, ok: 4 };
+  const html = AREAS.map(a => {
+    const list = ROWS.filter(r => r.area === a && want(r)).sort((x, y) => order[x.status] - order[y.status] || x.sort - y.sort);
+    if (!list.length) return '';
+    const okN = ROWS.filter(r => r.area === a && r.status === 'ok').length, allN = ROWS.filter(r => r.area === a).length;
+    return `<div class="card" style="margin-bottom:12px"><header><h2>${esc(a)}</h2><span class="sp"></span><span class="mini">${okN} of ${allN} set up well</span></header>
+      ${list.map(r => `<div class="item"><div><span class="pill s-${r.status}">${LABEL[r.status]}</span></div><div class="w">
+        <div class="t">${esc(r.what)}${r.n != null && r.status !== 'ok' ? ` <span class="mini" style="font-weight:600">· ${r.n}</span>` : ''}</div>
+        ${r.examples && r.status !== 'ok' ? `<div class="ex">${esc(r.examples)}${r.n > 5 ? ' …' : ''}</div>` : ''}
+        <div class="e mini">${esc(r.effect)}</div>
+        ${r.status !== 'ok' ? `<details><summary>${r.status === 'info' ? 'What to do' : 'How to fix it'}</summary><ol>${String(r.how || '').split('\n').map(s => `<li>${esc(s.replace(/^\d+\.\s*/, ''))}</li>`).join('')}</ol>
+          ${r.page ? `<a class="btn small" style="margin-top:8px" href="${esc(r.page)}">Open ${esc(r.page.replace('.html', '').replace(/-/g, ' '))}</a>` : ''}</details>` : ''}
+      </div></div>`).join('')}</div>`;
+  }).join('');
+  $('list').innerHTML = html || `<div class="card mini" style="padding:16px">${SHOW === 'missing' ? 'Nothing missing.' : 'Nothing here.'}</div>`;
+  document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { SHOW = b.dataset.show; draw(); });
+}
+
+// Google's key lives in Supabase, where no page can read it: one address lookup proves it works
+$('google-btn').onclick = async () => {
+  const addr = ME.carriers?.office_address || 'Hartford, CT';
+  $('google-msg').textContent = 'Asking Google…'; $('google-btn').disabled = true;
+  try {
+    const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'geocode', addresses: [addr] } });
+    let why = error ? (error.message || 'failed') : '';
+    if (error) { try { const b = error.context && typeof error.context.json === 'function' ? await error.context.json() : null; if (b && b.error) why = b.error; } catch (_) {} }
+    const p = data && data.points && data.points[0];
+    $('google-msg').innerHTML = !error && p ? `<span class="ok">Google maps works: miles, prices and address checks can run. (Found ${esc(p.formatted || addr)}.)</span>`
+      : !error ? '<span class="error">Google answered but couldn\'t find your office address. Check it on Setup › Company.</span>'
+      : `<span class="error">Google maps isn't working: ${esc(why)}. Miles, prices and address checks can't run. Report a problem so RoadCoda can check the Google key.</span>`;
+  } catch (e) { $('google-msg').innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
+  $('google-btn').disabled = false;
+};
+start();
+</script>
+</body>
+</html>

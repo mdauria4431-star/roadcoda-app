@@ -117,7 +117,7 @@ if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let ME = null, FIND = [], FIXED = 0, LOGS = [], WK = [], SHOW_MISSING = false;
+let ME = null, FIND = [], FIXED = 0, LOGS = [], WK = [], SET = [], SHOW_MISSING = false;
 const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('users', 'edit');
 
 // what each upload is called, where it's uploaded, and its template
@@ -129,7 +129,7 @@ const KINDS = {
   office_staff: { name: 'Office staff',        where: 'Users › Upload spreadsheet', template: 'templates/RoadCoda-template-Office-staff.xlsx' },
 };
 const KORDER = Object.keys(KINDS);
-// Each setup template's first tab: header, header colour, width, cell format, dropdowns (from templates/*.xlsx).
+// Each setup template's first tab: header, header color, width, cell format, dropdowns (from templates/*.xlsx).
 // Keep in step with the template files if a column is added there.
 const TEMPLATE = {"customers":{"sheet":"Customers","cols":[{"h":"Customer Name *","fill":"E4DCFF","w":32.0,"fmt":"@"},{"h":"Account Code","fill":"EDEDED","w":12.0,"fmt":"@"},{"h":"Parent Account Code","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Bill-To Street *","fill":"E4DCFF","w":26.0,"fmt":"@"},{"h":"City *","fill":"E4DCFF","w":16.0,"fmt":"@"},{"h":"State *","fill":"E4DCFF","w":7.0,"fmt":"@"},{"h":"Zip *","fill":"E4DCFF","w":8.0,"fmt":"@"},{"h":"Payment Terms (days) *","fill":"E4DCFF","w":20.0,"fmt":""},{"h":"Billing *","fill":"E4DCFF","w":12.0,"fmt":"@"},{"h":"Week Starts","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"PO Number","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"AP Contact","fill":"FFF1B8","w":18.0,"fmt":"@"},{"h":"AP Phone","fill":"EDEDED","w":16.0,"fmt":"@"},{"h":"AP Email *","fill":"E4DCFF","w":30.0,"fmt":"@"},{"h":"Notes","fill":"EDEDED","w":30.0,"fmt":"@"}],"dv":[{"col":"F","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"I","list":"Per load,Weekly"},{"col":"J","list":"Sun,Mon,Tue,Wed,Thu,Fri,Sat"}]},"stops":{"sheet":"Stop locations","cols":[{"h":"Name *","fill":"E4DCFF","w":30.0,"fmt":"@"},{"h":"Store #","fill":"FFF1B8","w":9.0,"fmt":"@"},{"h":"Route #","fill":"EDEDED","w":9.0,"fmt":"@"},{"h":"Sort Code","fill":"EDEDED","w":9.0,"fmt":"@"},{"h":"Address *","fill":"E4DCFF","w":26.0,"fmt":"@"},{"h":"City *","fill":"E4DCFF","w":15.0,"fmt":"@"},{"h":"State *","fill":"E4DCFF","w":7.0,"fmt":"@"},{"h":"Zip *","fill":"E4DCFF","w":8.0,"fmt":"@"},{"h":"Window Opens","fill":"FFF1B8","w":12.0,"fmt":"hh:mm"},{"h":"Window Closes","fill":"FFF1B8","w":12.0,"fmt":"hh:mm"},{"h":"Contact","fill":"FFF1B8","w":16.0,"fmt":"@"},{"h":"Phone","fill":"FFF1B8","w":15.0,"fmt":"@"},{"h":"Email","fill":"FFF1B8","w":28.0,"fmt":"@"},{"h":"Notify (Y/N)","fill":"FFF1B8","w":10.0,"fmt":"@"},{"h":"Notification Email","fill":"EDEDED","w":26.0,"fmt":"@"},{"h":"Delivery Instructions","fill":"FFF1B8","w":40.0,"fmt":"@"},{"h":"Door Code","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"Gate Code","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"Other Code Name","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Other Code","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"After-hours Contact","fill":"EDEDED","w":16.0,"fmt":"@"},{"h":"After-hours Phone","fill":"EDEDED","w":15.0,"fmt":"@"},{"h":"Office Notes","fill":"EDEDED","w":24.0,"fmt":"@"},{"h":"Active (Y/N)","fill":"EDEDED","w":10.0,"fmt":"@"}],"dv":[{"col":"G","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"N","list":"Y,N"},{"col":"X","list":"Y,N"}]},"equipment":{"sheet":"Trucks and trailers","cols":[{"h":"Unit # *","fill":"E4DCFF","w":9.0,"fmt":"@"},{"h":"Type *","fill":"E4DCFF","w":14.0,"fmt":"@"},{"h":"Body","fill":"FFF1B8","w":20.0,"fmt":"@"},{"h":"Length (ft)","fill":"FFF1B8","w":10.0,"fmt":""},{"h":"Axles *","fill":"E4DCFF","w":7.0,"fmt":""},{"h":"Year","fill":"EDEDED","w":7.0,"fmt":""},{"h":"Make","fill":"EDEDED","w":13.0,"fmt":"@"},{"h":"Model","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"VIN *","fill":"E4DCFF","w":22.0,"fmt":"@"},{"h":"Plate","fill":"FFF1B8","w":11.0,"fmt":"@"},{"h":"Plate State","fill":"FFF1B8","w":8.0,"fmt":"@"},{"h":"Registration Expires","fill":"FFF1B8","w":13.0,"fmt":"mm/dd/yyyy"},{"h":"Toll Tag #","fill":"FFF1B8","w":18.0,"fmt":"@"},{"h":"Ownership","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Odometer","fill":"EDEDED","w":10.0,"fmt":""},{"h":"Notes","fill":"EDEDED","w":26.0,"fmt":"@"}],"dv":[{"col":"B","list":"Tractor,Straight truck,Trailer,Van,Pickup"},{"col":"C","list":"Dry van,Reefer,Flatbed,Curtainside (softside),Box,Other"},{"col":"K","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"N","list":"Owned,Leased,Rented,Owner-operator"}]},"drivers":{"sheet":"Drivers","cols":[{"h":"Full Name *","fill":"E4DCFF","w":22.0,"fmt":"@"},{"h":"Phone *","fill":"E4DCFF","w":15.0,"fmt":"@"},{"h":"Email","fill":"EDEDED","w":26.0,"fmt":"@"},{"h":"Employee #","fill":"FFF1B8","w":11.0,"fmt":"@"},{"h":"Driver Type","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"HOS Rule","fill":"EDEDED","w":20.0,"fmt":"@"},{"h":"HOS State (intrastate)","fill":"EDEDED","w":11.0,"fmt":"@"},{"h":"Hire Date *","fill":"E4DCFF","w":12.0,"fmt":"mm/dd/yyyy"},{"h":"CDL Number","fill":"FFF1B8","w":14.0,"fmt":"@"},{"h":"CDL State","fill":"FFF1B8","w":8.0,"fmt":"@"},{"h":"CDL Class","fill":"FFF1B8","w":8.0,"fmt":"@"},{"h":"CDL Expires","fill":"FFF1B8","w":12.0,"fmt":"mm/dd/yyyy"},{"h":"Medical Card Expires","fill":"FFF1B8","w":13.0,"fmt":"mm/dd/yyyy"},{"h":"Home Terminal","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Emergency Contact","fill":"FFF1B8","w":18.0,"fmt":"@"},{"h":"Emergency Phone","fill":"FFF1B8","w":15.0,"fmt":"@"},{"h":"Notes","fill":"EDEDED","w":26.0,"fmt":"@"}],"dv":[{"col":"E","list":"Road,Team,Yard"},{"col":"F","list":"Company default,70 hours / 8 days,60 hours / 7 days,Short-haul (150 air-miles),Intrastate"},{"col":"J","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"K","list":"A,B,C,none"}]},"office_staff":{"sheet":"Office staff","cols":[{"h":"Full Name *","fill":"E4DCFF","w":22.0,"fmt":"@"},{"h":"Email *","fill":"E4DCFF","w":30.0,"fmt":"@"},{"h":"Role *","fill":"E4DCFF","w":12.0,"fmt":"@"},{"h":"Super User (Y/N)","fill":"EDEDED","w":11.0,"fmt":"@"},{"h":"Title","fill":"EDEDED","w":18.0,"fmt":"@"},{"h":"Employee #","fill":"EDEDED","w":11.0,"fmt":"@"}],"dv":[{"col":"C","list":"Owner,Dispatcher,Billing,Safety,Payroll,Accountant"},{"col":"D","list":"Y,N"}]}};
 const INCLUDED_MIN = 8 * 60;
@@ -164,6 +164,7 @@ async function load() {
   const err = F.error || L.error || W.error;
   if (err) { $('tiles').innerHTML = `<div class="tile error">${esc(err.message)}${/setup_|schema cache/.test(err.message) ? ' — run 116_setup_report.sql in the Supabase SQL Editor.' : ''}</div>`; return; }
   FIND = F.data || []; FIXED = X.count || 0; LOGS = L.data || []; WK = W.data || [];
+  { const S = await sb.rpc('settings_review'); SET = S.error ? [] : (S.data || []); }   // 118; the tab is left out before it's installed
   draw();
 }
 
@@ -354,6 +355,19 @@ async function buildReport() {
   if (!wk.length) W.addRow(['Nothing to report.']);
   W.autoFilter = { from: 'A1', to: 'F1' };
 
+  // ---- settings check (118) ----
+  if (SET.length) {
+    const SL = { missing: 'Missing', fix: 'Fix', consider: 'Consider', info: 'Know this', ok: 'OK' }, so = { missing: 0, fix: 1, consider: 2, info: 3, ok: 4 };
+    const S = X.addWorksheet(tabName('Settings', used), { views: [{ state: 'frozen', ySplit: 1 }] });
+    headRow(S, ['Area', 'Setting', 'Status', 'How many', 'Which', 'What happens without it', 'How to set it'], [20, 40, 12, 10, 34, 60, 70]);
+    for (const r of SET.slice().sort((a, b) => so[a.status] - so[b.status] || a.sort - b.sort)) {
+      const row = S.addRow([r.area, r.what, SL[r.status], r.n ?? '', r.examples || '', r.effect, r.status === 'ok' ? '' : r.how]);
+      row.alignment = { wrapText: true, vertical: 'top' };
+      if (r.status === 'missing') row.getCell(3).fill = RED; else if (r.status === 'fix') row.getCell(3).fill = YELLOW;
+    }
+    S.autoFilter = { from: 'A1', to: 'G1' };
+  }
+
   // ---- 3 · setup log ----
   const L = X.addWorksheet(tabName('Setup log', used));
   L.getColumn(1).width = 20; L.getColumn(2).width = 22; L.getColumn(3).width = 30; L.getColumn(4).width = 34; [5, 6, 7, 8].forEach(c => L.getColumn(c).width = 12); L.getColumn(9).width = 70;
@@ -390,6 +404,8 @@ async function buildReport() {
   const nNeed = fixTabs.reduce((s, t) => s + t.n, 0);
   para('1 · Needs your answer', nNeed ? `${nNeed} row${nNeed === 1 ? '' : 's'} we couldn't finish, or left out, and need your answer. Each tab starting "Fix" is laid out like our setup template. Yellow cells need your answer (hover over one to see why), and the column "What we need from you" says what's missing. Fill them in and send this file back to us, or upload each tab yourself on the screen named below.` : 'Nothing: every row we were given was loaded.');
   para('2 · Worth knowing', wk.length ? `${wk.length} thing${wk.length === 1 ? '' : 's'} your data shows that are worth your attention: registrations, inspections, PM, CDLs and medical cards overdue or coming due, and information missing that RoadCoda uses (toll tags, plate states, stop contacts). These aren't mistakes in your files.` : 'Nothing to report.');
+  if (SET.length) { const m = SET.filter(r => r.status === 'missing').length, fx = SET.filter(r => r.status === 'fix').length;
+    para('Settings', `How RoadCoda is set up for you: ${m} setting${m === 1 ? '' : 's'} missing that a core job needs, ${fx} to fix. Each row says what happens without it and how to set it, step by step.`); }
   para('3 · Setup log', `Every upload, what was done for you, and the time spent on setup and training. Setup and training each include 8 hours. Used so far: setup ${hm(hrs.setup)}, training ${hm(hrs.training)}.`);
   if (fixTabs.length) {
     readme.addRow([]);
