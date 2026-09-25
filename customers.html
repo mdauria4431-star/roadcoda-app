@@ -1132,7 +1132,7 @@ async function openStopUpload(file) {
       { key: 'after_hours_phone', label: 'After-hours phone', re: /after.?hours?.*(phone|tel|number|#|cell)|emergency.*(phone|number)|night.*(phone|number)/i },
       { key: 'after_hours_contact', label: 'After-hours contact', re: /after.?hours?|night.*contact|emergency/i },
       { key: 'door_code', label: 'Door code', re: /door|lock.*code/i },
-      { key: 'gate_code', label: 'Gate code', re: /gate/i },
+      { key: 'gate_code', label: 'Gate code', re: /^(?!.*(hour|hrs|open|time)).*gate/i },   // "Hours / gate" is an hours column
       { key: 'other_code_name', label: 'Other code name', re: /other.*code.*(name|type|label)|code.*(name|type|label)/i },
       { key: 'other_code', label: 'Other code', re: /other.*code|misc.*code|alarm|lock ?box|key ?(box|safe)/i },
       { key: 'delivery_instructions', label: 'Delivery instructions', re: /instruction|direction|driver.*note|delivery.*note/i },
@@ -1167,6 +1167,32 @@ async function openStopUpload(file) {
     begin: () => { stSeen = new Set(); stTabNote = false; },
     parse: (get, raw, prev, opts) => {
       const T = RCUpload.txt, errors = [], warnings = [], v = {};
+      // A follow-on row: no name, no store #, and what's under Address isn't an address (the second
+      // line of a two-row yard — "Yard mgr: Jim Duffy 508-555-0117 | gate 8636 | Stay in the cab").
+      // Its manager, phone, codes and instructions go on the stop above.
+      {
+        const nm = T(get('name')), cd = T(get('code')), ad = T(get('address'));
+        const looksAddr = /^\d+\s+\S/.test(ad) || /\b[A-Za-z]{2}\.?\s+\d{5}\b/.test(ad);
+        if (!nm && !cd && !T(get('dc')) && !looksAddr) {
+          const m = {}, rest = [];
+          const PH = /(\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}(?:\s*(?:x|ext\.?)\s*\d+)?)/i;
+          raw.map(c => T(c)).filter(Boolean).forEach(c => {
+            let s = c, k;
+            const who = s.match(/^(?:yard\s*|store\s*|site\s*)?(?:mgr|manager|contact|attn|receiver)\s*[:\-]?\s*(.+)$/i);
+            if (who) { const ph = who[1].match(PH); if (ph && !m.phone) m.phone = ph[1].trim(); if (!m.contact) m.contact = who[1].replace(PH, '').replace(/[,;\s]+$/, '').trim(); return; }
+            if (/^no gate( code)?$/i.test(s)) return;
+            if ((k = s.match(/\bgate(?:\s*code)?\s*[:#-]?\s*([0-9*#]{3,8}#?)/i))) { m.gate_code = m.gate_code || k[1]; s = s.replace(k[0], '').trim(); }
+            if ((k = s.match(/\b(?:door(?:\s*code)?|dr)\s*[:#-]?\s*([0-9*]{3,8}#?)/i))) { m.door_code = m.door_code || k[1]; s = s.replace(k[0], '').trim(); }
+            if (!s) return;
+            if (!m.phone && PH.test(s) && s.replace(PH, '').trim().length < 3) { m.phone = s.match(PH)[1].trim(); return; }
+            rest.push(s.replace(/^[\s;,|–-]+|[\s;,|–-]+$/g, ''));
+          });
+          if (rest.length) m.delivery_instructions = rest.join(' ');
+          const got = [m.contact && 'contact', m.phone && 'phone', m.gate_code && 'gate code', m.door_code && 'door code', m.delivery_instructions && 'instructions'].filter(Boolean);
+          // only a real follow-on line (a manager, a phone or a code) joins; anything else is checked as a row of its own
+          if (m.contact || m.phone || m.gate_code || m.door_code) return { values: m, errors: [], warnings: [`Next line joined to this stop (${got.join(', ') || 'nothing to add'})`], mergeUp: true, append: ['delivery_instructions'] };
+        }
+      }
       // which customer the stop belongs to
       const dcRaw = T(get('dc'));
       let cust = null;
@@ -1206,10 +1232,12 @@ async function openStopUpload(file) {
       if (ws === undefined || (h1 && ws === null && !we)) { warnings.push(`Receiving hours "${T(h1)}" can't be read — left blank`); ws = null; }
       if (we === undefined) { warnings.push(`Closing time "${T(h2)}" can't be read — left blank`); we = null; }
       v.window_start = ws || null; v.window_end = we || null;
+      const days = T(h1).match(/\b(mon(?:day)?\s*[-–]\s*(?:fri|sat|sun)\w*|7 ?days|daily|mon(?:day)?\s*[-–]\s*thu\w*|weekdays)\b/i);
       // contact, codes, instructions
       for (const k of ['contact', 'phone', 'email', 'notify_email', 'delivery_instructions', 'door_code', 'gate_code', 'other_code_name', 'other_code',
                        'after_hours_contact', 'after_hours_phone', 'route_no', 'sort_code', 'notes']) v[k] = T(get(k)) || '';
       v.email = v.email.toLowerCase(); v.notify_email = v.notify_email.toLowerCase();
+      if (days && !/receiving days/i.test(v.notes)) v.notes = [v.notes, 'Receiving days: ' + days[1].replace(/\s*[-–]\s*/, '-')].filter(Boolean).join(' · ');
       for (const k of ['email', 'notify_email']) if (v[k] && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v[k])) { warnings.push(`Email "${v[k]}" doesn't look right — left blank`); v[k] = ''; }
       const pull = (re) => { for (const f of ['notes', 'delivery_instructions']) { const m = v[f].match(re); if (m) { v[f] = v[f].replace(m[0], '').replace(/^[\s\/;,|–-]+|[\s\/;,|–-]+$/g, '').replace(/\s*[\/;|]\s*[\/;|]\s*/g, ' / '); return m[1]; } } return ''; };
       if (!v.gate_code) v.gate_code = pull(/\bgate(?:\s*code)?\s*[:#-]?\s*([0-9*#]{3,8}#?)/i);

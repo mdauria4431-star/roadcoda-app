@@ -7,6 +7,7 @@
 //   fields     [{ key, label, re: /header regex/, required, rec }]  — order = guessing priority
 //   blocked    /header regex/ for columns that must never be read (SSN, bank …)
 //   parse(get, raw) → { values, errors: [], warnings: [] }   get(key) = the cell under that field's column
+//                      (return mergeUp: true to fold a follow-on row into the row above; append: [keys] to add to text fields)
 //   match(values) → existing record or null                  (decides Add vs Update)
 //   describe(values) → short text for the preview row
 //   save(rows) → Promise<{ added, updated, failed: [{ row, message }] }>   rows = [{ values, existing }]
@@ -115,6 +116,22 @@
         const p = cfg.parse(get, r, prev, st.opts) || { values: {}, errors: [], warnings: [] };
         p.raw = r; p.cell = (k) => (k in ed) ? ed[k] : (st.map[k] != null ? r[st.map[k]] : '');
         if (Object.keys(ed).length) p.warnings = [`Corrected here: ${Object.keys(ed).map(k => (cfg.fields.find(f => f.key === k) || {}).label || k).join(', ')}`, ...(p.warnings || [])];
+        // a follow-on row (e.g. the second line of a two-row yard): its values fill the row above
+        if (p.mergeUp) {
+          const last = out.length ? out[out.length - 1] : null;
+          if (last && !last.left) {
+            for (const [k, val] of Object.entries(p.values || {})) {
+              if (val == null || val === '') continue;
+              const cur = last.values[k];
+              if (cur == null || cur === '') last.values[k] = val;
+              else if (p.append && p.append.includes(k) && !String(cur).includes(String(val))) last.values[k] = cur + ' ' + val;
+            }
+            last.warnings = [...(last.warnings || []), ...(p.warnings || [])];
+            if (!last.errors.length && cfg.match) last.existing = cfg.match(last.values);
+            return;
+          }
+          p.errors = ['This row has no name and nothing above it to join to'];
+        }
         if (!p.errors.length) prev = p.values;
         if (p.skip) return;
         if (cfg.checkRequired !== false) for (const f of cfg.fields) if (f.required && (p.values[f.key] == null || p.values[f.key] === '')) {
