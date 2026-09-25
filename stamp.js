@@ -6,6 +6,9 @@
 //   s.src = 'assistant.js'  (in .js files) → 'assistant.js?v=<commit>'
 // A new version is a new address, so every browser fetches the new file.
 // It also writes version.json, which open pages check to offer "Refresh".
+// Last, it removes the files that are for building RoadCoda, not for running it
+// (database scripts, install notes, server code), so the website doesn't hand
+// them out. Only on Render: run on a computer, it would delete your own copies.
 const fs = require('fs'), path = require('path');
 const root = path.resolve(__dirname, '..');
 const v = (process.env.RENDER_GIT_COMMIT || '').slice(0, 12) || Date.now().toString(36);
@@ -26,3 +29,19 @@ for (const f of fs.readdirSync(root)) {
 }
 fs.writeFileSync(path.join(root, 'version.json'), JSON.stringify({ version: v, built_at: new Date().toISOString() }) + '\n');
 console.log(`RoadCoda version ${v}: ${links} links stamped on ${pages} pages; version.json written.`);
+
+// ---- keep build files off the website (Render's copy only; GitHub keeps them) ----
+if (process.env.RENDER || process.env.RENDER_GIT_COMMIT || process.env.RENDER_SERVICE_ID) {
+  const dropExt = /\.(sql|md|py)$/i;                                 // database scripts, install notes, seed generator
+  const dropDirs = ['functions', 'sftp-worker', 'tools', 'build'];   // server code and this script
+  let gone = 0;
+  for (const f of fs.readdirSync(root)) {
+    const p = path.join(root, f);
+    if (fs.statSync(p).isFile() && dropExt.test(f)) { fs.rmSync(p); gone++; }
+  }
+  for (const d of dropDirs) {
+    const p = path.join(root, d);
+    if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); gone++; }
+  }
+  console.log(`RoadCoda: ${gone} build files and folders kept off the website.`);
+}
