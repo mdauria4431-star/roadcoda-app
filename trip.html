@@ -437,15 +437,16 @@ function swapHtml({ drvList, trkList, trlList }) {
   const pending = l.stops.filter(s => !['delivered', 'exception'].includes(s.status));
   const opts = (list, cur, blank, mark) => (blank != null ? `<option value="">${blank}</option>` : '') +
     list.map(x => `<option value="${x.id}"${x.id === cur ? ' selected' : ''}>${esc(x.label)}${x.id === cur && mark ? ' (on it now)' : ''}${esc(downTag(x.id))}</option>`).join('');
-  const stopOpts = l.stops.map(s => `<option value="${s.id}"${s.id === pending[0]?.id ? ' selected' : ''}>Stop ${s.seq} — ${esc(s.consignee)}${['delivered', 'exception'].includes(s.status) ? ' (done)' : ''}</option>`).join('')
-    + `<option value=""${pending.length ? '' : ' selected'}>After the last stop (on the way back)</option>`;
+  // Only stops still to run: a breakdown on the road between stop 1 and stop 2 means the new crew's first stop is 2
+  const stopOpts = pending.map((s, i) => `<option value="${s.id}"${i === 0 ? ' selected' : ''}>Stop ${s.seq} — ${esc(s.consignee)}${i === 0 ? ' (next stop)' : ''}</option>`).join('')
+    + `<option value=""${pending.length ? '' : ' selected'}>No more stops (on the way back)</option>`;
   return `<div class="card" id="swap-card">
     <header><h2>Swap tractor, trailer or driver</h2><span class="sp"></span><button class="btn small" id="swap-cancel">Cancel</button></header>
     <div class="facts" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
       <div class="f"><b>Why</b><select id="sw-reason"><option value="breakdown">Breakdown</option><option value="accident">Accident</option><option value="hours">Driver out of hours</option><option value="other">Other</option></select></div>
       <div class="f"><b>When</b><input type="datetime-local" id="sw-at" value="${toLocal(new Date().toISOString())}"></div>
-      <div class="f"><b>Where</b><input id="sw-place" placeholder="e.g. I-84 exit 27, or the stop"></div>
-      <div class="f"><b>New crew starts at</b><select id="sw-stop">${stopOpts}</select></div>
+      <div class="f"><b>Where</b><input id="sw-place" placeholder="e.g. I-84 exit 27, mile 212"></div>
+      <div class="f"><b>New crew's first stop</b><select id="sw-stop">${stopOpts}</select></div>
       <div class="f"><b>Tractor / truck</b><select id="sw-truck">${opts(trkList, l.truck_id, '— none —', true)}<option value="+rental">+ Add a rental / borrowed unit…</option></select></div>
       <div class="f"><b>Trailer</b><select id="sw-trailer">${opts(trlList, l.trailer_id, l.bobtail ? '— bobtail —' : '— none —', true)}</select></div>
       <div class="f"><b>Second trailer</b><select id="sw-trailer2">${opts(trlList, l.trailer2_id, '— none —', true)}</select></div>
@@ -476,7 +477,7 @@ function swapHtml({ drvList, trkList, trlList }) {
       <span class="sp" style="flex:1"></span>
       <button class="btn primary" id="sw-save">Save the swap</button>
     </div>
-    <div class="mini" style="padding:0 16px 12px">Both crews stay on the load. Each driver is paid for their own part, the tolls and miles follow each tractor, and the customer's invoice doesn't change. Odometers can be added later from the trip sheet.</div>
+    <div class="mini" style="padding:0 16px 12px"><b>Broke down on the road?</b> Put the spot in Where and the time in When; the new crew's first stop is the next one they'll deliver. The miles up to the swap time go to the unit that came off, the rest to the new one. Both crews stay on the load. Each driver is paid for their own part, the tolls and miles follow each tractor, and the customer's invoice doesn't change. Odometers can be added later from the trip sheet.</div>
   </div>`;
 }
 
@@ -485,7 +486,9 @@ function legsHtml(edit) {
   const dis = edit ? '' : ' disabled';
   const rows = g.map(x => {
     const fs = T.l.stops.find(s => s.id === x.first_stop_id);
-    const from = x.leg_no === 1 ? 'Start of the trip' : fs ? `Stop ${fs.seq} — ${esc(fs.consignee)}` : 'After the last stop';
+    const from = x.leg_no === 1 ? 'Start of the trip'
+      : (x.swap_place ? `${esc(x.swap_place)}<div class="mini">first stop: ${fs ? `${fs.seq} — ${esc(fs.consignee)}` : 'none (on the way back)'}</div>`
+      : fs ? `Stop ${fs.seq} — ${esc(fs.consignee)}` : 'After the last stop');
     const sh = (T.shares || []).find(s => s.leg_id === x.leg_id);
     const src = sh?.miles_source, mi = sh?.miles;
     const miles = src === 'odometer' || src === 'eld' ? `${Math.round(mi)} <span class="dim">${src === 'eld' ? 'ELD' : 'odometer'}</span>`
@@ -498,7 +501,7 @@ function legsHtml(edit) {
       <td class="n">${x.truck_id ? esc(unitNo(x.truck_id)) : x.sub_unit ? esc(x.sub_unit) + ' <span class="dim">(theirs)</span>' : '—'}${T.down && T.down[x.truck_id] ? ' <span class="chip bad" title="' + esc(T.down[x.truck_id].down_reason || '') + '">down</span>' : ''}</td>
       <td class="n">${esc(trl)}</td>
       <td>${esc(drvName(x.driver_id))}${x.driver2_id ? ` <span class="dim">+ ${esc(drvName(x.driver2_id))}</span>` : ''}${x.sub_company ? `<div class="mini">Sub: ${esc(x.sub_company)}${x.sub_cost != null ? ' · $' + Number(x.sub_cost).toFixed(2) : ''} · not on payroll</div>` : ''}</td>
-      <td>${x.swap_reason ? esc(REASON[x.swap_reason] || x.swap_reason) : ''}${x.swap_place ? `<div class="mini">${esc(x.swap_place)}</div>` : ''}${x.swap_note ? `<div class="mini">${esc(x.swap_note)}</div>` : ''}</td>
+      <td>${x.swap_reason ? esc(REASON[x.swap_reason] || x.swap_reason) : ''}${x.swap_note ? `<div class="mini">${esc(x.swap_note)}</div>` : ''}</td>
       <td style="white-space:nowrap"><input class="ed n" style="width:84px;max-width:84px" data-leg="${x.leg_id}" data-odo="start" inputmode="decimal" value="${x.start_odometer ?? ''}" placeholder="start"${dis}> → <input class="ed n" style="width:84px;max-width:84px" data-leg="${x.leg_id}" data-odo="end" inputmode="decimal" value="${x.end_odometer ?? ''}" placeholder="end"${dis}></td>
       <td class="n">${miles}</td>
       <td class="n">${sh ? Math.round(sh.share * 100) + '%' : ''}</td></tr>`;
