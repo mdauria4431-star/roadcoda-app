@@ -28,6 +28,7 @@
   .card > header h2{margin:0;font-size:11px}
   .pad{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .chk{flex-direction:row!important;align-items:flex-start;gap:10px;font-weight:400;margin-bottom:8px} .chk input{width:18px;height:18px;margin-top:2px;flex:none}
   @media (max-width:640px){.two{grid-template-columns:1fr}}
   h1{margin:0;font-size:19px}
   .mini{font-size:12px;color:var(--ink-3);font-weight:400}
@@ -121,7 +122,23 @@
     </div>
 
     <div class="card">
-      <header><h2>6 · Your data</h2></header>
+      <header><h2>6 · How trips are checked and billed</h2></header>
+      <div class="pad">
+        <label class="chk"><input id="f-require_closeout" type="checkbox"> <span><b>Close out every trip before it's invoiced or paid</b> <span class="mini">(recommended). Dispatch verifies each delivered trip and billing approves it; until then it isn't invoiced and the driver isn't paid for it. That's how missing PODs, odd miles and unbilled detention get caught.</span></span></label>
+        <label class="chk"><input id="f-require_trip_sheet" type="checkbox"> <span><b>Every trip needs its trip sheet</b> <span class="mini">— close-out flags any trip without a photo of the paper trip sheet. Off: only drivers set to paper trip sheets are asked.</span></span></label>
+        <label class="chk"><input id="f-require_seal" type="checkbox"> <span><b>Every load needs a seal number</b> <span class="mini">— close-out flags a delivery with no seal number (for sealed freight). Off for everyone unless a customer asks for it.</span></span></label>
+        <div class="two" style="margin-top:6px">
+          <label>Free time at the plant (minutes) <span class="mini">before detention starts, where loads are picked up</span><input id="f-free_time_plant_min" type="number" min="0" max="1440" step="5" placeholder="120"></label>
+          <label>Free time at each stop (minutes) <span class="mini">before detention starts at a delivery</span><input id="f-free_time_stop_min" type="number" min="0" max="1440" step="5" placeholder="60"></label>
+          <label>Arrival circle around a stop (meters) <span class="mini">a truck inside it counts as at the stop, for GPS times; 200 m ≈ 650 ft</span><input id="f-geofence_radius_m" type="number" min="50" max="2000" step="10" placeholder="200"></label>
+          <label>Trailer axles when the trailer isn't recorded <span class="mini">used for the toll class check</span><input id="f-default_trailer_axles" type="number" min="1" max="5" step="1" placeholder="2"></label>
+        </div>
+        <div class="mini">Each customer can have its own free time on Customers › Delays &amp; free time; a stop's own arrival circle is on the stop.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>7 · Your data</h2></header>
       <div class="pad">
         <div class="mini">Everything your company has in RoadCoda — loads and stops, customers and delivery points, drivers, trucks, rates, invoices, driver pay, safety and compliance records, messages — in one file you can keep or hand to another system. Photographs and uploaded documents stay where they are; the file lists each one so they can be fetched.</div>
         <div id="export-counts" class="mini"></div>
@@ -142,6 +159,9 @@ if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
 const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// 120: rules for close-out, detention, GPS and tolls (these had no page before)
+const BOOLS = ['require_closeout', 'require_trip_sheet', 'require_seal'];
+const NUMS = { free_time_plant_min: [0, 1440, 120], free_time_stop_min: [0, 1440, 60], geofence_radius_m: [50, 2000, 200], default_trailer_axles: [1, 5, 2] };
 const FIELDS = ['name', 'remit_name', 'office_address', 'yard_address', 'time_zone', 'office_phone', 'remit_email', 'remit_address', 'terms_days', 'brand_color', 'hos_cycle'];
 let me = null, carrier = null, canEdit = false;
 
@@ -162,7 +182,7 @@ async function start() {
   if (!canEdit) {
     $('readonly').hidden = false;
     $('readonly').innerHTML = '<b>View only.</b> Ask the owner to change these.';
-    FIELDS.forEach(f => $('f-' + f).disabled = true);
+    FIELDS.forEach(f => $('f-' + f).disabled = true); BOOLS.concat(Object.keys(NUMS)).forEach(f => $('f-' + f).disabled = true);
     $('f-logo').disabled = true; $('save').disabled = true;
   }
 }
@@ -171,6 +191,8 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 
 function fill() {
   FIELDS.forEach(f => { const el = $('f-' + f); if (el) el.value = carrier[f] ?? ''; });
+  BOOLS.forEach(f => { const el = $('f-' + f); if (el) { el.checked = !!carrier[f]; el.closest('label').hidden = !(f in carrier); } });
+  Object.keys(NUMS).forEach(f => { const el = $('f-' + f); if (el) { el.value = carrier[f] ?? ''; el.closest('label').hidden = !(f in carrier); } });
   if (!carrier.time_zone) $('f-time_zone').value = 'America/New_York';
   if (!carrier.brand_color) $('f-brand_color').value = '#0f5e63';
   if (carrier.terms_days == null) $('f-terms_days').value = 30;
@@ -197,6 +219,15 @@ $('save').onclick = async () => {
     const v = $('f-' + f).value;
     upd[f] = f === 'terms_days' ? (v === '' ? 30 : parseInt(v, 10)) : (String(v).trim() || null);
   });
+  BOOLS.forEach(f => { if (f in carrier) upd[f] = $('f-' + f).checked; });
+  for (const [f, [lo, hi, def]] of Object.entries(NUMS)) {
+    if (!(f in carrier)) continue;
+    const raw = $('f-' + f).value, n = raw === '' ? def : Math.round(Number(raw));
+    if (!Number.isFinite(n) || n < lo || n > hi) { $('msg').innerHTML = `<span class="error">${esc($('f-' + f).closest('label').firstChild.textContent.trim())}: use ${lo} to ${hi}.</span>`; $('f-' + f).focus(); return; }
+    upd[f] = n;
+  }
+  if (carrier.require_closeout && upd.require_closeout === false &&
+      !confirm('Turn off close-out?\n\nDelivered loads will go straight to invoicing and pay, without dispatch verifying them or billing approving them. Missing PODs, odd miles and unbilled detention won\'t be caught first.')) { $('f-require_closeout').checked = true; return; }
   if (!upd.name) { $('msg').innerHTML = '<span class="error">Your company name is needed — it goes on every invoice.</span>'; $('f-name').focus(); return; }
   $('msg').textContent = 'Saving…';
   const { data, error } = await sb.from('carriers').update(upd).eq('id', me.carrier_id).select('*');

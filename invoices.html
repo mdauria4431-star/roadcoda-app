@@ -186,7 +186,8 @@ async function start() {
   me = p; carrier = p.carriers || {};
   $('who').textContent = `${p.full_name || session.user.email} · ${carrier.name || ''} · ${p.role}`;
   $('signout').hidden = false; $('login-view').hidden = true; $('app').hidden = false;
-  const { data: cs } = await sb.from('customers').select('id, name, week_start_dow, bill_start_time, bill_basis, next_cpi_date, cpi_notice_days, master_bill').order('name');
+  let { data: cs, error: ce } = await sb.from('customers').select('id, name, week_start_dow, bill_start_time, bill_basis, next_cpi_date, cpi_notice_days, master_bill, parent_customer_id, invoice_to').order('name');
+  if (ce) ({ data: cs } = await sb.from('customers').select('id, name, week_start_dow, bill_start_time, bill_basis, next_cpi_date, cpi_notice_days, master_bill').order('name'));   // before 120
   customers = cs || [];
   $('n-cust').innerHTML = customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   fillWindow();
@@ -229,6 +230,11 @@ async function fillWindow() {
   const start = String(c.bill_start_time || '00:00').slice(0, 5), endT = shiftLocal('2000-01-01T' + start, -1).slice(11);
   $('n-rule').innerHTML = `Default for ${esc(c.name)}: loads <b>${BASIS[c.bill_basis] || 'by service date'}</b> from <b>${DOW[c.week_start_dow ?? 0]} ${hm(start)}</b> through
     <b>${DOW[((c.week_start_dow ?? 0) + (start === '00:00' ? 6 : 7)) % 7]} ${hm(endT)}</b>${start === '00:00' ? '' : ' the next week'}. Filled in with the last finished window; change it here for this invoice only.`;
+  // 120: DCs billed on their main customer's invoices
+  const par = customers.find(p => p.id === c.parent_customer_id), billedHere = customers.filter(k => k.parent_customer_id === c.id && k.invoice_to === 'parent');
+  if (par && c.invoice_to === 'parent') $('n-rule').innerHTML += `<br><span class="error"><b>${esc(c.name)} is invoiced on ${esc(par.name)}'s invoices.</b> Pick ${esc(par.name)} to bill its loads (or change "Invoices go to" on Customers).</span>`;
+  if (billedHere.length) $('n-rule').innerHTML += `<br>Includes the loads of ${billedHere.map(k => `<b>${esc(k.name)}</b>`).join(', ')}, invoiced here.`;
+  $('n-find').disabled = !!(par && c.invoice_to === 'parent');
   $('n-result').innerHTML = '';
 }
 $('n-cust').onchange = fillWindow;
@@ -390,7 +396,10 @@ async function showInvoice(id) {
     rows += `<tr class="subt"><td colspan="4" class="num">${SECTION_TITLE[sec]}</td><td class="num mono">${usd(sub)}</td><td></td></tr>`;
   }
   const bd = inv.breakdown || [];
-  const bdRows = bd.map(l => `<tr><td class="mono">${dt(l.date)}</td><td class="mono">${esc(l.load_no)}</td><td>${esc(l.driver || '')}</td><td>${esc(l.truck || '')}</td>
+  // 120: a main customer's invoice with its DCs' loads: a heading per account
+  const accts = [...new Set(bd.map(l => l.account).filter(Boolean))], byAcct = accts.length > 1;
+  let lastAcct = null;
+  const bdRows = bd.map(l => (byAcct && l.account !== lastAcct ? ((lastAcct = l.account), `<tr class="subt"><td colspan="6"><b>${esc(l.account)}</b> · ${bd.filter(x => x.account === l.account).length} load${bd.filter(x => x.account === l.account).length === 1 ? '' : 's'}</td></tr>`) : '') + `<tr><td class="mono">${dt(l.date)}</td><td class="mono">${esc(l.load_no)}</td><td>${esc(l.driver || '')}</td><td>${esc(l.truck || '')}</td>
       <td class="num mono">${Math.round(Number(l.miles || 0))}</td>
       <td>${(l.stops || []).map(s => `${s.type === 'pickup' ? '<b>Pickup</b>' : 'Stop ' + s.seq} · ${esc(s.consignee)}${s.code ? ' #' + esc(s.code) : ''}${s.leg_miles != null ? ` (${Number(s.leg_miles).toFixed(1)} mi)` : ''}: ${(s.items || []).map(i => i.delivered != null && i.delivered !== i.ordered ? `${i.delivered} of ${i.ordered} ${esc(i.unit)}` : `${i.ordered} ${esc(i.unit)}`).join(', ')}${s.issue ? ` <span class="pill st-issue">${esc(ISSUE_PDF[s.issue] || 'Issue')}</span>${s.note ? ' ' + esc(s.note) : ''}` : ''}`).join('<br>')}</td></tr>`).join('');
 
@@ -789,7 +798,7 @@ function buildInvoicePdf(jsPDF, inv) {
     return lines.length;
   };
   const n1 = block('BILL TO', inv.customer?.name, inv.customer?.bill_address, M);
-  const n2 = block('REMIT PAYMENT TO', C.remit_name || C.name, C.remit_address, W / 2 + 10);
+  const n2 = block('REMIT PAYMENT TO', C.remit_name || C.name, C.remit_address || C.office_address, W / 2 + 10);
   y += 38 + Math.max(n1, n2) * 11.5;
 
   // ----- Charges, by section: Description | Value | Basis | Volume | Weekly Charges -----
@@ -839,7 +848,14 @@ function buildInvoicePdf(jsPDF, inv) {
   const tot = bd.reduce((a, l) => ({ loads: a.loads + 1, miles: a.miles + Number(l.miles || 0), stops: a.stops + (l.stops || []).length }), { loads: 0, miles: 0, stops: 0 });
   doc.text(`${tot.loads} loads - ${Math.round(tot.miles).toLocaleString('en-US')} miles - ${tot.stops} stops`, M, 78);
   const rows = [];
+  const pdfAccts = [...new Set(bd.map(l => l.account).filter(Boolean))];   // 120: a heading per account on a main customer's invoice
+  let pdfLast = null;
   for (const l of bd) {
+    if (pdfAccts.length > 1 && l.account !== pdfLast) {
+      pdfLast = l.account;
+      const n = bd.filter(x => x.account === l.account).length;
+      rows.push([{ content: `${l.account} - ${n} load${n === 1 ? '' : 's'}`, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [238, 240, 246] } }]);
+    }
     rows.push([{ content: `${d(l.date)}  Load ${l.load_no}`, styles: { fontStyle: 'bold' } }, l.driver || '', l.truck || '',
       { content: Math.round(Number(l.miles || 0)).toLocaleString('en-US'), styles: { halign: 'right' } },
       { content: String((l.stops || []).length), styles: { halign: 'right' } }]);

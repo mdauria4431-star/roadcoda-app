@@ -105,6 +105,7 @@
       <div class="row">
         <label for="cust" style="flex:1 1 260px">Customer (bill to)<select id="cust"></select></label>
         <label for="parent" style="flex:0 1 240px">Part of<select id="parent"></select></label>
+        <label for="inv-to" style="flex:0 1 260px" hidden>Invoices go to<select id="inv-to"><option value="self">This account (its own invoices)</option><option value="parent">The main customer's invoices</option></select></label>
         <button class="btn" id="nc-btn" type="button">+ New customer</button>
         <button class="btn" id="cu-up-btn" type="button" title="The companies you bill">Upload bill-to customers</button>
         <button class="btn" id="st-up-btn" type="button" title="Their stores, DCs and yards — one file can cover several customers">Upload stops</button>
@@ -318,7 +319,10 @@ $('signout').onclick = async () => { await sb.auth.signOut(); location.reload();
 
 // ---------- Bill-to customers ----------
 async function loadCustList() {
-  let { data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min, notes').order('name');
+  let { data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min, notes, invoice_to').order('name');
+  if (error && /invoice_to/.test(error.message)) {   // before 120_dc_billing.sql
+    ({ data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min, notes').order('name'));
+  }
   if (error && /notes/.test(error.message)) {   // before 117_upload_fixes.sql
     ({ data, error } = await sb.from('customers').select('id, name, parent_customer_id, customer_code, contact_name, contact_phone, contact_email, bill_address, master_bill, miles_basis, start_name, week_start_dow, bill_start_time, bill_basis, free_time_plant_min, free_time_stop_min').order('name'));
   }
@@ -352,8 +356,12 @@ function pickCustomer() {
       .map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
     $('parent').value = c.parent_customer_id || '';
     $('parent').disabled = kids.length > 0;
+    // 120: a DC's invoices go to it, or onto its main customer's invoices
+    $('inv-to').closest('label').hidden = !c.parent_customer_id || !('invoice_to' in c);
+    if (par) { $('inv-to').options[1].textContent = `${par.name}'s invoices`; $('inv-to').value = c.invoice_to === 'parent' ? 'parent' : 'self'; }
+    $('inv-to').disabled = !(!window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit'));
     $('parent').title = kids.length ? 'This customer has accounts under it' : 'Put this account under a main customer (e.g. a DC under Whole Foods)';
-    const extra = par ? `Account under <a href="#" data-go="${par.id}">${esc(par.name)}</a>; anything not set here uses the settings on ${esc(par.name)}`
+    const extra = par ? `Account under <a href="#" data-go="${par.id}">${esc(par.name)}</a>; anything not set here uses the settings on ${esc(par.name)}${c.invoice_to === 'parent' ? `. Its loads are invoiced on ${esc(par.name)}'s invoices` : ''}`
       : kids.length ? `Accounts under it: ${kids.map(k => `<a href="#" data-go="${k.id}">${esc(k.name)}</a>`).join(', ')}` : '';
     if (extra) $('cust-info').innerHTML += (($('cust-info').innerHTML ? '<br>' : '') + extra);
     loadDl(); loadAct(); loadDelays(); loadPortalTabs(); loadSignRules(); loadTolerances();
@@ -371,6 +379,18 @@ $('parent').onchange = async () => {
   if (error) { flash(error.message); $('parent').value = c.parent_customer_id || ''; return; }
   await loadCustList(); $('cust').value = c.id; pickCustomer();
   flash($('parent').value ? `${c.name} is now an account under ${customers.find(p => p.id === $('parent').value)?.name}.` : `${c.name} is now a main customer.`);
+};
+$('inv-to').onchange = async () => {
+  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
+  const par = customers.find(p => p.id === c.parent_customer_id), v = $('inv-to').value;
+  const ask = v === 'parent'
+    ? `Invoice ${c.name}'s loads on ${par?.name || 'the main customer'}'s invoices?\n\nFrom now on its delivered loads go on ${par?.name}'s weekly or per-load invoices, with ${par?.name}'s terms and PO. They're still priced on ${c.name}'s own rate sheet (or ${par?.name}'s, if it has none).`
+    : `Give ${c.name} its own invoices again?\n\nFrom now on its delivered loads are invoiced to ${c.name}, with its own terms and PO.`;
+  if (!confirm(ask)) { $('inv-to').value = c.invoice_to === 'parent' ? 'parent' : 'self'; return; }
+  const { error } = await sb.from('customers').update({ invoice_to: v === 'parent' ? 'parent' : null }).eq('id', c.id);
+  if (error) { flash(error.message); $('inv-to').value = c.invoice_to === 'parent' ? 'parent' : 'self'; return; }
+  await loadCustList(); $('cust').value = c.id; pickCustomer();
+  flash(v === 'parent' ? `${c.name}'s loads now go on ${par?.name}'s invoices.` : `${c.name} has its own invoices again.`);
 };
 $('cust').onchange = () => { dlFilter = 'all'; $('dl-edit').open = false; pickCustomer(); };
 $('cust-note-save').onclick = async () => {
