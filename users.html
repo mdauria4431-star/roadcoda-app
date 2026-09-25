@@ -363,6 +363,7 @@ const U_ROLES = { owner: 'owner', dispatch: 'dispatcher', billing: 'billing', 'a
 let uSeen = null;
 $('up-btn').onclick = () => RCUpload.open({
   title: 'Invite office staff',
+  report: { kind: 'office_staff', key: (v, c) => v.email || c('email') },
   template: 'templates/RoadCoda-template-Office-staff.xlsx',
   blocked: /ssn|social|soc\.? ?sec|tax ?id|\btin\b|routing|\baba\b|bank|account ?(#|no|num)|acct|direct ?dep|salary|wage|hourly|rate|pay/i,
   fields: [

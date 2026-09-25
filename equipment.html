@@ -561,6 +561,7 @@ const pick = (list, v) => { const s = String(v || '').trim(); if (!s) return nul
 let upSeen = null;
 $('up-btn').onclick = () => RCUpload.open({
   title: 'Upload trucks and trailers',
+  report: { kind: 'equipment', key: (v, c) => v.unit_no || c('unit_no') },
   template: 'templates/RoadCoda-template-Trucks-and-trailers.xlsx',
   fields: [
     { key: 'unit_no', label: 'Unit #', re: /^unit|unit ?(#|no|num)|^#$/i, required: true },

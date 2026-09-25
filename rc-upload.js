@@ -12,6 +12,8 @@
 //   describe(values) → short text for the preview row
 //   save(rows) → Promise<{ added, updated, failed: [{ row, message }] }>   rows = [{ values, existing }]
 //   confirmText(nAdd, nUpd) → optional question asked before saving (e.g. sending invitations)
+//   report     { kind, key(values, cell), scope(values, opts) } — record what couldn't be finished for the
+//              Setup › What we found report (116). Only the columns matched to fields are sent, never refused ones.
 (function () {
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const css = `
@@ -50,6 +52,7 @@
     st.opts = Object.fromEntries((cfg.options || []).map(o => [o.key, o.value || '']));
     if (cfg.file) setTimeout(() => loadFile(cfg.file), 0);                          // opened with a file already chosen
     async function loadFile(f) {
+      st.fileName = f.name;
       q('[data-body]').innerHTML = '<div class="mini">Reading the file…</div>';
       try {
         if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Check your connection and refresh.');
@@ -64,7 +67,7 @@
     }
 
     function loadSheet(i) {
-      const ws = st.wb.Sheets[st.wb.SheetNames[i]]; st.opts.__sheet = st.wb.SheetNames[i];
+      const ws = st.wb.Sheets[st.wb.SheetNames[i]]; st.opts.__sheet = st.wb.SheetNames[i]; st.recorded = false;
       st.rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' })
         .map(r => r.map(c => c == null ? '' : c));
       st.rows = pasted(st.rows);
@@ -141,9 +144,9 @@
         if (!r.some(c => String(c).trim() !== '')) return;                        // blank row
         if (r.filter(c => String(c).trim() !== '').length === 1 && cfg.fields.filter(f => st.map[f.key] != null).length > 2) { skipped++; return; }  // "=== TRACTORS ===", a note line
         if (/^(grand\s+)?totals?\b/i.test(String(r.find(c => String(c).trim() !== '') || '').trim())) { skipped++; return; }   // "Total active accounts: 8"
-        if (st.leave.has(line)) { out.push({ line, left: true, values: {}, errors: [], warnings: [] }); return; }   // the user left it out
         const ed = st.edits[line] || {};                                           // corrections typed in here win over the file
         const get = (k) => (k in ed) ? ed[k] : (st.map[k] != null ? r[st.map[k]] : '');
+        if (st.leave.has(line)) { out.push({ line, left: true, values: {}, errors: [], warnings: [], cell: get }); return; }   // the user left it out
         const p = cfg.parse(get, r, prev, st.opts) || { values: {}, errors: [], warnings: [] };
         p.raw = r; p.cell = (k) => (k in ed) ? ed[k] : (st.map[k] != null ? r[st.map[k]] : '');
         if (Object.keys(ed).length) p.warnings = [`Corrected here: ${Object.keys(ed).map(k => (cfg.fields.find(f => f.key === k) || {}).label || k).join(', ')}`, ...(p.warnings || [])];
@@ -220,7 +223,8 @@
             <td>${r.left ? '' : esc(cfg.describe(r.values))}</td>
             <td>${r.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}${(r.shown || []).map(w => `<div class="warn">${esc(w)}</div>`).join('')}</td></tr>${st.open === r.line && !r.left ? editor(r) : ''}`).join('') || '<tr><td colspan="5" class="mini">No rows under the header.</td></tr>'}
         </tbody></table></div>
-        <div class="rowx"><button class="btn primary" data-go ${ok.length ? '' : 'disabled'}>${ok.length ? `Add ${add.length} and update ${upd.length}` : 'Nothing to save yet'}</button><span data-msg></span></div>`;
+        <div class="rowx"><button class="btn primary" data-go ${ok.length ? '' : 'disabled'}>${ok.length ? `Add ${add.length} and update ${upd.length}` : 'Nothing to save yet'}</button>${cfg.report && !ok.length && (bad.length || gone.length) && !st.recorded ? `<button class="btn" data-report title="Puts the rows still needing fixes and the rows left out on Setup › What we found, to send to the customer.">Close and put ${bad.length + gone.length} row${bad.length + gone.length === 1 ? '' : 's'} on the setup report</button>` : ''}<span data-msg></span></div>
+        ${cfg.report && (bad.length || gone.length) ? `<div class="mini">Rows still needing fixes and rows left out go on <b>Setup › What we found</b> when you save, so the customer can answer them.</div>` : ''}`;
       back.querySelectorAll('[data-opt]').forEach(s => s.onchange = () => { st.opts[s.dataset.opt] = s.value; draw(); });
       back.querySelectorAll('[data-setopt]').forEach(b => b.onclick = () => { const [k, v] = b.dataset.setopt.split('='); st.opts[k] = v; st.opts['asked_' + k] = '1'; draw(); });
       back.querySelectorAll('[data-map]').forEach(s => s.onchange = () => { const k = s.dataset.map; if (s.value === '') delete st.map[k]; else st.map[k] = +s.value; draw(); });
@@ -241,13 +245,56 @@
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); back.querySelector('[data-cancel]').click(); }
       });
       back.querySelectorAll('[data-leave]').forEach(c => c.onchange = () => { const n = +c.dataset.leave; if (c.checked) st.leave.add(n); else st.leave.delete(n); const y = q('.scroll').scrollTop; draw(); q('.scroll').scrollTop = y; });
+      // ---- Setup › What we found (116): what couldn't be finished, and what was saved ----
+      const client = cfg.report && (cfg.report.client || (typeof sb !== 'undefined' ? sb : null));
+      const errText = (r) => (r.errors || []).join(' ').toLowerCase();
+      const problemKeys = (r) => cfg.fields.filter(f => {
+        const e = errText(r), l = f.label.toLowerCase();
+        return e.includes(l) || l.split(/[^a-z#]+/).some(w => w.length >= 4 && !['code', 'name', 'date', 'type'].includes(w) && e.includes(w));
+      }).map(f => f.key);
+      const cellsOf = (r) => { const o = {}; if (!r.cell) return o;
+        for (const f of cfg.fields) { if (st.map[f.key] == null && !((st.edits[r.line] || {})[f.key] !== undefined)) continue; const v = txt(r.cell(f.key)); if (v !== '') o[f.key] = v; }
+        return o; };
+      const firstReq = cfg.fields.find(f => f.required) || cfg.fields[0];
+      const keyOf = (r) => { let k = ''; try { k = txt((cfg.report.key ? cfg.report.key(r.values || {}, r.cell || (() => '')) : '') || (r.cell ? r.cell(firstReq.key) : '')); } catch (e) { k = ''; }
+        return k || `${st.fileName || ''} · ${st.opts.__sheet || ''} · row ${r.line}`; };   // no name or number: the same row of the same file
+      const scopeOf = (r) => { try { return cfg.report.scope ? txt(cfg.report.scope(r.values || {}, st.opts) || '') : ''; } catch (e) { return ''; } };
+      const labelOf = (r) => { let d = ''; try { d = r.values && Object.keys(r.values).length ? cfg.describe(r.values) : ''; } catch (e) { d = ''; }
+        return d || Object.values(cellsOf(r)).slice(0, 4).join(' · '); };
+      async function record(savedRows, res) {
+        if (!client || st.recorded) return '';
+        const failedLines = new Set(((res && res.failed) || []).map(f => f.line));
+        const rowsOut = [];
+        for (const r of bad) rowsOut.push({ status: 'needs_fix', line: r.line, key: keyOf(r), scope: scopeOf(r), label: labelOf(r),
+          messages: [...r.errors, ...(r.shown || []).filter(w => !/^Corrected here/.test(w))], cells: cellsOf(r), problems: problemKeys(r) });
+        for (const r of gone) rowsOut.push({ status: 'left_out', line: r.line, key: keyOf(r), scope: scopeOf(r), label: labelOf(r),
+          messages: ['Left out when the data was loaded'], cells: cellsOf(r), problems: [] });
+        for (const f of ((res && res.failed) || [])) { const r = rows.find(x => x.line === f.line); if (r) rowsOut.push({ status: 'needs_fix', line: r.line, key: keyOf(r), scope: scopeOf(r),
+          label: labelOf(r), messages: [f.message], cells: cellsOf(r), problems: [] }); }
+        for (const r of savedRows) { if (failedLines.has(r.line)) continue; const w = (r.shown || []).concat((r.warnings || []).filter(x => /^Corrected here/.test(x)));
+          if (w.length) rowsOut.push({ status: 'noted', line: r.line, key: keyOf(r), scope: scopeOf(r), label: labelOf(r), messages: w, cells: {}, problems: [] }); }
+        const saved = savedRows.filter(r => !failedLines.has(r.line)).map(r => ({ key: keyOf(r), scope: scopeOf(r) }));
+        const { error } = await client.rpc('setup_record_upload', { p: {
+          kind: cfg.report.kind, title: cfg.title, file_name: st.fileName || '', sheet: st.opts.__sheet || '',
+          added: res ? res.added : 0, updated: res ? res.updated : 0, skipped,
+          fields: cfg.fields.map(f => ({ key: f.key, label: f.label, re: f.re.source, flags: f.re.flags, required: !!f.required })),
+          done_for_you: summary, rows: rowsOut, saved } });
+        if (error) return /setup_record_upload|schema cache/.test(error.message) ? '' : ` <span class="err">Not added to the setup report: ${esc(error.message)}</span>`;
+        st.recorded = true;
+        const n = rowsOut.filter(x => x.status !== 'noted').length;
+        return n ? ` <span class="mini">${n} row${n === 1 ? '' : 's'} added to <a href="setup-report.html">What we found</a>.</span>` : '';
+      }
+      const rq = q('[data-report]');
+      if (rq) rq.onclick = async () => { rq.disabled = true; const m = await record([], null); if (st.recorded) close(); else { q('[data-msg]').innerHTML = m || '<span class="err">Could not add them to the setup report.</span>'; rq.disabled = false; } };
       q('[data-go]').onclick = async () => {
         if (cfg.confirmText) { const t = cfg.confirmText(add.length, upd.length); if (t && !confirm(t)) return; }
         q('[data-go]').disabled = true; q('[data-msg]').innerHTML = '<span class="mini">Saving…</span>';
         try {
           const res = await cfg.save(ok.map(r => ({ values: r.values, existing: r.existing, line: r.line })));
-          q('[data-msg]').innerHTML = `<span class="ok">${res.added} added, ${res.updated} updated.</span>` +
+          let rep = ''; try { rep = await record(ok, res); } catch (e) { rep = ''; }
+          q('[data-msg]').innerHTML = `<span class="ok">${res.added} added, ${res.updated} updated.</span>` + rep +
             (res.failed && res.failed.length ? `<div class="err">${res.failed.map(f => `Row ${f.line}: ${esc(f.message)}`).join('<br>')}</div>` : '');
+          if (rq) rq.hidden = true;
           if (cfg.after) cfg.after();
         } catch (err) { q('[data-msg]').innerHTML = `<span class="err">${esc(err.message || err)}</span>`; q('[data-go]').disabled = false; }
       };

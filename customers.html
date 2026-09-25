@@ -996,6 +996,7 @@ const CU_DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
 let cuSeen = null, cuTop = null;
 $('cu-up-btn').onclick = () => RCUpload.open({
   title: 'Upload customers (bill-to)',
+  report: { kind: 'customers', key: (v, c) => v.name || c('name') },
   template: 'templates/RoadCoda-template-Customers.xlsx',
   fields: [
     { key: 'name', label: 'Customer Name', re: /customer ?name|^customer$|company|bill ?to ?name|^name$/i, required: true },
@@ -1121,6 +1122,7 @@ async function openStopUpload(file) {
   stLocs = data || [];
   RCUpload.open({
     title: 'Upload stops',
+    report: { kind: 'stops', key: (v, c) => v.name || c('name'), scope: (v) => v._cust || (customers.find(x => x.id === v.customer_id) || {}).name || '' },
     file,
     template: 'templates/RoadCoda-template-Stop-locations.xlsx',
     options: [{ key: 'pad', label: 'Store numbers', value: '', choices: [['', 'As in the file'], ['3', 'Pad to 3 digits (007)'], ['4', 'Pad to 4 digits (0007)'], ['5', 'Pad to 5 digits (00007)']] }],

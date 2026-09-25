@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What we found · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap;cursor:pointer}
+  .btn.small{height:28px;padding:0 10px;font-size:12.5px}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px;max-width:1150px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px}
+  h1{margin:0;font-size:19px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .pad{padding:12px 16px}
+  .sp{flex:1}
+  .mini{font-size:12px;color:var(--ink-3)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  .tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .tile .n{font-size:24px;font-weight:700;font-family:'Archivo',sans-serif}
+  .tile .l{font-size:12px;color:var(--ink-3)}
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);font-weight:600}
+  tr.grp td{background:var(--panel-2);font-weight:600}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid}
+  .p-bad{color:var(--late,#c62828);border-color:var(--late,#c62828)}
+  .p-warn{color:#a07800;border-color:#a07800}
+  .p-mute{color:var(--ink-3);border-color:var(--line)}
+  .over{color:var(--late,#c62828);font-weight:600}
+  .bar{height:8px;border-radius:4px;background:var(--panel-2);overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .bar i.over{background:var(--late,#c62828)}
+  .form{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .error{color:var(--late)}
+  .ok{color:var(--ok)}
+  @media (max-width:640px){ th:nth-child(4),td:nth-child(4){display:none} }
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="getting-started.html">Getting started</a><a class="on" href="setup-report.html">What we found</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <h1 style="flex:1">What we found</h1>
+      <button class="btn primary" id="dl-btn">Download the report (Excel)</button>
+    </div>
+    <div class="mini">Everything we learned loading this company's data, to hand to the customer: the rows that need their answer, what their data shows that's worth knowing, and a log of each upload and the hours spent on setup and training. Setup and training each include 8 hours.</div>
+    <div class="mini" id="dl-msg"></div>
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <header><h2>1 · Needs your answer</h2><span class="sp"></span><span class="mini" id="na-count"></span></header>
+      <div class="pad mini">Rows an upload couldn't finish, and rows left out. In the download each group is a tab laid out like our setup template: the problem cells are yellow, and the last column says what's needed, so the customer can fill it in and upload it back. Once a row is loaded by a later upload it drops off by itself. Untick <b>In report</b> to keep a row off the download (an old duplicate you left out on purpose).</div>
+      <div class="scroll"><table><thead><tr><th>In report</th><th>Row</th><th>Item</th><th>What's needed</th><th></th></tr></thead><tbody id="na-list"></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <header><h2>2 · Worth knowing</h2><span class="sp"></span><span class="mini" id="wk-count"></span></header>
+      <div class="pad mini">Not mistakes in their files: what the saved data shows that the customer should hear about. It updates as the data changes.</div>
+      <div class="scroll"><table><thead><tr><th>Area</th><th>Item</th><th>What we noticed</th><th>Detail</th></tr></thead><tbody id="wk-list"></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <header><h2>3 · Hours</h2><span class="sp"></span><span class="mini">8 hours of setup and 8 hours of training are included</span></header>
+      <div class="pad">
+        <div class="tiles" id="hours"></div>
+        <div class="form" id="time-form" style="margin-top:12px">
+          <label>Date<input id="t-date" type="date"></label>
+          <label>For<select id="t-area"><option value="setup">Setup</option><option value="training">Training</option></select></label>
+          <label>Hours<input id="t-h" type="number" min="0" max="24" step="1" value="0" style="width:80px"></label>
+          <label>Minutes<input id="t-m" type="number" min="0" max="59" step="5" value="30" style="width:80px"></label>
+          <label style="flex:1;min-width:220px">What was done<input id="t-note" placeholder="e.g. Training session 2: dispatch board and trips"></label>
+          <button class="btn" id="t-add">Add time</button>
+          <span class="mini" id="t-msg"></span>
+        </div>
+      </div>
+      <div class="scroll"><table><thead><tr><th>Date</th><th>For</th><th>Time</th><th>What was done</th><th>By</th><th></th></tr></thead><tbody id="time-list"></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <header><h2>4 · Uploads</h2><span class="sp"></span><span class="mini" id="up-count"></span></header>
+      <div class="scroll"><table><thead><tr><th>When</th><th>What</th><th>File · tab</th><th>Result</th><th>Done for them</th></tr></thead><tbody id="up-list"></tbody></table></div>
+    </div>
+  </section>
+</main>
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let ME = null, FIND = [], FIXED = 0, LOGS = [], WK = [], SHOW_MISSING = false;
+const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('users', 'edit');
+
+// what each upload is called, where it's uploaded, and its template
+const KINDS = {
+  customers:    { name: 'Customers',           where: 'Customers › Upload bill-to customers', template: 'templates/RoadCoda-template-Customers.xlsx' },
+  stops:        { name: 'Stops',               where: 'Customers › pick the customer › Upload stops for this customer', template: 'templates/RoadCoda-template-Stop-locations.xlsx' },
+  equipment:    { name: 'Trucks and trailers', where: 'Equipment › Upload spreadsheet', template: 'templates/RoadCoda-template-Trucks-and-trailers.xlsx' },
+  drivers:      { name: 'Drivers',             where: 'Drivers › Upload spreadsheet', template: 'templates/RoadCoda-template-Drivers.xlsx' },
+  office_staff: { name: 'Office staff',        where: 'Users › Upload spreadsheet', template: 'templates/RoadCoda-template-Office-staff.xlsx' },
+};
+const KORDER = Object.keys(KINDS);
+// Each setup template's first tab: header, header colour, width, cell format, dropdowns (from templates/*.xlsx).
+// Keep in step with the template files if a column is added there.
+const TEMPLATE = {"customers":{"sheet":"Customers","cols":[{"h":"Customer Name *","fill":"E4DCFF","w":32.0,"fmt":"@"},{"h":"Account Code","fill":"EDEDED","w":12.0,"fmt":"@"},{"h":"Parent Account Code","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Bill-To Street *","fill":"E4DCFF","w":26.0,"fmt":"@"},{"h":"City *","fill":"E4DCFF","w":16.0,"fmt":"@"},{"h":"State *","fill":"E4DCFF","w":7.0,"fmt":"@"},{"h":"Zip *","fill":"E4DCFF","w":8.0,"fmt":"@"},{"h":"Payment Terms (days) *","fill":"E4DCFF","w":20.0,"fmt":""},{"h":"Billing *","fill":"E4DCFF","w":12.0,"fmt":"@"},{"h":"Week Starts","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"PO Number","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"AP Contact","fill":"FFF1B8","w":18.0,"fmt":"@"},{"h":"AP Phone","fill":"EDEDED","w":16.0,"fmt":"@"},{"h":"AP Email *","fill":"E4DCFF","w":30.0,"fmt":"@"},{"h":"Notes","fill":"EDEDED","w":30.0,"fmt":"@"}],"dv":[{"col":"F","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"I","list":"Per load,Weekly"},{"col":"J","list":"Sun,Mon,Tue,Wed,Thu,Fri,Sat"}]},"stops":{"sheet":"Stop locations","cols":[{"h":"Name *","fill":"E4DCFF","w":30.0,"fmt":"@"},{"h":"Store #","fill":"FFF1B8","w":9.0,"fmt":"@"},{"h":"Route #","fill":"EDEDED","w":9.0,"fmt":"@"},{"h":"Sort Code","fill":"EDEDED","w":9.0,"fmt":"@"},{"h":"Address *","fill":"E4DCFF","w":26.0,"fmt":"@"},{"h":"City *","fill":"E4DCFF","w":15.0,"fmt":"@"},{"h":"State *","fill":"E4DCFF","w":7.0,"fmt":"@"},{"h":"Zip *","fill":"E4DCFF","w":8.0,"fmt":"@"},{"h":"Window Opens","fill":"FFF1B8","w":12.0,"fmt":"hh:mm"},{"h":"Window Closes","fill":"FFF1B8","w":12.0,"fmt":"hh:mm"},{"h":"Contact","fill":"FFF1B8","w":16.0,"fmt":"@"},{"h":"Phone","fill":"FFF1B8","w":15.0,"fmt":"@"},{"h":"Email","fill":"FFF1B8","w":28.0,"fmt":"@"},{"h":"Notify (Y/N)","fill":"FFF1B8","w":10.0,"fmt":"@"},{"h":"Notification Email","fill":"EDEDED","w":26.0,"fmt":"@"},{"h":"Delivery Instructions","fill":"FFF1B8","w":40.0,"fmt":"@"},{"h":"Door Code","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"Gate Code","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"Other Code Name","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Other Code","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"After-hours Contact","fill":"EDEDED","w":16.0,"fmt":"@"},{"h":"After-hours Phone","fill":"EDEDED","w":15.0,"fmt":"@"},{"h":"Office Notes","fill":"EDEDED","w":24.0,"fmt":"@"},{"h":"Active (Y/N)","fill":"EDEDED","w":10.0,"fmt":"@"}],"dv":[{"col":"G","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"N","list":"Y,N"},{"col":"X","list":"Y,N"}]},"equipment":{"sheet":"Trucks and trailers","cols":[{"h":"Unit # *","fill":"E4DCFF","w":9.0,"fmt":"@"},{"h":"Type *","fill":"E4DCFF","w":14.0,"fmt":"@"},{"h":"Body","fill":"FFF1B8","w":20.0,"fmt":"@"},{"h":"Length (ft)","fill":"FFF1B8","w":10.0,"fmt":""},{"h":"Axles *","fill":"E4DCFF","w":7.0,"fmt":""},{"h":"Year","fill":"EDEDED","w":7.0,"fmt":""},{"h":"Make","fill":"EDEDED","w":13.0,"fmt":"@"},{"h":"Model","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"VIN *","fill":"E4DCFF","w":22.0,"fmt":"@"},{"h":"Plate","fill":"FFF1B8","w":11.0,"fmt":"@"},{"h":"Plate State","fill":"FFF1B8","w":8.0,"fmt":"@"},{"h":"Registration Expires","fill":"FFF1B8","w":13.0,"fmt":"mm/dd/yyyy"},{"h":"Toll Tag #","fill":"FFF1B8","w":18.0,"fmt":"@"},{"h":"Ownership","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Odometer","fill":"EDEDED","w":10.0,"fmt":""},{"h":"Notes","fill":"EDEDED","w":26.0,"fmt":"@"}],"dv":[{"col":"B","list":"Tractor,Straight truck,Trailer,Van,Pickup"},{"col":"C","list":"Dry van,Reefer,Flatbed,Curtainside (softside),Box,Other"},{"col":"K","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"N","list":"Owned,Leased,Rented,Owner-operator"}]},"drivers":{"sheet":"Drivers","cols":[{"h":"Full Name *","fill":"E4DCFF","w":22.0,"fmt":"@"},{"h":"Phone *","fill":"E4DCFF","w":15.0,"fmt":"@"},{"h":"Email","fill":"EDEDED","w":26.0,"fmt":"@"},{"h":"Employee #","fill":"FFF1B8","w":11.0,"fmt":"@"},{"h":"Driver Type","fill":"EDEDED","w":10.0,"fmt":"@"},{"h":"HOS Rule","fill":"EDEDED","w":20.0,"fmt":"@"},{"h":"HOS State (intrastate)","fill":"EDEDED","w":11.0,"fmt":"@"},{"h":"Hire Date *","fill":"E4DCFF","w":12.0,"fmt":"mm/dd/yyyy"},{"h":"CDL Number","fill":"FFF1B8","w":14.0,"fmt":"@"},{"h":"CDL State","fill":"FFF1B8","w":8.0,"fmt":"@"},{"h":"CDL Class","fill":"FFF1B8","w":8.0,"fmt":"@"},{"h":"CDL Expires","fill":"FFF1B8","w":12.0,"fmt":"mm/dd/yyyy"},{"h":"Medical Card Expires","fill":"FFF1B8","w":13.0,"fmt":"mm/dd/yyyy"},{"h":"Home Terminal","fill":"EDEDED","w":14.0,"fmt":"@"},{"h":"Emergency Contact","fill":"FFF1B8","w":18.0,"fmt":"@"},{"h":"Emergency Phone","fill":"FFF1B8","w":15.0,"fmt":"@"},{"h":"Notes","fill":"EDEDED","w":26.0,"fmt":"@"}],"dv":[{"col":"E","list":"Road,Team,Yard"},{"col":"F","list":"Company default,70 hours / 8 days,60 hours / 7 days,Short-haul (150 air-miles),Intrastate"},{"col":"J","list":"AL,AK,AZ,AR,CA,CO,CT,DE,DC,FL,GA,HI,ID,IL,IN,IA,KS,KY,LA,ME,MD,MA,MI,MN,MS,MO,MT,NE,NV,NH,NJ,NM,NY,NC,ND,OH,OK,OR,PA,RI,SC,SD,TN,TX,UT,VT,VA,WA,WV,WI,WY"},{"col":"K","list":"A,B,C,none"}]},"office_staff":{"sheet":"Office staff","cols":[{"h":"Full Name *","fill":"E4DCFF","w":22.0,"fmt":"@"},{"h":"Email *","fill":"E4DCFF","w":30.0,"fmt":"@"},{"h":"Role *","fill":"E4DCFF","w":12.0,"fmt":"@"},{"h":"Super User (Y/N)","fill":"EDEDED","w":11.0,"fmt":"@"},{"h":"Title","fill":"EDEDED","w":18.0,"fmt":"@"},{"h":"Employee #","fill":"EDEDED","w":11.0,"fmt":"@"}],"dv":[{"col":"C","list":"Owner,Dispatcher,Billing,Safety,Payroll,Accountant"},{"col":"D","list":"Y,N"}]}};
+const INCLUDED_MIN = 8 * 60;
+const fmtWhen = (t) => new Date(t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const fmtDay = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+const hm = (m) => { m = Math.round(m || 0); const h = Math.floor(m / 60), r = m % 60; return h ? `${h} h${r ? ' ' + r + ' min' : ''}` : `${r} min`; };
+const todayISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carrier_id, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  ME = data; $('who').textContent = `${data.full_name || ''} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  $('app').hidden = false;
+  $('t-date').value = todayISO();
+  $('time-form').hidden = !canEdit();
+  load();
+}
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+
+async function load() {
+  const [F, X, L, W] = await Promise.all([
+    sb.from('setup_findings').select('*').is('resolved_at', null).order('created_at'),
+    sb.from('setup_findings').select('id', { count: 'exact', head: true }).in('resolved_note', ['Loaded in a later upload', 'Marked done']).neq('status', 'noted'),
+    sb.from('setup_log').select('*').order('at'),
+    sb.rpc('setup_worth_knowing'),
+  ]);
+  const err = F.error || L.error || W.error;
+  if (err) { $('tiles').innerHTML = `<div class="tile error">${esc(err.message)}${/setup_|schema cache/.test(err.message) ? ' — run 116_setup_report.sql in the Supabase SQL Editor.' : ''}</div>`; return; }
+  FIND = F.data || []; FIXED = X.count || 0; LOGS = L.data || []; WK = W.data || [];
+  draw();
+}
+
+// ---------- the groups the report is made of ----------
+function needGroups(all) {
+  const open = FIND.filter(f => f.status !== 'noted' && (all || f.in_report));
+  const groups = [];
+  for (const k of KORDER) {
+    const inK = open.filter(f => f.kind === k);
+    const scopes = [...new Set(inK.map(f => f.scope || ''))].sort();
+    for (const s of scopes) groups.push({ kind: k, scope: s, rows: inK.filter(f => (f.scope || '') === s).sort((a, b) => (a.file_name || '').localeCompare(b.file_name || '') || (a.sheet || '').localeCompare(b.sheet || '') || (a.line || 0) - (b.line || 0)) });
+  }
+  return groups;
+}
+// dated items one by one; missing information one line per item ("No toll tag · No plate state")
+function worthRows() {
+  const out = [], miss = new Map();
+  for (const w of WK) {
+    if (w.level > 0 || w.due) { out.push({ ...w }); continue; }
+    const k = w.area + '|' + w.item;
+    if (!miss.has(k)) { const m = { area: w.area, item: w.item, issue: [], detail: [], level: 0, sort: w.sort, due: null }; miss.set(k, m); out.push(m); }
+    const m = miss.get(k); m.issue.push(w.issue); m.detail.push(w.detail); m.sort = Math.min(m.sort, w.sort);
+  }
+  for (const m of miss.values()) { m.issue = m.issue.join(' · '); m.detail = m.detail.join(' '); }
+  const areaOrder = ['Trucks and trailers', 'Drivers', 'Stops', 'Customers'];
+  return out.sort((a, b) => b.level - a.level || areaOrder.indexOf(a.area) - areaOrder.indexOf(b.area) || String(a.item).localeCompare(String(b.item), undefined, { numeric: true }));
+}
+const urgency = (w) => w.level === 2 ? 'Overdue' : w.level === 1 ? 'Coming due' : 'Missing information';
+function hoursUsed() {
+  const t = LOGS.filter(l => l.kind === 'time');
+  const used = (a) => t.filter(l => l.area === a).reduce((s, l) => s + (l.minutes || 0), 0);
+  return { setup: used('setup'), training: used('training'), entries: t };
+}
+
+function draw() {
+  const groups = needGroups(true), open = groups.flatMap(g => g.rows), inRep = open.filter(f => f.in_report).length;
+  const wk = worthRows(), hrs = hoursUsed(), ups = LOGS.filter(l => l.kind === 'upload');
+  const tile = (n, l, cls = '') => `<div class="tile"><div class="n ${cls}">${n}</div><div class="l">${l}</div></div>`;
+  const hTile = (a, name) => { const u = hrs[a], over = u > INCLUDED_MIN;
+    return `<div class="tile"><div class="n ${over ? 'over' : ''}">${hm(u)}</div><div class="l">${name} of 8 hours included${over ? ` · <b class="over">${hm(u - INCLUDED_MIN)} over</b>` : ''}</div><div class="bar"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, u / INCLUDED_MIN * 100)}%"></i></div></div>`; };
+  $('tiles').innerHTML = tile(inRep, `row${inRep === 1 ? '' : 's'} need the customer's answer${FIXED ? ` · ${FIXED} fixed since` : ''}`, inRep ? 'over' : '') +
+    tile(wk.filter(w => w.level === 2).length, 'overdue or expired', wk.some(w => w.level === 2) ? 'over' : '') +
+    tile(wk.length, 'things worth knowing') + hTile('setup', 'Setup') + hTile('training', 'Training');
+  $('hours').innerHTML = hTile('setup', 'Setup') + hTile('training', 'Training');
+
+  // 1 · needs your answer
+  $('na-count').textContent = open.length ? `${open.length} row${open.length === 1 ? '' : 's'} open` : '';
+  $('na-list').innerHTML = groups.map(g => `<tr class="grp"><td colspan="5">${esc(KINDS[g.kind].name)}${g.scope ? ' · ' + esc(g.scope) : ''} <span class="mini" style="font-weight:400">— uploaded back on ${esc(KINDS[g.kind].where)}</span></td></tr>` +
+    g.rows.map(f => `<tr style="${f.in_report ? '' : 'opacity:.5'}">
+      <td><input type="checkbox" data-inrep="${f.id}" ${f.in_report ? 'checked' : ''} ${canEdit() ? '' : 'disabled'} aria-label="In report"></td>
+      <td class="mini">${esc(f.sheet || f.file_name || '')}${f.line ? ' · row ' + f.line : ''}</td>
+      <td>${esc(f.label || f.key || '')}</td>
+      <td>${f.status === 'left_out' ? '<span class="pill p-mute">Left out</span> ' : ''}${(f.messages || []).map(m => `<div>${esc(m)}</div>`).join('')}</td>
+      <td>${canEdit() ? `<button class="btn small" data-done="${f.id}" title="Answered or not needed: take it off the list">Done</button>` : ''}</td></tr>`).join('')).join('') ||
+    `<tr><td colspan="5" class="mini">Nothing waiting. ${ups.length ? 'Every row uploaded so far was loaded.' : 'Rows an upload can\'t finish show up here once someone uploads a spreadsheet on Customers, Equipment, Drivers or Users.'}</td></tr>`;
+
+  // 2 · worth knowing
+  $('wk-count').textContent = wk.length ? `${wk.length} item${wk.length === 1 ? '' : 's'}` : '';
+  const wkDue = wk.filter(w => w.level > 0), wkMiss = wk.filter(w => w.level === 0);
+  const wkRow = (w) => `<tr><td>${esc(w.area)}</td><td>${esc(w.item)}</td>
+      <td><span class="pill ${w.level === 2 ? 'p-bad' : w.level === 1 ? 'p-warn' : 'p-mute'}">${urgency(w)}</span> ${esc(w.issue)}</td><td class="mini">${esc(w.detail)}</td></tr>`;
+  $('wk-list').innerHTML = (wkDue.map(wkRow).join('') +
+    (wkMiss.length ? `<tr class="grp"><td colspan="4">${wkMiss.length} with missing information <button class="btn small" id="wk-more" style="margin-left:8px">${SHOW_MISSING ? 'Hide' : 'Show'}</button></td></tr>` + (SHOW_MISSING ? wkMiss.map(wkRow).join('') : '') : '')) ||
+    '<tr><td colspan="4" class="mini">Nothing to report.</td></tr>';
+  if ($('wk-more')) $('wk-more').onclick = () => { SHOW_MISSING = !SHOW_MISSING; draw(); };
+
+  // 3 · hours
+  $('time-list').innerHTML = hrs.entries.slice().reverse().map(l => `<tr><td>${fmtDay(l.work_date)}</td><td>${l.area === 'training' ? 'Training' : 'Setup'}</td><td>${hm(l.minutes)}</td><td>${esc(l.title || '')}</td><td class="mini">${esc(l.created_by_name || '')}</td>
+      <td>${canEdit() ? `<button class="btn small" data-deltime="${l.id}">Remove</button>` : ''}</td></tr>`).join('') ||
+    '<tr><td colspan="6" class="mini">No time logged yet. Add each setup job and training session as you do it; the download lists them for the customer.</td></tr>';
+
+  // 4 · uploads
+  $('up-count').textContent = ups.length ? `${ups.length} upload${ups.length === 1 ? '' : 's'}` : '';
+  $('up-list').innerHTML = ups.slice().reverse().map(l => `<tr><td class="mini">${fmtWhen(l.at)}<br>${esc(l.created_by_name || '')}</td><td>${esc(l.title || KINDS[l.area]?.name || l.area)}</td>
+      <td class="mini">${esc(l.file_name || '')}${l.sheet ? ' · ' + esc(l.sheet) : ''}</td>
+      <td>${[l.added != null && `${l.added} added`, l.updated != null && `${l.updated} updated`, l.needs_fix && `<span class="over">${l.needs_fix} need an answer</span>`, l.left_out && `${l.left_out} left out`].filter(Boolean).join(' · ')}</td>
+      <td class="mini">${((l.detail || {}).done_for_you || []).map(esc).join('<br>')}${canEdit() && FIND.some(f => f.log_id === l.id && f.status !== 'noted') ? `<div style="margin-top:4px"><button class="btn small" data-offlog="${l.id}" title="The wrong file, or rows you don't need answered: take this upload's open rows off Needs your answer">Take its rows off the report</button></div>` : ''}</td></tr>`).join('') ||
+    '<tr><td colspan="5" class="mini">No uploads yet.</td></tr>';
+
+  document.querySelectorAll('[data-inrep]').forEach(c => c.onchange = async () => {
+    const { error } = await sb.from('setup_findings').update({ in_report: c.checked }).eq('id', c.dataset.inrep);
+    if (error) { alert(error.message); c.checked = !c.checked; return; }
+    const f = FIND.find(x => x.id === c.dataset.inrep); if (f) f.in_report = c.checked; draw();
+  });
+  document.querySelectorAll('[data-done]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const { error } = await sb.from('setup_findings').update({ resolved_at: new Date().toISOString(), resolved_note: 'Marked done', resolved_by: (await sb.auth.getUser()).data.user?.id }).eq('id', b.dataset.done);
+    if (error) { alert(error.message); b.disabled = false; return; } load();
+  });
+  document.querySelectorAll('[data-offlog]').forEach(b => b.onclick = async () => {
+    const n = FIND.filter(f => f.log_id === b.dataset.offlog && f.status !== 'noted').length;
+    if (!confirm(`Take ${n} row${n === 1 ? '' : 's'} from this upload off the report?`)) return;
+    const { error } = await sb.from('setup_findings').update({ resolved_at: new Date().toISOString(), resolved_note: 'Taken off the report' })
+      .eq('log_id', b.dataset.offlog).is('resolved_at', null).neq('status', 'noted');
+    if (error) { alert(error.message); return; } load();
+  });
+  document.querySelectorAll('[data-deltime]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remove this time entry?')) return;
+    const { error } = await sb.from('setup_log').delete().eq('id', b.dataset.deltime);
+    if (error) { alert(error.message); return; } load();
+  });
+}
+
+$('t-add').onclick = async () => {
+  const minutes = (+$('t-h').value || 0) * 60 + (+$('t-m').value || 0);
+  if (minutes < 1) { $('t-msg').innerHTML = '<span class="error">How long did it take?</span>'; return; }
+  if (!$('t-note').value.trim()) { $('t-msg').innerHTML = '<span class="error">Say what was done — it goes on the customer\'s log.</span>'; return; }
+  $('t-add').disabled = true;
+  const { error } = await sb.from('setup_log').insert({ kind: 'time', area: $('t-area').value, minutes, work_date: $('t-date').value || todayISO(), title: $('t-note').value.trim(), created_by_name: ME.full_name || '' });
+  $('t-add').disabled = false;
+  if (error) { $('t-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+  $('t-msg').innerHTML = '<span class="ok">Added.</span>'; $('t-note').value = ''; load();
+};
+
+// ---------- the Excel download ----------
+const YELLOW = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };   // brighter than the templates' pale "recommended" header
+const RED = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBD5D5' } };
+const HEAD = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2A1D5C' } };
+const clone = (o) => o == null ? o : JSON.parse(JSON.stringify(o));
+const tabName = (s, used) => { let n = s.replace(/[\[\]:*?\/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31); let i = 2; while (used.has(n.toLowerCase())) { const suf = ` (${i++})`; n = n.slice(0, 31 - suf.length) + suf; } used.add(n.toLowerCase()); return n; };
+function headRow(ws, values, widths) {
+  const r = ws.addRow(values); r.font = { bold: true, color: { argb: 'FFFFFFFF' } }; r.eachCell(c => { c.fill = HEAD; c.alignment = { vertical: 'middle', wrapText: true }; });
+  (widths || []).forEach((w, i) => { ws.getColumn(i + 1).width = w; }); return r;
+}
+// the upload screens match columns by header, so the report maps each template column to the field the upload read
+function fieldForHeaders(headers, fields) {
+  const used = new Set(), map = {};
+  for (const f of fields) { let re; try { re = new RegExp(f.re, f.flags || 'i'); } catch (e) { continue; }
+    const j = headers.findIndex((h, k) => h && !used.has(k) && re.test(h)); if (j >= 0) { map[j] = f.key; used.add(j); } }
+  return map;   // column index -> field key
+}
+async function buildReport() {
+  if (!window.ExcelJS) throw new Error('The Excel writer did not load. Check your connection and refresh.');
+  const carrier = ME.carriers?.name || 'Your company', today = todayISO();
+  const X = new ExcelJS.Workbook(); X.creator = 'RoadCoda'; X.created = new Date();
+  const used = new Set(), groups = needGroups(false), wk = worthRows(), hrs = hoursUsed(), ups = LOGS.filter(l => l.kind === 'upload');
+  const logById = Object.fromEntries(LOGS.map(l => [l.id, l]));
+  const readme = X.addWorksheet(tabName('Read me', used));
+  const fixTabs = [];
+
+  // ---- 1 · a tab per group, in the template's layout ----
+  const solid = (hex) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } });
+  for (const g of groups) {
+    const K = KINDS[g.kind], T = TEMPLATE[g.kind], nCol = T.cols.length, headers = T.cols.map(c => c.h);
+    const ws = X.addWorksheet(tabName(`Fix - ${K.name}${g.scope ? ' - ' + g.scope : ''}`, used), { views: [{ state: 'frozen', ySplit: 1 }] });
+    fixTabs.push({ name: ws.name, kind: g.kind, scope: g.scope, n: g.rows.length });
+    const hr = ws.getRow(1);
+    T.cols.forEach((c, i) => { const x = hr.getCell(i + 1); x.value = c.h; x.font = { bold: true, color: { argb: 'FF3B1F9E' } }; if (c.fill) x.fill = solid(c.fill);
+      x.alignment = { vertical: 'middle', wrapText: true }; x.border = { bottom: { style: 'thin', color: { argb: 'FFBBBBBB' } } }; ws.getColumn(i + 1).width = c.w || 14; });
+    const needCol = nCol + 1, fromCol = nCol + 2;
+    [[needCol, 'What we need from you', 60], [fromCol, 'Where it came from', 34]].forEach(([c, t, w]) => { const x = hr.getCell(c); x.value = t; x.font = { bold: true, color: { argb: 'FFFFFFFF' } }; x.fill = HEAD; x.alignment = { wrapText: true, vertical: 'middle' }; ws.getColumn(c).width = w; });
+    hr.height = 30;
+    const last = g.rows.length + 1;
+    for (const d of T.dv) ws.dataValidations.add(`${d.col}2:${d.col}${Math.max(last, 200)}`, { type: 'list', allowBlank: true, formulae: [`"${d.list}"`] });
+    for (const f of g.rows) {
+      const fields = ((logById[f.log_id] || {}).detail || {}).fields || [];
+      const map = fieldForHeaders(headers, fields);
+      const row = ws.addRow([]);
+      const problemCols = new Set();
+      for (let i = 0; i < nCol; i++) {
+        const key = map[i], cell = row.getCell(i + 1);
+        if (T.cols[i].fmt) cell.numFmt = T.cols[i].fmt;
+        const v = key ? (f.cells || {})[key] : undefined;
+        if (v != null && v !== '') cell.value = String(v);
+        if (key && (f.problems || []).includes(key)) problemCols.add(i + 1);
+        if (f.status === 'needs_fix' && / \*$/.test(headers[i]) && (v == null || v === '')) problemCols.add(i + 1);   // a required column left empty
+      }
+      if (f.status === 'needs_fix' && !problemCols.size) problemCols.add(1);
+      const msg = f.status === 'left_out'
+        ? 'Left out when your data was loaded. If it should be in RoadCoda, fill in anything missing and send it back. If not, delete this row.'
+        : (f.messages || []).join('\n');
+      for (const c of problemCols) { const cell = row.getCell(c); cell.fill = YELLOW; cell.note = msg; }
+      if (f.status === 'left_out') for (let i = 1; i <= nCol; i++) row.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDEDED' } };
+      const m = row.getCell(needCol); m.value = msg; m.alignment = { wrapText: true, vertical: 'top' }; m.fill = f.status === 'left_out' ? { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDEDED' } } : YELLOW;
+      row.getCell(fromCol).value = [f.file_name, f.sheet && f.sheet !== f.file_name ? 'tab ' + f.sheet : '', f.line ? 'row ' + f.line : ''].filter(Boolean).join(', ');
+      row.getCell(fromCol).alignment = { wrapText: true, vertical: 'top' };
+    }
+  }
+
+  // ---- 2 · worth knowing ----
+  const W = X.addWorksheet(tabName('Worth knowing', used), { views: [{ state: 'frozen', ySplit: 1 }] });
+  headRow(W, ['Area', 'Item', 'What we noticed', 'Detail', 'Date', 'How urgent'], [20, 34, 42, 70, 14, 20]);
+  for (const w of wk) {
+    const r = W.addRow([w.area, w.item, w.issue, w.detail, w.due ? new Date(w.due + 'T12:00:00') : '', urgency(w)]);
+    r.getCell(5).numFmt = 'mm/dd/yyyy'; r.alignment = { wrapText: true, vertical: 'top' };
+    if (w.level === 2) r.eachCell({ includeEmpty: true }, c => c.fill = RED); else if (w.level === 1) r.eachCell({ includeEmpty: true }, c => c.fill = YELLOW);
+  }
+  if (!wk.length) W.addRow(['Nothing to report.']);
+  W.autoFilter = { from: 'A1', to: 'F1' };
+
+  // ---- 3 · setup log ----
+  const L = X.addWorksheet(tabName('Setup log', used));
+  L.getColumn(1).width = 20; L.getColumn(2).width = 22; L.getColumn(3).width = 30; L.getColumn(4).width = 34; [5, 6, 7, 8].forEach(c => L.getColumn(c).width = 12); L.getColumn(9).width = 70;
+  const title = (t) => { const r = L.addRow([t]); r.font = { bold: true, size: 13 }; };
+  title('Hours');
+  headRow(L, ['', 'Used', 'Included', 'Over']);
+  for (const [a, n] of [['setup', 'Setup'], ['training', 'Training']]) {
+    const u = hrs[a]; const r = L.addRow([n, hm(u), '8 h', u > INCLUDED_MIN ? hm(u - INCLUDED_MIN) : '—']);
+    if (u > INCLUDED_MIN) r.getCell(4).font = { bold: true, color: { argb: 'FFC62828' } };
+  }
+  L.addRow([]); title('Time spent');
+  headRow(L, ['Date', 'For', 'Time', 'What was done', 'By']);
+  for (const l of hrs.entries.slice().sort((a, b) => (a.work_date || '').localeCompare(b.work_date || '') || a.at.localeCompare(b.at)))
+    L.addRow([fmtDay(l.work_date), l.area === 'training' ? 'Training' : 'Setup', hm(l.minutes), l.title || '', l.created_by_name || '']).alignment = { wrapText: true, vertical: 'top' };
+  if (!hrs.entries.length) L.addRow(['No time logged.']);
+  L.addRow([]); title('Uploads');
+  headRow(L, ['When', 'By', 'What', 'File · tab', 'Added', 'Updated', 'Need answer', 'Left out', 'Done for you']);
+  for (const l of ups) L.addRow([fmtWhen(l.at), l.created_by_name || '', l.title || '', [l.file_name, l.sheet].filter(Boolean).join(' · '), l.added ?? '', l.updated ?? '', l.needs_fix || 0, l.left_out || 0, ((l.detail || {}).done_for_you || []).join('\n')]).alignment = { wrapText: true, vertical: 'top' };
+  if (!ups.length) L.addRow(['No uploads.']);
+  const noted = FIND.filter(f => f.status === 'noted');
+  if (noted.length) {
+    L.addRow([]); title('Notes on single rows (loaded, with a change or a note)');
+    headRow(L, ['Where', 'Row', 'Item', 'Note']);
+    for (const f of noted.sort((a, b) => KORDER.indexOf(a.kind) - KORDER.indexOf(b.kind) || (a.line || 0) - (b.line || 0)))
+      L.addRow([`${KINDS[f.kind]?.name || f.kind}${f.scope ? ' · ' + f.scope : ''}`, [f.sheet, f.line && 'row ' + f.line].filter(Boolean).join(', '), f.label || f.key || '', (f.messages || []).join('\n')]).alignment = { wrapText: true, vertical: 'top' };
+  }
+
+  // ---- read me ----
+  readme.getColumn(1).width = 34; readme.getColumn(2).width = 18; readme.getColumn(3).width = 80;
+  const t1 = readme.addRow([`What we found — ${carrier}`]); t1.font = { bold: true, size: 16 };
+  readme.addRow([`Prepared ${fmtDay(today)} by RoadCoda while loading your data.`]).font = { color: { argb: 'FF666666' } };
+  readme.addRow([]);
+  const para = (b, t) => { const r = readme.addRow([b, '', t]); r.getCell(1).font = { bold: true }; r.getCell(3).alignment = { wrapText: true, vertical: 'top' }; };
+  const nNeed = fixTabs.reduce((s, t) => s + t.n, 0);
+  para('1 · Needs your answer', nNeed ? `${nNeed} row${nNeed === 1 ? '' : 's'} we couldn't finish, or left out, and need your answer. Each tab starting "Fix" is laid out like our setup template. Yellow cells need your answer (hover over one to see why), and the column "What we need from you" says what's missing. Fill them in and send this file back to us, or upload each tab yourself on the screen named below.` : 'Nothing: every row we were given was loaded.');
+  para('2 · Worth knowing', wk.length ? `${wk.length} thing${wk.length === 1 ? '' : 's'} your data shows that are worth your attention: registrations, inspections, PM, CDLs and medical cards overdue or coming due, and information missing that RoadCoda uses (toll tags, plate states, stop contacts). These aren't mistakes in your files.` : 'Nothing to report.');
+  para('3 · Setup log', `Every upload, what was done for you, and the time spent on setup and training. Setup and training each include 8 hours. Used so far: setup ${hm(hrs.setup)}, training ${hm(hrs.training)}.`);
+  if (fixTabs.length) {
+    readme.addRow([]);
+    const h = readme.addRow(['Tab', 'Rows', "Where it's uploaded in RoadCoda"]); h.font = { bold: true, color: { argb: 'FFFFFFFF' } }; h.eachCell(c => c.fill = HEAD);
+    for (const t of fixTabs) readme.addRow([t.name, t.n, KINDS[t.kind].where + (t.scope ? ` (${t.scope})` : '')]).getCell(3).alignment = { wrapText: true };
+  }
+  readme.addRow([]);
+  readme.addRow(['', '', 'Please don\'t change row 1 of a Fix tab: it tells RoadCoda which column is which. The last two columns are ignored when the tab is uploaded.']).getCell(3).alignment = { wrapText: true };
+  return { X, name: `What we found - ${carrier.replace(/[\\/:*?"<>|]/g, '')} - ${today}.xlsx` };
+}
+
+$('dl-btn').onclick = async () => {
+  $('dl-btn').disabled = true; $('dl-msg').textContent = 'Building the report…';
+  try {
+    await load();
+    const { X, name } = await buildReport();
+    const buf = await X.xlsx.writeBuffer();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    $('dl-msg').innerHTML = `<span class="ok">Downloaded ${esc(name)}.</span>`;
+  } catch (e) { $('dl-msg').innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
+  $('dl-btn').disabled = false;
+};
+start();
+</script>
+</body>
+</html>
