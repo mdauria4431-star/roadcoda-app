@@ -62,10 +62,10 @@
     { name: 'Daily', items: ['index.html', 'dispatch.html', 'map.html', 'dock.html', 'planner.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'office-payroll.html', 'profit.html', 'tolls.html', 'ifta.html', 'qb-export.html'] },
     { name: 'Safety', items: ['safety.html', 'incidents.html', 'claims.html', 'compliance.html', 'retention.html', 'handbooks.html'] },
-    { name: 'Setup', items: ['getting-started.html', 'setup-report.html', 'company.html', 'customers.html', 'edi.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'texts.html', 'users.html', 'features.html', 'devices.html'], fold: true },
+    { name: 'Setup', items: ['getting-started.html', 'settings-check.html', 'setup-report.html', 'company.html', 'customers.html', 'edi.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'texts.html', 'users.html', 'features.html', 'devices.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'dock.html': '▣', 'texts.html': '✉', 'company.html': '⌂', 'edi.html': '⇄', 'devices.html': '▯', 'getting-started.html': '✓', 'setup-report.html': '⚑', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'dock.html': '▣', 'texts.html': '✉', 'company.html': '⌂', 'edi.html': '⇄', 'devices.html': '▯', 'getting-started.html': '✓', 'setup-report.html': '⚑', 'settings-check.html': '☑', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
@@ -75,7 +75,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'setup-report.html': 'What we found', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages', 'company.html': 'Company', 'edi.html': 'EDI' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'setup-report.html': 'What we found', 'settings-check.html': 'Settings check', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages', 'company.html': 'Company', 'edi.html': 'EDI' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -212,6 +212,12 @@
       gs.href = 'getting-started.html'; gs.textContent = 'Getting started';
       if (here === 'getting-started.html') gs.className = 'on';
       nav.appendChild(gs); links['getting-started.html'] = gs;
+    }
+    if (!links['settings-check.html'] && (!acc || (acc.can && acc.can('users')))) {
+      var sc = document.createElement('a');
+      sc.href = 'settings-check.html'; sc.textContent = 'Settings check';
+      if (here === 'settings-check.html') sc.className = 'on';
+      nav.appendChild(sc); links['settings-check.html'] = sc;
     }
     if (!links['setup-report.html'] && (!acc || (acc.can && acc.can('users')))) {
       var sr = document.createElement('a');
@@ -524,4 +530,10 @@
   }
   window.RC_REPORT_PROBLEM = reportProblem;
 
+})();
+
+// 119: tell pages left open that RoadCoda was updated (never reloads by itself)
+(function () {
+  if (document.querySelector('script[src*="rc-update.js"]')) return;
+  var u = document.createElement('script'); u.src = 'rc-update.js'; document.head.appendChild(u);
 })();
