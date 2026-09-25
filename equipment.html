@@ -577,6 +577,9 @@ $('up-btn').onclick = () => RCUpload.open({
     { key: 'registration_expires', label: 'Registration Expires', re: /reg|expir/i, rec: true },
     { key: 'toll_tag', label: 'Toll Tag #', re: /toll|e-?z ?pass|transponder/i, rec: true },
     { key: 'ownership', label: 'Ownership', re: /own|lease/i },
+    { key: 'last_pm_date', label: 'Last PM date', re: /last ?pm|pm ?date|last ?service|last ?(pm|service)? ?date/i },
+    { key: 'last_pm_miles', label: 'Last PM odometer', re: /(odo|miles|mileage).*(pm|service)|(pm|service).*(odo|miles|mileage)/i },
+    { key: 'pm_every', label: 'PM every', re: /next ?due|pm ?every|interval|every/i },
     { key: 'odometer_miles', label: 'Odometer', re: /odo|miles|mileage/i },
     { key: 'notes', label: 'Notes', re: /note|comment/i },
   ],
@@ -589,6 +592,14 @@ $('up-btn').onclick = () => RCUpload.open({
       if (clean !== v.unit_no) { warnings.push(`Unit "${v.unit_no}" saved as "${clean}"`); v.unit_no = clean; }
     }
     const ty = pick(UP_TYPE, get('unit_type')); if (ty === undefined) errors.push(`Type "${T(get('unit_type'))}" isn't one of Tractor, Straight truck, Trailer, Van, Pickup`); v.unit_type = ty || null;
+    // No type in the file (a PM or mileage list): find the saved unit instead — "Unit 101" → 101, "Box #1" → S1
+    if (v.unit_no && !v.unit_type && !T(get('unit_type'))) {
+      const d = (v.unit_no.match(/(\d+)\s*$/) || [])[1], orig = T(get('unit_no'));
+      const tries = [v.unit_no, d, /^(box|s|st|straight)\b/i.test(orig) || /^s/i.test(v.unit_no) ? 'S' + d : null, d && 'T-' + d].filter(Boolean);
+      const hit = tries.map(t => units.find(u => (u.unit_no || '').toLowerCase() === String(t).toLowerCase())).find(Boolean);
+      if (hit) { if (hit.unit_no !== orig) { const i = warnings.findIndex(w => w.startsWith('Unit "')); if (i >= 0) warnings.splice(i, 1); warnings.push(`Unit "${orig}" is ${hit.unit_no}`); } v.unit_no = hit.unit_no; }
+      else errors.push(`Unit "${orig}" isn't on your Equipment list, and the file has no Type to add it with`);
+    }
     // "26' reefer" / "24' box" is a straight truck, not a trailer: trailers start at 28' (pups)
     { const tt = T(get('unit_type')); const ln = tt.match(/\b(\d{2})\s*('|ft\b|foot\b|-?foot)/i);
       if (v.unit_type === 'trailer' && ln && +ln[1] < 28 && !/pup|trl|trailer|dolly/i.test(tt)) { v.unit_type = 'straight_truck'; warnings.push(`Type "${tt}" read as a straight truck (${ln[1]}' is truck length)`); } }
@@ -640,6 +651,15 @@ $('up-btn').onclick = () => RCUpload.open({
     if (m) { if (/^[A-Za-z]{2}$/.test(m[1]) && !/\d/.test(m[1])) { st = st || m[1].toUpperCase(); plate = m[2]; } else { plate = m[1]; st = st || m[2].toUpperCase(); } }
     v.plate = plate || null; v.plate_state = st || null;
     if (v.plate_state && !/^[A-Z]{2}$/.test(v.plate_state)) errors.push(`Plate state "${v.plate_state}" should be two letters`);
+    { const pd = RCUpload.date(get('last_pm_date')); if (pd === undefined) warnings.push(`Last PM date "${T(get('last_pm_date'))}" can't be read — left blank`); if (pd) v.last_pm_date = pd;
+      const pm = RCUpload.num(get('last_pm_miles')); if (!Number.isNaN(pm) && pm > 0) v.last_pm_miles = pm;
+      const ev = T(get('pm_every')).match(/(\d+(?:\.\d+)?)\s*(k|,000|000)?\s*(mi|miles)?/i);
+      if (ev) { const n = +ev[1] * (/k/i.test(ev[2] || '') ? 1000 : 1); if (n >= 1000) v.pm_every_miles = Math.round(n); }
+      // the latest reading we have: the odometer at the last PM, dated that day
+      if (v.last_pm_miles && (v.odometer_miles == null || Number.isNaN(v.odometer_miles)) && !T(get('odometer_miles'))) {
+        v.odometer_miles = v.last_pm_miles; if (v.last_pm_date) v.odometer_at = v.last_pm_date; warnings.push('Odometer taken from the last PM reading');
+      }
+      delete v.pm_every; }
     const rd = RCUpload.date(get('registration_expires')); if (rd === undefined) warnings.push(`Registration date "${T(get('registration_expires'))}" can't be read, so it was left blank`); v.registration_expires = rd || null;
     const tag = get('toll_tag');
     if (typeof tag === 'number' && (!Number.isInteger(tag) || tag >= 1e14 && tag % 1000 === 0)) warnings.push('Toll tag lost its last digits in Excel (shows like 1.2E+14), so it was left blank. Add it from your toll statement');

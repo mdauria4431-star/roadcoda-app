@@ -165,7 +165,9 @@
         }
         if (!p.errors.length) prev = p.values;
         if (p.skip) return;
-        if (cfg.checkRequired !== false) for (const f of cfg.fields) if (f.required && (p.values[f.key] == null || p.values[f.key] === '')) {
+        // updating a record that's already saved only needs what the file has — required fields are already on it
+        const already = !p.errors.length && cfg.match ? cfg.match(p.values) : null;
+        if (cfg.checkRequired !== false && !already) for (const f of cfg.fields) if (f.required && (p.values[f.key] == null || p.values[f.key] === '')) {
           if (!p.errors.some(e => e.startsWith(f.label))) p.errors.push(`${f.label} is required`);
         }
         const existing = p.errors.length ? null : cfg.match(p.values);
