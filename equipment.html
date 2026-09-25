@@ -589,6 +589,25 @@ $('up-btn').onclick = () => RCUpload.open({
       if (clean !== v.unit_no) { warnings.push(`Unit "${v.unit_no}" saved as "${clean}"`); v.unit_no = clean; }
     }
     const ty = pick(UP_TYPE, get('unit_type')); if (ty === undefined) errors.push(`Type "${T(get('unit_type'))}" isn't one of Tractor, Straight truck, Trailer, Van, Pickup`); v.unit_type = ty || null;
+    // "26' reefer" / "24' box" is a straight truck, not a trailer: trailers start at 28' (pups)
+    { const tt = T(get('unit_type')); const ln = tt.match(/\b(\d{2})\s*('|ft\b|foot\b|-?foot)/i);
+      if (v.unit_type === 'trailer' && ln && +ln[1] < 28 && !/pup|trl|trailer|dolly/i.test(tt)) { v.unit_type = 'straight_truck'; warnings.push(`Type "${tt}" read as a straight truck (${ln[1]}' is truck length)`); } }
+    // One style of unit number per kind (Sep 25 rehearsal): tractors and trailers by their number
+    // ("T-101" → 101, "53-03" → 5303), straight trucks as S + number ("Box 3", "s1", "ST-4" → S3, S1, S4).
+    if (v.unit_no) {
+      const was = v.unit_no; let u = was;
+      if (v.unit_type === 'straight_truck') { const m = u.match(/^(?:s|st|str|straight|box|bt)?[\s#-]*0*(\d{1,4})$/i); if (m) u = 'S' + m[1]; }
+      else if (v.unit_type === 'tractor' || v.unit_type === 'trailer') {
+        u = u.replace(/^(?:t|tr|trl|trk)[\s#-]+(?=\d)/i, '');            // T-101, TR 5302
+        if (/^\d{2}-\d{2}$/.test(u)) u = u.replace('-', '');           // 53-03 → 5303
+      }
+      if (u !== was) {
+        const i = warnings.findIndex(w => w.startsWith(`Unit "`));
+        const orig = i >= 0 ? warnings[i].match(/^Unit "(.*?)"/)[1] : was;
+        if (i >= 0) warnings.splice(i, 1);
+        warnings.push(`Unit "${orig}" saved as "${u}"`); v.unit_no = u;
+      }
+    }
     const bd = pick(UP_BODY, get('body_type')); v.body_type = bd || null;
     for (const [k, lab] of [['length_ft', 'Length'], ['axles', 'Axles'], ['year', 'Year'], ['odometer_miles', 'Odometer']]) {
       const raw = T(get(k)), n = RCUpload.num(get(k));
