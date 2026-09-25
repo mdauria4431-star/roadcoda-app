@@ -123,7 +123,7 @@ const $$2 = (n) => n == null ? '' : (Number(n) < 0 ? '−$' : '$') + Math.abs(Nu
 const pct = (m, b) => b ? Math.round(m / b * 1000) / 10 : null;
 const num = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-let ROWS = [], UNITS = [], BY = 'customer', OPEN = new Set(), SORT = { k: 'margin', d: -1 };
+let ROWS = [], UNITS = [], BY = 'customer', OPEN = new Set(), SORT = { k: 'margin', d: -1 }, SPLIT = {};
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -171,14 +171,45 @@ async function load() {
   ]);
   if (r.error) { $('table').innerHTML = `<div class="empty error">${esc(r.error.message)}${/function|schema cache/.test(r.error.message) ? ' — run 53_profit.sql in the SQL Editor.' : ''}</div>`; return; }
   ROWS = r.data || []; UNITS = u.error ? [] : (u.data || []);
+  await loadSplits();
   draw();
+}
+
+// ── Loads that changed crew mid-route (113) ───────────────────────────
+// By driver or by truck, such a load is split between its legs by each
+// leg's share of the miles; by customer it stays one load.
+async function loadSplits() {
+  SPLIT = {};
+  const g = await sb.from('load_legs').select('load_id').gte('created_at', $('from').value);
+  if (g.error) return;                                   // 113 not installed
+  const inRange = new Set(ROWS.map(r => r.load_id));
+  const ids = [...new Set((g.data || []).map(x => x.load_id))].filter(id => inRange.has(id));
+  if (!ids.length) return;
+  const [eq, dr] = await Promise.all([sb.from('equipment').select('id, unit_no'), sb.from('drivers').select('id, full_name')]);
+  const U = Object.fromEntries((eq.data || []).map(e => [e.id, e.unit_no])), D = Object.fromEntries((dr.data || []).map(d => [d.id, d.full_name]));
+  await Promise.all(ids.map(async id => {
+    const s = await sb.rpc('load_leg_shares', { p_load: id });
+    if (!s.error && (s.data || []).length > 1) SPLIT[id] = s.data.map(x => ({ ...x, truck: U[x.truck_id] || '(none)', driver: D[x.driver_id] || '(none)' }));
+  }));
+}
+function splitRows(rows) {
+  return rows.flatMap(r => {
+    const s = SPLIT[r.load_id]; if (!s) return [r];
+    return s.map(g => {
+      const o = { ...r, leg_no: g.leg_no, legs: s.length, truck_id: g.truck_id, truck: g.truck, driver_id: g.driver_id, driver: g.driver };
+      KEYS.forEach(k => o[k] = Number(r[k] || 0) * Number(g.share));
+      return o;
+    });
+  });
 }
 
 // ── add up ────────────────────────────────────────────────────────────
 const KEYS = ['billed', 'driver_pay', 'fuel', 'tolls', 'other_costs', 'equipment', 'cost', 'margin', 'miles'];
 function sum(rows) {
-  const s = { loads: rows.length, est: 0 }; KEYS.forEach(k => s[k] = 0);
-  rows.forEach(r => { KEYS.forEach(k => s[k] += Number(r[k] || 0)); if (!/^payroll/.test(r.pay_basis || '')) s.est++; });
+  const s = { loads: new Set(rows.map(r => r.load_id)).size, est: 0 }; KEYS.forEach(k => s[k] = 0);
+  const est = new Set();
+  rows.forEach(r => { KEYS.forEach(k => s[k] += Number(r[k] || 0)); if (!/^payroll/.test(r.pay_basis || '')) est.add(r.load_id); });
+  s.est = est.size;
   s.pct = pct(s.margin, s.billed); s.per_mile = s.miles ? s.margin / s.miles : null;
   return s;
 }
@@ -199,7 +230,7 @@ function cells(g) {
 }
 function loadsTable(rows) {
   return `<tr class="lds"><td colspan="${COLS.length}"><table class="t" style="min-width:0"><tbody>${rows.slice().sort((a, b) => a.service_date.localeCompare(b.service_date) || String(a.load_no).localeCompare(String(b.load_no), undefined, { numeric: true })).map(r => `
-    <tr class="grp" data-trip="${r.load_id}"><td style="padding-left:30px"><a href="trip.html?load=${r.load_id}">${esc(r.load_no)}</a> <span class="mini">${esc(r.service_date)} · ${esc(BY === 'customer' ? (r.driver || '') : r.customer || '')}${BY === 'customer' ? '' : ''}</span>${/^payroll/.test(r.pay_basis || '') ? '' : `<span class="est" title="${esc(r.pay_basis)}">pay estimated</span>`}</td>
+    <tr class="grp" data-trip="${r.load_id}"><td style="padding-left:30px"><a href="trip.html?load=${r.load_id}">${esc(r.load_no)}</a>${r.legs ? ` <span class="mini" title="The crew changed partway through; this is this ${BY === 'truck' ? 'truck' : 'driver'}'s share by miles">leg ${r.leg_no} of ${r.legs}</span>` : ''} <span class="mini">${esc(r.service_date)} · ${esc(BY === 'customer' ? (r.driver || '') : r.customer || '')}${BY === 'customer' ? '' : ''}</span>${/^payroll/.test(r.pay_basis || '') ? '' : `<span class="est" title="${esc(r.pay_basis)}">pay estimated</span>`}</td>
       ${cells({ ...r, loads: 1, pct: r.margin_pct, per_mile: r.miles ? r.margin / r.miles : null })}</tr>`).join('')}</tbody></table></td></tr>`;
 }
 function tiles(t) {
@@ -236,7 +267,8 @@ function draw() {
     // Routes: per main customer; a load whose stores cross routes shows as e.g. "12 / 17"
     if (BY === 'route') ROWS.forEach(r => { r.rt_key = (r.route_no || '-') + '|' + r.main_customer_id; r.rt_label = `${r.route_no ? 'Route ' + r.route_no : 'No route'} — ${r.main_customer}`; });
     if (BY === 'trip') ROWS.forEach(r => { r.tt_key = (r.trip_type_id || 'regular') + '|' + r.main_customer_id; r.tt_label = `${r.trip_type || 'Regular (rate sheet)'} — ${r.main_customer}`; });
-    for (const g of groupBy(ROWS, ...key).sort(sorter)) {
+    const rows = BY === 'driver' || BY === 'truck' ? splitRows(ROWS) : ROWS;
+    for (const g of groupBy(rows, ...key).sort(sorter)) {
       body += `<tr class="grp" data-g="${g.key}"><td><b>${esc(g.label)}</b></td>${cells(g)}</tr>`;
       if (OPEN.has(g.key)) body += loadsTable(g.rows);
     }

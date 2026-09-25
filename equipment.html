@@ -325,7 +325,7 @@ function render() {
       : dv.some(x => x.locked_at) ? '<span class="pill p-bad">Locked</span>'
       : cd ? `<span class="pill p-ok">${esc(drivers.find(d => d.id === cd.current_driver_id)?.full_name || 'In use')}</span>` : '<span class="pill p-none">Paired</span>';
     return `<tr data-id="${u.id}" class="${cur && cur.id === u.id ? 'sel' : ''}">
-      <td><b>${esc(u.unit_no)}</b>${!u.active ? ' <span class="pill p-none">Retired</span>' : ''}<div class="hint" style="margin:0">${esc([TYPES[u.unit_type], u.year, u.make, u.model].filter(Boolean).join(' · '))}</div></td>
+      <td><b>${esc(u.unit_no)}</b>${!u.active ? ' <span class="pill p-none">Retired</span>' : ''}${u.active && u.down_since ? ` <span class="pill p-bad" title="${esc(u.down_reason || '')}">Down for repair</span>` : ''}<div class="hint" style="margin:0">${esc([TYPES[u.unit_type], u.year, u.make, u.model].filter(Boolean).join(' · '))}</div></td>
       <td>${esc([u.plate, u.plate_state].filter(Boolean).join(' '))}</td>
       <td class="mono">${u.vin ? '…' + esc(u.vin.slice(-6)) : ''}</td>
       <td class="mono">${esc([u.toll_tag, u.toll_class && 'class ' + u.toll_class].filter(Boolean).join(' · '))}</td>
@@ -359,7 +359,22 @@ function edit(u, quiet) {
   paintTf(u);
   if (!u) $('f-unit_type').value = 'tractor';
   $('ed-title').textContent = u ? `${u.unit_no}` : 'New unit';
-  $('ed-status').innerHTML = u ? (u.active ? '<span class="pill p-ok">In service</span>' : '<span class="pill p-none">Retired</span>') : '';
+  $('ed-status').innerHTML = u ? (!u.active ? '<span class="pill p-none">Retired</span>'
+    : 'down_since' in u && u.down_since ? `<span class="pill p-bad">Down for repair</span> <span class="mini">${esc(u.down_reason || '')} · since ${esc(new Date(u.down_since).toLocaleDateString())}</span> <button class="btn small" id="up-btn" type="button">Repaired — back in service</button>`
+    : '<span class="pill p-ok">In service</span>' + ('down_since' in u ? ' <button class="btn small" id="down-btn" type="button" title="Waiting on a repair: shows on the trip screen when swapping">Mark down for repair</button>' : '')) : '';
+  // Down for repair (113): set when a unit comes off a load after a breakdown, or by hand here
+  if ($('up-btn')) $('up-btn').onclick = async () => {
+    const { error } = await sb.rpc('equipment_back_in_service', { p_unit: u.id });
+    if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    u.down_since = null; u.down_reason = null; edit(u, true); render();
+    $('ed-msg').innerHTML = '<span class="ok">Back in service.</span>';
+  };
+  if ($('down-btn')) $('down-btn').onclick = async () => {
+    const why = prompt(`Why is ${u.unit_no} down? (e.g. brakes, waiting on parts)`); if (why == null) return;
+    const { error } = await sb.rpc('equipment_mark_down', { p_unit: u.id, p_reason: why });
+    if (error) { $('ed-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    u.down_since = new Date().toISOString(); u.down_reason = why.trim() || 'Down for repair'; edit(u, true); render();
+  };
   safetyLine('unit', u);
   $('oos-wrap').hidden = !(u && !u.active);
   $('active-btn').hidden = !u; $('active-btn').textContent = u && !u.active ? 'Put back in service' : 'Retire';

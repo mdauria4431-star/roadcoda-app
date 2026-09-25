@@ -226,7 +226,7 @@ const flagHtml = (code) => {
 const DONE = ['delivered', 'exception'];
 
 // ── Hours of service ────────────────────────────────────────────────
-let HOS = {}, UNREAD = {}, DRV2 = {};
+let HOS = {}, UNREAD = {}, DRV2 = {}, LEGS = {};
 const hmm = (m) => m == null ? '–' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 const DUTYNAME = { off: 'Off duty', sleeper: 'Sleeper', on: 'On duty', driving: 'Driving', yard: 'Yard move', personal: 'Personal conveyance', waiting: 'Waiting', unknown: 'Status unknown' };
 function hosTag(driverId) {
@@ -301,6 +301,13 @@ function describe(l, ctx) {
            sortKey: appt ? new Date(appt).getTime() : Infinity };
 }
 
+// A load that changed crew mid-route (113): "2 tractors · breakdown"
+function swapTag(id) {
+  const c = LEGS[id]; if (!c || c.n < 2) return '';
+  const what = c.trucks.size > 1 ? `${c.trucks.size} tractors` : 'crew change';
+  const why = { breakdown: 'breakdown', accident: 'accident', hours: 'out of hours', other: '' }[c.reason] || '';
+  return `<span class="old" style="color:var(--ink-3)" title="The crew changed partway through this load — open it to see each leg">${what}${why ? ' · ' + why : ''}</span>`;
+}
 function rowHtml(r, day) {
   const l = r.l, tractor = l.equipment?.unit_type === 'tractor';
   const trailer = l.bobtail ? '<span class="dim">bobtail</span>' : r.trailer || (tractor ? '<span class="none">—</span>' : '');
@@ -310,7 +317,7 @@ function rowHtml(r, day) {
   const name = r.shown ? r.shown.consignee : '<span class="none">no stops</span>';
   return `<tr data-s="${r.s}" data-load="${l.id}" tabindex="0" title="${esc(r.why || 'Open load ' + l.load_no)}">
     <td class="n">${esc(l.load_no)}${old}</td>
-    <td class="n">${esc(l.equipment?.unit_no || '')}</td>
+    <td class="n">${esc(l.equipment?.unit_no || '')}${swapTag(l.id)}</td>
     <td class="n dim">${trailer}</td>
     <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (l.driver2_id && DRV2[l.driver2_id] ? ` <span class="dim">+ ${esc(DRV2[l.driver2_id])}</span>` : '') + (r.finished ? '' : hosTag(l.driver_id)) + (UNREAD[l.driver_id] ? `<a href="messages.html?driver=${l.driver_id}" class="hos low" style="text-decoration:none" title="${UNREAD[l.driver_id]} unread message${UNREAD[l.driver_id] > 1 ? 's' : ''} from this driver">✉ ${UNREAD[l.driver_id]}</a>` : '') : '<span class="none">—</span>'}</td>
     <td class="dim">${esc(l.customers?.name || '')}</td>
@@ -345,6 +352,10 @@ async function loadBoard(quiet) {
       sb.from('message_threads').select('driver_id, unread').gt('unread', 0),
     ]);
     UNREAD = {}; (msgR.error ? [] : msgR.data || []).forEach(m => UNREAD[m.driver_id] = m.unread);
+    // crew changes mid-route (113); nothing if not installed
+    LEGS = {};
+    { const g = await sb.from('load_legs').select('load_id, truck_id, swap_reason').gte('created_at', addDays(from, -2));
+      (g.error ? [] : g.data || []).forEach(x => { const c = LEGS[x.load_id] ||= { n: 0, trucks: new Set(), reason: null }; c.n++; if (x.truck_id) c.trucks.add(x.truck_id); if (x.swap_reason) c.reason = x.swap_reason; }); }
     if (!Object.keys(DRV2).length) { const dr = await sb.from('drivers').select('id, full_name'); (dr.data || []).forEach(d => DRV2[d.id] = d.full_name); }
     const totalUnread = Object.values(UNREAD).reduce((a, b) => a + b, 0);
     $('msgs-btn').innerHTML = totalUnread ? `Messages <b style="margin-left:4px;color:var(--late)">${totalUnread}</b>` : 'Messages';

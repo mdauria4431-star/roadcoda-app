@@ -240,7 +240,7 @@ async function load() {
     sb.from('carriers').select('require_trip_sheet, require_seal, close_pod_days').maybeSingle(),
     sb.from('load_activities').select('id, stop_id, activity_type_id, qty, amount, note, created_by, created_at').eq('load_id', LOAD).order('created_at'),
     sb.from('activity_types').select('id, name, unit, is_deduction, pay_source, pays_driver, bills_customer, active, sort').eq('pay_source', 'recorded').eq('active', true).order('sort'),
-    sb.from('driver_hos_now').select('driver_id, duty_status, age_min, stale, drive_left_min, shift_left_min, cycle_left_min, break_left_min'),
+    sb.from('driver_hos_now').select('*'),
     sb.from('messages').select('id, from_driver, body, created_at, delivered_at, read_at').eq('load_id', LOAD).order('created_at'),
   ]);
   // Money: only for users with the money switch (the database refuses everyone else anyway)
@@ -309,6 +309,10 @@ async function load() {
       const driverPaper = dm.data?.trip_mode === 'paper';
       return { load: lx.data || {}, docs: docs.data || [], fuel: fuel.data || [], driverPaper, paper: lx.data?.paper_trip ?? driverPaper };
     })(),
+    // crew changes mid-route (113); nothing if not installed
+    legs: await (async () => { const r = await sb.from('load_leg_spans').select('*').eq('load_id', LOAD).order('leg_no'); return r.error ? null : (r.data || []); })(),
+    shares: await (async () => { const r = await sb.rpc('load_leg_shares', { p_load: LOAD }); return r.error ? [] : (r.data || []); })(),
+    down: await (async () => { const r = await sb.from('equipment').select('id, down_since, down_reason').not('down_since', 'is', null); return r.error ? {} : Object.fromEntries((r.data || []).map(x => [x.id, x])); })(),
     boxes: await (async () => {   // returnable containers left at each stop (63); nothing if not installed or no access
       const r = await sb.from('container_moves').select('stop_id, kind, containers(barcode, container_types(name))').eq('load_id', LOAD).is('undone_at', null).in('kind', ['delivered', 'loaded']);
       return r.error ? {} : (r.data || []).reduce((m, x) => { if (x.stop_id) (m[x.stop_id] ||= []).push(x); return m; }, {});
@@ -366,7 +370,7 @@ function draw() {
     return { id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') + (low != null ? ` — ${hmm(low)} left${h.stale ? ' (old reading)' : ''}` : '') };
   });
   const H = T.hos[l.driver_id], Hlow = lowOf(H);
-  const hosLine = !H || T.finished ? '' : `<div class="mini" style="margin-top:4px;color:${!H.stale && Hlow != null && Hlow < 60 ? 'var(--late)' : !H.stale && Hlow != null && Hlow < 120 ? 'var(--warn)' : 'var(--ink-3)'}">
+  const hosLine = !H || T.finished ? '' : H.paper_logs ? `<div class="mini" style="margin-top:4px;color:var(--warn)">Paper logs — this unit has no ELD. Ask the driver for their hours.</div>` : `<div class="mini" style="margin-top:4px;color:${!H.stale && Hlow != null && Hlow < 60 ? 'var(--late)' : !H.stale && Hlow != null && Hlow < 120 ? 'var(--warn)' : 'var(--ink-3)'}">
       ${esc({ off: 'Off duty', sleeper: 'Sleeper', on: 'On duty', driving: 'Driving', yard: 'Yard move', personal: 'Personal conveyance', waiting: 'Waiting' }[H.duty_status] || 'Status unknown')}
       · drive ${hmm(H.drive_left_min)} · shift ${hmm(H.shift_left_min)} · cycle ${hmm(H.cycle_left_min)}${H.break_left_min != null ? ` · break in ${hmm(H.break_left_min)}` : ''}
       · ELD ${H.age_min} min ago${H.stale ? ' — not current' : ''}</div>`;
@@ -385,6 +389,7 @@ function draw() {
       ${l.invoice_id ? '<span class="chip">On an invoice</span>' : ''}
       <span class="sp"></span>
       ${edit && !l.invoice_id ? `<a class="btn small" href="loads.html?load=${l.id}&addstop=1">+ Stop</a>` : ''}
+      ${edit && T.legs && l.stops.length ? '<button class="btn small" id="swap-open" title="A breakdown or a new driver partway through: keep both crews on the load">Swap tractor / driver</button>' : ''}
       ${canEdit() && l.stops.length ? '<button class="btn small" id="as-tpl">Save as template</button>' : ''}
       <a class="btn small" href="loads.html?load=${l.id}${DAY ? '&day=' + DAY : ''}">Open in Loads</a>
     </div>
@@ -404,6 +409,8 @@ function draw() {
     </div>
   </div>`;
 
+  html += swapHtml({ drvList, trkList, trlList });
+  html += legsHtml(edit);
   html += closeoutHtml(edit);
   html += stopsHtml(edit);
   html += messagesHtml();
@@ -412,6 +419,158 @@ function draw() {
   html += logHtml();
   $('trip').innerHTML = html;
   wire(edit);
+  wireSwap(edit);
+}
+
+// ── Crew changes mid-route (113) ─────────────────────────────────────
+// A breakdown, an accident, a driver out of hours: the load keeps every
+// tractor, trailer and driver that ran it, each with their own leg.
+let SWAP_OPEN = false;
+const REASON = { breakdown: 'Breakdown', accident: 'Accident', hours: 'Driver out of hours', other: 'Other' };
+const unitNo = (id) => T.units.find(u => u.id === id)?.unit_no || '—';
+const drvName = (id) => T.drivers.find(d => d.id === id)?.full_name || '—';
+const downTag = (id) => T.down && T.down[id] ? ' — down for repair' : '';
+
+function swapHtml({ drvList, trkList, trlList }) {
+  if (!SWAP_OPEN) return '';
+  const l = T.l;
+  const pending = l.stops.filter(s => !['delivered', 'exception'].includes(s.status));
+  const opts = (list, cur, blank, mark) => (blank != null ? `<option value="">${blank}</option>` : '') +
+    list.map(x => `<option value="${x.id}"${x.id === cur ? ' selected' : ''}>${esc(x.label)}${x.id === cur && mark ? ' (on it now)' : ''}${esc(downTag(x.id))}</option>`).join('');
+  const stopOpts = l.stops.map(s => `<option value="${s.id}"${s.id === pending[0]?.id ? ' selected' : ''}>Stop ${s.seq} — ${esc(s.consignee)}${['delivered', 'exception'].includes(s.status) ? ' (done)' : ''}</option>`).join('')
+    + `<option value=""${pending.length ? '' : ' selected'}>After the last stop (on the way back)</option>`;
+  return `<div class="card" id="swap-card">
+    <header><h2>Swap tractor, trailer or driver</h2><span class="sp"></span><button class="btn small" id="swap-cancel">Cancel</button></header>
+    <div class="facts" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+      <div class="f"><b>Why</b><select id="sw-reason"><option value="breakdown">Breakdown</option><option value="accident">Accident</option><option value="hours">Driver out of hours</option><option value="other">Other</option></select></div>
+      <div class="f"><b>When</b><input type="datetime-local" id="sw-at" value="${toLocal(new Date().toISOString())}"></div>
+      <div class="f"><b>Where</b><input id="sw-place" placeholder="e.g. I-84 exit 27, or the stop"></div>
+      <div class="f"><b>New crew starts at</b><select id="sw-stop">${stopOpts}</select></div>
+      <div class="f"><b>Tractor / truck</b><select id="sw-truck">${opts(trkList, l.truck_id, '— none —', true)}<option value="+rental">+ Add a rental / borrowed unit…</option></select></div>
+      <div class="f"><b>Trailer</b><select id="sw-trailer">${opts(trlList, l.trailer_id, l.bobtail ? '— bobtail —' : '— none —', true)}</select></div>
+      <div class="f"><b>Second trailer</b><select id="sw-trailer2">${opts(trlList, l.trailer2_id, '— none —', true)}</select></div>
+      <div class="f"><b>Driver</b><select id="sw-driver">${opts(drvList, l.driver_id, null, true)}<option value="+sub">+ Another carrier (sub) takes over…</option></select></div>
+      <div class="f" id="sw-driver2-f"><b>Co-driver (team)</b><select id="sw-driver2">${opts(drvList, l.driver2_id, '— none (single) —', true)}</select></div>
+      <div class="f" id="sw-odo-old-f"><b>Odometer, unit coming off</b><input id="sw-odo-old" inputmode="decimal" placeholder="optional"></div>
+      <div class="f" id="sw-odo-new-f"><b>Odometer, unit going on</b><input id="sw-odo-new" inputmode="decimal" placeholder="optional"></div>
+      <div class="f"><b>Note</b><input id="sw-note" placeholder="e.g. air leak, towed to Hartford"></div>
+    </div>
+    <div class="facts" id="sw-rental" hidden style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));border-top:0">
+      <div class="f" style="grid-column:1/-1"><b>Rental / borrowed unit</b><span class="mini">Added to Equipment as a rental. A truck rented for 8 days or less usually has no ELD: the driver keeps paper logs, and its miles come from the odometers.</span></div>
+      <div class="f"><b>Unit number</b><input id="rt-no" placeholder="e.g. Ryder 4471"></div>
+      <div class="f"><b>Type</b><select id="rt-type"><option value="tractor">Tractor</option><option value="straight_truck">Straight truck</option></select></div>
+      <div class="f"><b>Plate</b><input id="rt-plate" placeholder="for toll matching"></div>
+      <div class="f"><b>Plate state</b><input id="rt-state" maxlength="2" placeholder="CT"></div>
+      <div class="f"><b>Axles</b><select id="rt-axles"><option>2</option><option selected>3</option><option>4</option></select></div>
+    </div>
+    <div class="facts" id="sw-sub" hidden style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));border-top:0">
+      <div class="f" style="grid-column:1/-1"><b>Another carrier takes over</b><span class="mini">Their driver gets a guest link to the driver app for this load only and is never on your payroll. What they charge goes on the load as a cost.</span></div>
+      <div class="f"><b>Company</b><input id="sb-co" placeholder="e.g. Nutmeg Freight"></div>
+      <div class="f"><b>Their driver</b><input id="sb-drv" placeholder="name"></div>
+      <div class="f"><b>Driver's phone</b><input id="sb-phone" inputmode="tel" placeholder="for the guest link"></div>
+      <div class="f"><b>Their unit</b><input id="sb-unit" placeholder="tractor number"></div>
+      <div class="f"><b>What they charge ($)</b><input id="sb-cost" inputmode="decimal" placeholder="e.g. 300"></div>
+    </div>
+    <div class="acts" style="padding-top:12px">
+      <label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="sw-down" style="height:auto;flex:none;min-width:0;width:auto" checked> Mark the unit that came off as <b>down for repair</b></label>
+      <span class="sp" style="flex:1"></span>
+      <button class="btn primary" id="sw-save">Save the swap</button>
+    </div>
+    <div class="mini" style="padding:0 16px 12px">Both crews stay on the load. Each driver is paid for their own part, the tolls and miles follow each tractor, and the customer's invoice doesn't change. Odometers can be added later from the trip sheet.</div>
+  </div>`;
+}
+
+function legsHtml(edit) {
+  const g = T.legs; if (!g || g.length < 2) return '';
+  const dis = edit ? '' : ' disabled';
+  const rows = g.map(x => {
+    const fs = T.l.stops.find(s => s.id === x.first_stop_id);
+    const from = x.leg_no === 1 ? 'Start of the trip' : fs ? `Stop ${fs.seq} — ${esc(fs.consignee)}` : 'After the last stop';
+    const sh = (T.shares || []).find(s => s.leg_id === x.leg_id);
+    const src = sh?.miles_source, mi = sh?.miles;
+    const miles = src === 'odometer' || src === 'eld' ? `${Math.round(mi)} <span class="dim">${src === 'eld' ? 'ELD' : 'odometer'}</span>`
+      : src === 'estimated' ? `<span class="mid" title="No ELD and no odometer readings on this leg: what's left of the planned miles. Type the odometers in.">~${Math.round(mi)} estimated</span>`
+      : '<span class="mid">no miles</span>';
+    const trl = x.bobtail ? 'bobtail' : [x.trailer_id, x.trailer2_id].filter(Boolean).map(unitNo).join(' + ') || '—';
+    return `<tr>
+      <td class="n">${x.leg_no}</td>
+      <td>${from}${x.started_at ? `<div class="mini">swapped ${when(x.started_at)}</div>` : ''}</td>
+      <td class="n">${x.truck_id ? esc(unitNo(x.truck_id)) : x.sub_unit ? esc(x.sub_unit) + ' <span class="dim">(theirs)</span>' : '—'}${T.down && T.down[x.truck_id] ? ' <span class="chip bad" title="' + esc(T.down[x.truck_id].down_reason || '') + '">down</span>' : ''}</td>
+      <td class="n">${esc(trl)}</td>
+      <td>${esc(drvName(x.driver_id))}${x.driver2_id ? ` <span class="dim">+ ${esc(drvName(x.driver2_id))}</span>` : ''}${x.sub_company ? `<div class="mini">Sub: ${esc(x.sub_company)}${x.sub_cost != null ? ' · $' + Number(x.sub_cost).toFixed(2) : ''} · not on payroll</div>` : ''}</td>
+      <td>${x.swap_reason ? esc(REASON[x.swap_reason] || x.swap_reason) : ''}${x.swap_place ? `<div class="mini">${esc(x.swap_place)}</div>` : ''}${x.swap_note ? `<div class="mini">${esc(x.swap_note)}</div>` : ''}</td>
+      <td style="white-space:nowrap"><input class="ed n" style="width:84px;max-width:84px" data-leg="${x.leg_id}" data-odo="start" inputmode="decimal" value="${x.start_odometer ?? ''}" placeholder="start"${dis}> → <input class="ed n" style="width:84px;max-width:84px" data-leg="${x.leg_id}" data-odo="end" inputmode="decimal" value="${x.end_odometer ?? ''}" placeholder="end"${dis}></td>
+      <td class="n">${miles}</td>
+      <td class="n">${sh ? Math.round(sh.share * 100) + '%' : ''}</td></tr>`;
+  }).join('');
+  return `<div class="card">
+    <header><h2>Crew changes</h2><span class="mini">${g.length} legs</span><span class="sp"></span>${edit ? '<button class="btn small" id="swap-undo">Take back the last swap</button>' : ''}</header>
+    <div class="boardwrap"><table class="stops" style="min-width:980px"><thead><tr><th>Leg</th><th>From</th><th>Tractor</th><th>Trailer</th><th>Driver</th><th>Why</th><th>Odometer</th><th>Miles</th><th>Share of pay</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="mini" style="padding:8px 16px 12px">Each driver is paid for their own part: per-mile, per-load and % pay by the share, their own stops and hours; detention goes to whoever was driving at that stop. Each leg's miles come from its odometer readings, otherwise its ELD. A leg with neither (a rental or a sub's truck) gets what's left of the planned miles until the odometers are typed in, and close-out shows LM until then. The customer's invoice doesn't change.</div>
+  </div>`;
+}
+
+function wireSwap(edit) {
+  if ($('swap-open')) $('swap-open').onclick = () => { SWAP_OPEN = true; draw(); $('swap-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  if ($('swap-cancel')) $('swap-cancel').onclick = () => { SWAP_OPEN = false; draw(); };
+  const reason = $('sw-reason');
+  if (reason) reason.onchange = () => { $('sw-down').checked = ['breakdown', 'accident'].includes(reason.value); };
+  if ($('sw-truck')) $('sw-truck').onchange = () => { $('sw-rental').hidden = $('sw-truck').value !== '+rental'; if (!$('sw-rental').hidden) $('rt-no').focus(); };
+  if ($('sw-driver')) $('sw-driver').onchange = () => {
+    const sub = $('sw-driver').value === '+sub';
+    $('sw-sub').hidden = !sub; $('sw-driver2-f').hidden = sub;
+    if (sub) { if ($('sw-truck').value === T.l.truck_id) $('sw-truck').value = ''; $('sb-co').focus(); }
+  };
+  if ($('sw-save')) $('sw-save').onclick = async () => {
+    const l = T.l, v = (id) => $(id).value || null, num = (id) => $(id).value.trim() === '' ? null : Number($(id).value);
+    let truck = v('sw-truck'); const trailer = v('sw-trailer'), trailer2 = trailer ? v('sw-trailer2') : null;
+    const sub = v('sw-driver') === '+sub';
+    if ([num('sw-odo-old'), num('sw-odo-new')].some(n => n != null && !isFinite(n))) return fail('Odometer readings are numbers only.');
+    if (sub && num('sb-cost') != null && !isFinite(num('sb-cost'))) return fail('What the sub charges: a number, e.g. 300');
+    if (truck === '+rental') {                              // add the rental first, then use it
+      const r = await sb.rpc('add_rental_unit', { p_unit_no: v('rt-no'), p_unit_type: v('rt-type'), p_plate: v('rt-plate'), p_plate_state: v('rt-state'), p_axles: Number(v('rt-axles')) });
+      if (r.error) return fail(r.error);
+      truck = r.data;
+      if (!T.units.find(u => u.id === truck)) T.units.push({ id: truck, unit_no: (v('rt-no') || '').toUpperCase(), unit_type: v('rt-type'), active: true });
+    }
+    const off = [];
+    if ($('sw-down').checked) {
+      if (l.truck_id && truck !== l.truck_id) off.push(l.truck_id);
+      if (l.trailer_id && trailer !== l.trailer_id && trailer2 !== l.trailer_id) off.push(l.trailer_id);
+      if (l.trailer2_id && trailer !== l.trailer2_id && trailer2 !== l.trailer2_id) off.push(l.trailer2_id);
+    }
+    $('sw-save').disabled = true;
+    const { error } = await sb.rpc('swap_crew', {
+      p_load: l.id, p_first_stop: v('sw-stop'), p_at: fromLocal($('sw-at').value), p_reason: v('sw-reason'),
+      p_truck: truck, p_trailer: trailer, p_trailer2: trailer2, p_bobtail: !trailer && l.bobtail,
+      p_driver: sub ? null : v('sw-driver'), p_driver2: sub || v('sw-driver2') === v('sw-driver') ? null : v('sw-driver2'),
+      p_old_end_odometer: num('sw-odo-old'), p_new_start_odometer: num('sw-odo-new'),
+      p_place: v('sw-place'), p_note: v('sw-note'), p_mark_down: off,
+      p_sub_company: sub ? v('sb-co') : null, p_sub_driver: sub ? v('sb-drv') : null, p_sub_phone: sub ? v('sb-phone') : null,
+      p_sub_unit: sub ? v('sb-unit') : null, p_sub_cost: sub ? num('sb-cost') : null,
+    });
+    if (error) { $('sw-save').disabled = false; return fail(error); }
+    SWAP_OPEN = false;
+    toast(`Swap saved — ${sub ? esc(v('sb-co') || 'the sub') + ' takes it from here (guest link on the trip)' : esc(unitNo(truck)) + ', ' + esc(drvName(v('sw-driver'))) + ' carry on'}${off.length ? ` · ${off.map(unitNo).map(esc).join(', ')} marked down for repair` : ''}`,
+      async () => { const r = await sb.rpc('undo_last_swap', { p_load: l.id }); if (r.error) fail(r.error); else { toast('Swap taken back'); load(); } });
+    load();
+  };
+  if ($('swap-undo')) $('swap-undo').onclick = async () => {
+    const last = T.legs[T.legs.length - 1];
+    if (!confirm(`Take back the swap to ${unitNo(last.truck_id)} / ${drvName(last.driver_id)}? The crew before it goes back on the load.`)) return;
+    const { error } = await sb.rpc('undo_last_swap', { p_load: T.l.id });
+    if (error) return fail(error);
+    toast('Swap taken back'); load();
+  };
+  document.querySelectorAll('input[data-leg]').forEach(el => el.onchange = async () => {
+    const leg = el.dataset.leg;
+    const val = (k) => { const i = document.querySelector(`input[data-leg="${leg}"][data-odo="${k}"]`); return i.value.trim() === '' ? null : Number(i.value); };
+    const s = val('start'), e = val('end');
+    if ([s, e].some(n => n != null && !isFinite(n))) { fail('Odometer readings are numbers only.'); return draw(); }
+    const { error } = await sb.rpc('set_leg_odometer', { p_leg: leg, p_start: s, p_end: e });
+    if (error) { fail(error); return draw(); }
+    toast('Odometer saved'); load();
+  });
 }
 
 // ── Close-out ────────────────────────────────────────────────────────
