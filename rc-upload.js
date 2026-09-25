@@ -67,11 +67,42 @@
       const ws = st.wb.Sheets[st.wb.SheetNames[i]]; st.opts.__sheet = st.wb.SheetNames[i];
       st.rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' })
         .map(r => r.map(c => c == null ? '' : c));
+      st.rows = pasted(st.rows);
       st.header = Math.max(0, st.rows.slice(0, 20).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
       q('[data-hdr]').innerHTML = st.rows.slice(0, 20).map((r, j) => `<option value="${j}" ${j === st.header ? 'selected' : ''}>Row ${j + 1}: ${esc(r.filter(Boolean).slice(0, 4).join(' · ').slice(0, 60))}</option>`).join('');
       q('[data-hdrwrap]').hidden = false;
       q('[data-hdr]').onchange = () => { st.header = +q('[data-hdr]').value; guess(); draw(); };
       guess(); draw();
+    }
+
+    // A list pasted from an email: everything in column A, fields separated by | marks
+    // ("Harbor Grill | 828 Elm St Pawtucket RI 02860 | recv 6a-2p | Sandra Moreau 413-555-0120").
+    // Split it into columns, join a line that wrapped onto the next row, and name the columns by
+    // what's in them, so the rest of the upload works as if it were a normal sheet.
+    function pasted(rows) {
+      st.pasteNote = '';
+      const one = rows.map(r => r.filter(c => String(c).trim() !== ''));
+      const filled = one.filter(r => r.length), piped = filled.filter(r => r.length === 1 && (String(r[0]).match(/\|/g) || []).length >= 2);
+      if (piped.length < 3 || piped.length < filled.length * 0.5) return rows;
+      const lines = []; let joined = 0;
+      for (const r of one) {
+        if (r.length !== 1) { if (r.length) lines.push({ t: r.join(' | '), p: true }); continue; }
+        const s = String(r[0]);
+        if (/^\s*\|/.test(s) && lines.length && lines[lines.length - 1].p) { lines[lines.length - 1].t += ' ' + s.trim(); joined++; continue; }
+        lines.push({ t: s, p: /\|/.test(s) });
+      }
+      const data = lines.map(l => l.p ? l.t.split('|').map(x => x.trim()).filter((x, i, a) => x !== '' || i < a.length - 1) : [l.t.trim()]);
+      const n = Math.max(...data.map(r => r.length));
+      const share = (j, re) => { const v = data.filter(r => r.length > 1).map(r => String(r[j] || '')); return v.length && v.filter(s => re.test(s)).length / v.length > 0.5; };
+      const hdr = [];
+      for (let j = 0; j < n; j++) {
+        hdr.push(share(j, /^\d+\s+\S.*\b[A-Za-z]{2}\.?,?\s+\d{5}\b/) ? 'Address'
+          : share(j, /\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}/) ? 'Contact'        // before hours: "413-555-0120" looks like "3-5"
+          : share(j, /^(recv|rcv|receiving|hours|hrs)\b|\d\s*(a|am|p|pm)?\s*(-|–|to)\s*\d/i) ? 'Receiving hours'
+          : j === 0 ? 'Name' : 'Column ' + (j + 1));
+      }
+      st.pasteNote = `Pasted list: split on the | marks${joined ? `, ${joined} line${joined > 1 ? 's' : ''} that wrapped onto the next row joined back` : ''}.`;
+      return [hdr, ...data];
     }
 
     // A header split over two rows ("BILL TO" over "Address | City | Zip") is read as one: "BILL TO Address"…
@@ -180,7 +211,7 @@
         ${summary.length ? `<div class="mini" style="margin:6px 0;padding:8px 10px;border:1px solid var(--line,#ccc);border-radius:8px">Done for you: ${summary.map(esc).join(' · ')}</div>` : ''}
         <div class="rowx"><b>${rows.length} row${rows.length === 1 ? '' : 's'}</b>
           <span class="tag t-new">${add.length} new</span><span class="tag t-upd">${upd.length} update${upd.length === 1 ? '' : 's'}</span><span class="tag t-bad">${bad.length} need fixing</span>${gone.length ? `<span class="tag" style="color:var(--ink-3,#888);border-color:var(--ink-3,#888)">${gone.length} left out</span>` : ''}
-          <span class="mini">Click <b>Fix ›</b> to correct a row right here, or tick <b>Leave out</b> on a row you don't want (an old duplicate, a closed account). Rows still needing fixes aren't saved.${skipped ? ` ${skipped} heading, note or total line${skipped === 1 ? '' : 's'} skipped.` : ''}</span></div>
+          <span class="mini">Click <b>Fix ›</b> to correct a row right here, or tick <b>Leave out</b> on a row you don't want (an old duplicate, a closed account). Rows still needing fixes aren't saved.${skipped ? ` ${skipped} heading, note or total line${skipped === 1 ? '' : 's'} skipped.` : ''}${st.pasteNote ? ' ' + esc(st.pasteNote) : ''}</span></div>
         <div class="scroll"><table><thead><tr><th>Row</th><th>Leave out</th><th></th><th>What</th><th>Notes</th></tr></thead><tbody>
           ${rows.map(r => `<tr style="${r.left ? 'opacity:.45' : ''}"><td>${r.line}</td><td><input type="checkbox" data-leave="${r.line}" ${r.left ? 'checked' : ''} title="Don't load this row"></td>
             <td>${r.left ? '<span class="mini">left out</span>' : `<button type="button" data-open="${r.line}" class="tag ${r.errors.length ? 't-bad' : r.existing ? 't-upd' : 't-new'}" style="cursor:pointer;background:transparent" title="Click to correct this row">${r.errors.length ? 'Fix ›' : r.existing ? 'Update' : 'New'}</button>`}</td>

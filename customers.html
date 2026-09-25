@@ -1199,7 +1199,7 @@ async function openStopUpload(file) {
       if (dcRaw) { cust = stCustomer(dcRaw); if (!cust) errors.push(`Customer / DC "${dcRaw}" doesn't match one of your customers — type its account code or name`); }
       else {
         // no Customer / DC column: a tab named after a customer ("HARBORVIEW", "Granite Ridge") goes to that customer
-        const byTab = opts.__sheet ? stCustomer(opts.__sheet) : null, picked = customers.find(c => c.id === $('cust').value) || null;
+        const byTab = opts.__sheet ? (stCustomer(opts.__sheet) || stCustomer(opts.__sheet.replace(/\(.*?\)|\b(stops?|from|e-?mail|updated|new|list|locations?|tab)\b/gi, ' ').replace(/\s+/g, ' ').trim())) : null, picked = customers.find(c => c.id === $('cust').value) || null;
         cust = byTab || picked;
         if (byTab && picked && byTab.id !== picked.id && !stTabNote) { stTabNote = true; warnings.push(`Tab "${opts.__sheet}" → loading these under ${byTab.name}, not ${picked.name}`); }
       }
@@ -1237,6 +1237,8 @@ async function openStopUpload(file) {
       for (const k of ['contact', 'phone', 'email', 'notify_email', 'delivery_instructions', 'door_code', 'gate_code', 'other_code_name', 'other_code',
                        'after_hours_contact', 'after_hours_phone', 'route_no', 'sort_code', 'notes']) v[k] = T(get(k)) || '';
       v.email = v.email.toLowerCase(); v.notify_email = v.notify_email.toLowerCase();
+      // "Sandra Moreau 413-555-0120" in one cell: the phone goes to Phone
+      if (v.contact && !v.phone) { const ph = v.contact.match(/(\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}(?:\s*(?:x|ext\.?)\s*\d+)?)/i); if (ph) { v.phone = ph[1].trim(); v.contact = v.contact.replace(ph[0], '').replace(/[\s,;:–-]+$/, '').trim(); } }
       if (days && !/receiving days/i.test(v.notes)) v.notes = [v.notes, 'Receiving days: ' + days[1].replace(/\s*[-–]\s*/, '-')].filter(Boolean).join(' · ');
       for (const k of ['email', 'notify_email']) if (v[k] && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v[k])) { warnings.push(`Email "${v[k]}" doesn't look right — left blank`); v[k] = ''; }
       const pull = (re) => { for (const f of ['notes', 'delivery_instructions']) { const m = v[f].match(re); if (m) { v[f] = v[f].replace(m[0], '').replace(/^[\s\/;,|–-]+|[\s\/;,|–-]+$/g, '').replace(/\s*[\/;|]\s*[\/;|]\s*/g, ' / '); return m[1]; } } return ''; };
