@@ -129,7 +129,7 @@ const hhmm = (m0) => { if (m0 == null) return ''; const m = ((Math.round(m0) % 1
 const hrs = (m) => (m / 60).toFixed(1) + ' h';
 const DIMS = [['pallets', 'Pallets', 'cap_pallets'], ['weight', 'Weight lb', 'cap_weight_lb'], ['cube', 'Cube ft³', 'cap_cube_ft'], ['pieces', 'Pieces', 'cap_pieces']];
 const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('dispatch', 'edit');
-let TAB = 'plan', CAR = {}, CUSTS = [], EQ = [], UNITS = {}, LOADS = [], PLAN = null, tt = null, BUSY = new Map(), FLEET = [], OFF = new Set(), DRV = new Map(), DRIVERS = [], ELD = {};
+let TAB = 'plan', CAR = {}, CUSTS = [], EQ = [], UNITS = {}, LOADS = [], PLAN = null, tt = null, BUSY = new Map(), FLEET = [], OFF = new Set(), DRV = new Map(), DRIVERS = [], ELD = {}, DRIVERS_WHY = '';
 function toast(h, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 6000); }
 const fail = (e) => toast(esc(e.message || e), true);
 
@@ -192,8 +192,11 @@ async function loadDay() {
     [l.truck_id, l.trailer_id].filter(Boolean).forEach(id => { if (!BUSY.has(id)) BUSY.set(id, []); BUSY.get(id).push(iv); });
     if (l.driver_id) { if (!DRV.has(l.driver_id)) DRV.set(l.driver_id, []); DRV.get(l.driver_id).push(iv); } });
   // drivers who can take a route, and their ELD hours when the plan is for today
-  DRIVERS = ((await sb.from('drivers').select('id, full_name, driver_type, is_guest').eq('active', true).order('full_name')).data || [])
-    .filter(x => !x.is_guest && x.driver_type !== 'yard');
+  const dq = await sb.from('drivers').select('id, full_name, driver_type, is_guest').eq('active', true).order('full_name');
+  DRIVERS = (dq.data || []).filter(x => !x.is_guest && x.driver_type !== 'yard');
+  DRIVERS_WHY = dq.error ? 'the drivers list could not be read: ' + dq.error.message
+    : !(dq.data || []).length ? 'no active drivers on the Drivers page'
+    : !DRIVERS.length ? 'every active driver is a yard driver or a guest' : '';
   ELD = {};
   if (d0 === iso(new Date())) { const h = await sb.from('driver_hos').select('driver_id, drive_left_min, shift_left_min, as_of'); (h.data || []).forEach(x => ELD[x.driver_id] = x); }
   buildFleet();
@@ -438,19 +441,30 @@ function assignDrivers(r, fleet) {
   const busy = new Map([...DRV].map(([k, v]) => [k, v.slice()])), out = {};
   r.routes.filter(x => x.stops.length).sort((a, b) => a.start - b.start).forEach(rt => {
     const iv = { from: rt.start, to: rt.end, drive: rt.drive, known: true, load_no: null };
-    const u = fleet.find(f => f.key === rt.vehicle), used = new Set(Object.values(out).filter(Boolean).map(x => x.driver.id));
+    const u = fleet.find(f => f.key === rt.vehicle), used = new Set(Object.values(out).filter(x => x && x.driver).map(x => x.driver.id));
     const cands = DRIVERS.map(d => ({ d, c: driverFits(d, iv, busy.get(d.id) || []) })).filter(x => x.c.ok);
     const keep = u.load && u.load.driver_id && cands.find(x => x.d.id === u.load.driver_id);
     const working = cands.filter(x => x.c.sameShift).sort((a, b) => b.c.prevEnd - a.c.prevEnd);
     const rested = cands.filter(x => !x.c.sameShift && x.c.working), fresh = cands.filter(x => !x.c.working && !used.has(x.d.id));
     const pick = keep || working[0] || rested[0] || fresh[0] || null;
-    out[rt.vehicle] = pick ? { driver: pick.d, ...pick.c } : null;
+    out[rt.vehicle] = pick ? { driver: pick.d, ...pick.c } : { none: true, why: DRIVERS_WHY || whyNoDriver(iv, busy, used) };
     if (pick) { if (!busy.has(pick.d.id)) busy.set(pick.d.id, []); busy.get(pick.d.id).push(Object.assign(iv, { load_no: 'this plan' })); }
   });
   return out;
 }
+function whyNoDriver(iv, busy, used) {
+  let unknown = 0, overlap = 0, hours = 0, taken = 0;
+  DRIVERS.forEach(d => { const list = busy.get(d.id) || [];
+    if (used.has(d.id) && !list.length) taken++;
+    else if (list.some(x => !x.known)) unknown++;
+    else if (list.some(x => x.from < iv.to + 15 && iv.from < x.to + 15)) overlap++;
+    else hours++; });
+  const parts = [taken && `${taken} on other routes in this plan`, overlap && `${overlap} on another load at that time`,
+    unknown && `${unknown} on a load whose times can't be estimated (its stops have no map points)`, hours && `${hours} without enough hours left`].filter(Boolean);
+  return `none of the ${DRIVERS.length} drivers fits: ${parts.join(', ')}`;
+}
 function driverTxt(a) {
-  if (!a) return '<span class="warn">no driver with enough hours — assign on Dispatch</span>';
+  if (!a || a.none) return `<span class="warn">no driver — ${esc(a && a.why || 'assign on Dispatch')}. Assign one on Dispatch.</span>`;
   const left = `${hrs(a.driveLeft)} driving left after`;
   return `<b>${esc(a.driver.full_name)}</b> <span class="mini">${a.sameShift ? `· same shift as load ${esc(a.loads.join(', '))} · ${left}` : a.working ? '· after a 10-hour break · ' + left : '· ' + left}</span>`;
 }
@@ -514,7 +528,7 @@ async function applyPlan() {
   const at = (mins) => { const d = new Date($('day').value + 'T00:00:00'); d.setMinutes(Math.round(mins)); return d.toISOString(); };
   const routes = r.routes.filter(x => x.stops.length).map(x => { const u = fleet.find(f => f.key === x.vehicle);
     const dv = PLAN.drivers[x.vehicle];
-    return { truck_id: u.truck.id, trailer_id: u.trailer ? u.trailer.id : null, driver_id: dv ? dv.driver.id : null, stops: x.stops, etas: (x.times || []).map(t => at(t.arrive)) }; });
+    return { truck_id: u.truck.id, trailer_id: u.trailer ? u.trailer.id : null, driver_id: dv && dv.driver ? dv.driver.id : null, stops: x.stops, etas: (x.times || []).map(t => at(t.arrive)) }; });
   if (!confirm(`Put the stops on ${routes.length} truck${routes.length === 1 ? '' : 's'} as shown?`)) return;
   $('apply').disabled = true;
   const { data, error } = await sb.rpc('plan_apply_trucks', { p_customer: $('cust').value, p_date: $('day').value, p_pool: loads.map(l => l.id), p_routes: routes });
