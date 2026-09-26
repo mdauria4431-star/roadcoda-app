@@ -907,6 +907,17 @@ function toTime(v) {
   return h < 24 && m < 60 ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : '';
 }
 
+// "Split across N trucks": a starting split for the route planner, which then re-plans the stops
+// across these loads (each load is one truck). Stops are kept in file order and cut into N runs of
+// about the same quantity, so each truck starts with a similar amount of freight.
+function splitRows(rows) {
+  const n = Math.max(1, Math.min(rows.length || 1, imp.trucks || 3)), out = new Map();
+  const total = rows.reduce((a, r) => a + (r.qty || 1), 0);
+  let acc = 0;
+  rows.forEach(r => { const k = Math.min(n - 1, Math.floor(acc / (total / n))); out.set(r.i, k); acc += (r.qty || 1); });
+  return out;
+}
+
 function importRows() {
   const g = (r, k) => imp.map[k] != null ? r[imp.map[k]] : '';
   const unitDefault = $('imp-unit')?.value || 'pallets';
@@ -931,6 +942,7 @@ async function drawImport() {
   const colOpts = (sel) => '<option value="">(not in file)</option>' + head.map((h, j) => `<option value="${j}" ${sel === j ? 'selected' : ''}>${esc(h || 'Column ' + (j + 1))}</option>`).join('');
   const rows = importRows();
   const hasRoute = imp.map.route != null;
+  const splitOf = splitRows(rows.filter(r => r.ok));
   const groupBy = $('imp-group')?.value || (hasRoute ? 'route' : 'all');
   const news = new Set(rows.filter(r => r.ok && !r.loc).map(r => (r.code || nameKey(r.name))));
   $('imp-body').innerHTML = `
@@ -939,7 +951,9 @@ async function drawImport() {
       <label for="imp-group">Make loads<select id="imp-group">
         <option value="route" ${groupBy === 'route' ? 'selected' : ''} ${hasRoute ? '' : 'disabled'}>One per route / load no. in the file</option>
         <option value="all" ${groupBy === 'all' ? 'selected' : ''}>All deliveries on one load</option>
-        <option value="each" ${groupBy === 'each' ? 'selected' : ''}>One load per delivery</option></select></label>
+        <option value="each" ${groupBy === 'each' ? 'selected' : ''}>One load per delivery</option>
+        <option value="split" ${groupBy === 'split' ? 'selected' : ''}>Split across a number of trucks</option></select></label>
+      <label for="imp-trucks" ${groupBy === 'split' ? '' : 'hidden'}>Trucks<input id="imp-trucks" type="number" min="1" max="50" step="1" value="${imp.trucks || 3}" style="width:90px"></label>
       <label for="imp-unit">Unit if the file has none<select id="imp-unit">${UNITS.map(u => `<option ${u === ($('imp-unit')?.value || 'pallets') ? 'selected' : ''}>${u}</option>`).join('')}</select></label>
     </div>
     <details style="margin-top:10px" ${Object.keys(imp.map).length < 2 ? 'open' : ''}><summary style="cursor:pointer;font-weight:600">Match the file's columns (${Object.keys(imp.map).length} found automatically)</summary>
@@ -952,21 +966,23 @@ async function drawImport() {
       ${rows.some(r => !r.ok) ? ` · <span class="error">${rows.filter(r => !r.ok).length} row(s) without a name or code will be skipped</span>` : ''}</p>
     <div class="tablewrap" style="max-height:360px;overflow:auto"><table class="imp-tbl">
       <thead><tr><th>Row</th><th>Load</th><th>Delivery customer</th><th>Code</th><th>Address</th><th>Window</th><th class="num">Qty</th><th></th></tr></thead>
-      <tbody>${rows.map(r => `<tr style="${r.ok ? '' : 'opacity:.45'}"><td class="mono">${imp.header + r.i + 2}</td><td class="mono">${esc(groupBy === 'route' ? r.route : groupBy === 'all' ? 'one load' : 'own load')}</td>
+      <tbody>${rows.map(r => `<tr style="${r.ok ? '' : 'opacity:.45'}"><td class="mono">${imp.header + r.i + 2}</td><td class="mono">${esc(groupBy === 'route' ? r.route : groupBy === 'all' ? 'one load' : groupBy === 'split' ? (r.ok ? 'truck ' + (splitOf.get(r.i) + 1) : '') : 'own load')}</td>
         <td>${r.type === 'pickup' ? '<span class="tag-pu">Pickup</span> ' : ''}${esc(r.loc ? r.loc.name : r.name)}</td><td class="mono">${esc(r.code)}</td><td>${esc(r.address || r.loc?.address || '')}</td>
         <td class="mono">${esc([r.window_start, r.window_end].filter(Boolean).join('–'))}</td><td class="num mono">${r.qty} ${esc(r.unit)}</td>
         <td>${!r.ok ? 'skipped' : r.loc ? '<span class="tag-old">On file</span>' : '<span class="tag-new">New – will be added</span>'}</td></tr>`).join('')}</tbody></table></div>
     <div class="row" style="margin-top:12px"><button class="btn primary" id="imp-go" ${$('imp-cust').value && rows.some(r => r.ok) ? '' : 'disabled'}>Create loads</button>
-      <span class="hint">Loads are created as Planned. Assign drivers and trucks, then Get miles &amp; price, on each load.</span></div>
+      <span class="hint">${groupBy === 'split' ? 'The stops are only shared out roughly, in file order. Open the Route planner and use Plan these loads to put each stop on the best truck, then assign drivers and trucks.' : 'Loads are created as Planned. Assign drivers and trucks, then Get miles &amp; price, on each load.'}</span></div>
     <div id="imp-msg" style="margin-top:8px"></div>`;
   $('imp-head').onchange = () => { imp.header = parseInt($('imp-head').value, 10); guessMap(); drawImport(); };
   $('imp-group').onchange = drawImport; $('imp-unit').onchange = drawImport;
+  $('imp-trucks').onchange = () => { imp.trucks = Math.max(1, Math.min(50, parseInt($('imp-trucks').value, 10) || 1)); drawImport(); };
   document.querySelectorAll('[data-map]').forEach(sel => sel.onchange = () => {
     if (sel.value === '') delete imp.map[sel.dataset.map]; else imp.map[sel.dataset.map] = parseInt(sel.value, 10); drawImport(); });
   $('imp-go').onclick = async () => {
     const ok = importRows().filter(r => r.ok);
     const g = $('imp-group').value, groups = new Map();
-    ok.forEach((r, n) => { const k = g === 'route' ? (r.route || '(no route)') : g === 'all' ? 'all' : 'row' + n; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+    const split = splitRows(ok);
+    ok.forEach((r, n) => { const k = g === 'route' ? (r.route || '(no route)') : g === 'all' ? 'all' : g === 'split' ? 'truck' + split.get(r.i) : 'row' + n; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
     const payload = [...groups.entries()].map(([k, list]) => ({ load_no: g === 'route' && k !== '(no route)' ? k : null,
       stops: list.map(r => ({ type: r.type, name: r.name, code: r.code, address: r.address, window_start: r.window_start, window_end: r.window_end, unit: r.unit, qty: r.qty })) }));
     $('imp-go').disabled = true;
