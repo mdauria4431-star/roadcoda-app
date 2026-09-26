@@ -8,7 +8,8 @@
 //   point:   { lat, lng }
 //   stop:    { id, lat, lng, ws, we (window start / end, minutes; null = any time), service (minutes),
 //              demand: { pallets, weight, cube, pieces } }
-//   vehicle: { id, cap: { pallets, weight, cube, pieces } (null / 0 = no limit), start (minutes),
+//   vehicle: { id, cap: { pallets, weight, cube, pieces } (null / 0 = no limit), start (minutes, earliest it can leave),
+//              latestEnd (minutes, must be back by — another load; null = no limit),
 //              maxDrive (minutes, e.g. 660 = 11 h), maxDuty (minutes, e.g. 840 = 14 h) }
 //   params:  { mph, roadFactor, returnToStart }
 (function (root) {
@@ -22,6 +23,7 @@
 
   function makeCtx(depot, stops, params) {
     const p = Object.assign({ mph: 45, roadFactor: 1.25, returnToStart: true }, params || {});
+    COST_MPH = Number(p.mph) || 45;
     const pts = [depot, ...stops];                  // index 0 = depot, i+1 = stops[i]
     const n = pts.length, mi = new Float64Array(n * n);
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) mi[i * n + j] = i === j ? 0 : crowMiles(pts[i], pts[j]) * p.roadFactor;
@@ -29,15 +31,18 @@
   }
 
   // Walk a route (array of stop indexes into ctx.stops). hard = windows must hold.
+  // A truck that would reach its first stop before the window opens leaves later instead of waiting
+  // there (start = when it actually leaves). Waiting at later stops is counted in `wait`.
   function evalRoute(ctx, route, v, hard) {
-    let t = v.start || 0, drive = 0, miles = 0, prev = 0, late = [], times = [];
+    let start = v.start || 0, t = start, drive = 0, miles = 0, prev = 0, wait = 0, late = [], times = [];
     const load = { pallets: 0, weight: 0, cube: 0, pieces: 0 };
-    for (const si of route) {
-      const s = ctx.stops[si], node = si + 1;
+    for (let k = 0; k < route.length; k++) {
+      const si = route[k], s = ctx.stops[si], node = si + 1;
       const leg = ctx.mins(prev, node);
       t += leg; drive += leg; miles += ctx.miles(prev, node);
+      if (k === 0 && s.ws != null && t < s.ws) { start += s.ws - t; t = s.ws; }   // leave later, don't wait
       const arrive = t;
-      if (s.ws != null && t < s.ws) t = s.ws;                         // early: wait for the window
+      if (s.ws != null && t < s.ws) { wait += s.ws - t; t = s.ws; }             // early: wait for the window
       times.push({ arrive, start: t });
       if (s.we != null && t > s.we) { if (hard) return null; late.push({ id: s.id, minutes: Math.round(t - s.we) }); }
       t += s.service || 0;
@@ -47,10 +52,22 @@
     if (ctx.p.returnToStart && route.length) { const leg = ctx.mins(prev, 0); t += leg; drive += leg; miles += ctx.miles(prev, 0); }
     for (const d of DIMS) { const c = v.cap && v.cap[d]; if (c && load[d] > c + 1e-9) return null; }
     if (v.maxDrive && drive > v.maxDrive + 1e-9) return null;
-    if (v.maxDuty && t - (v.start || 0) > v.maxDuty + 1e-9) return null;
-    return { miles, drive, duty: t - (v.start || 0), end: t, load, late, times };
+    if (v.maxDuty && t - start > v.maxDuty + 1e-9) return null;
+    if (v.latestEnd != null && route.length && t > v.latestEnd + 1e-9) return null;   // must be back for its next load
+    return { miles, drive, wait, start, duty: t - start, end: t, load, late, times };
   }
-  const cost = (e) => e.miles + e.late.reduce((a, x) => a + x.minutes, 0) * 5;   // lateness weighs heavily (reorder only)
+  // Leave as late as possible without making any stop late: waits later in the day shrink too.
+  function settle(ctx, route, v) {
+    const e0 = evalRoute(ctx, route, v, false); if (!e0 || !route.length || !e0.wait) return e0;
+    const ok = (d) => { const e = evalRoute(ctx, route, Object.assign({}, v, { start: e0.start + d }), false); return e && e.late.length <= e0.late.length ? e : null; };
+    let lo = 0, hi = e0.wait, best = e0;
+    for (let i = 0; i < 14 && hi - lo > 0.5; i++) { const mid = (lo + hi) / 2, e = ok(mid); if (e) { lo = mid; best = e; } else hi = mid; }
+    return best;
+  }
+  // What a route costs: its miles, plus waiting time counted like driving time (a minute waiting
+  // = the miles a truck covers in a minute), plus lateness weighed heavily (re-order only)
+  let COST_MPH = 45;
+  const cost = (e) => e.miles + (e.wait || 0) * COST_MPH / 60 + e.late.reduce((a, x) => a + x.minutes, 0) * 5;
 
   // 2-opt within a route, then relocate between routes, until nothing improves
   function improve(ctx, routes, vehicles, hard) {
@@ -88,8 +105,9 @@
 
   function summarize(ctx, routes, vehicles, unassigned) {
     return {
-      routes: routes.map((r, k) => { const e = evalRoute(ctx, r, vehicles[k], false);
+      routes: routes.map((r, k) => { const e = settle(ctx, r, vehicles[k]);
         return { vehicle: vehicles[k].id, stops: r.map(i => ctx.stops[i].id), miles: e ? e.miles : 0, drive: e ? e.drive : 0, duty: e ? e.duty : 0, end: e ? e.end : null,
+                 start: e ? e.start : null, wait: e ? e.wait : 0,
                  load: e ? e.load : null, cap: vehicles[k].cap || {}, late: e ? e.late : [], times: e ? e.times : [] }; }),
       unassigned,
       miles: routes.reduce((a, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return a + (e ? e.miles : 0); }, 0),
@@ -116,7 +134,7 @@
         for (let pos = 0; pos <= routes[k].length; pos++) {
           const cand = routes[k].slice(0, pos).concat([si], routes[k].slice(pos));
           const e = evalRoute(ctx, cand, vehicles[k], true); if (!e) continue;
-          const add = e.miles - base.miles + (routes[k].length ? 0 : 5);   // small nudge against opening a truck for one stop
+          const add = cost(e) - cost(base) + (routes[k].length ? 0 : 5);   // small nudge against opening a truck for one stop
           if (!best || add < best.add) best = { k, cand, add };
         }
       }
@@ -136,7 +154,7 @@
       for (let pos = 0; pos <= routes[k].length; pos++) {
         const cand = routes[k].slice(0, pos).concat([si], routes[k].slice(pos));
         const e = evalRoute(ctx, cand, vehicles[k], true); if (!e) continue;
-        const add = e.miles - base.miles;
+        const add = cost(e) - cost(base);
         if (!best || add < best.add) best = { k, cand, add };
       }
     }
@@ -205,7 +223,7 @@
     improveUsed(ctx, b.routes, vehicles); eliminate(ctx, b.routes, vehicles); improveUsed(ctx, b.routes, vehicles);
     tries.push(b);
     const score = (t) => [t.unassigned.length, t.routes.filter(r => r.length).length,
-      t.routes.reduce((m, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return m + (e ? e.miles : 0); }, 0)];
+      t.routes.reduce((m, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return m + (e ? cost(e) : 0); }, 0)];
     tries.sort((x, y) => { const p = score(x), q = score(y); return p[0] - q[0] || p[1] - q[1] || p[2] - q[2]; });
     return summarize(ctx, tries[0].routes, vehicles, tries[0].unassigned);
   }
@@ -241,6 +259,15 @@
              overHours: (lim.maxDrive && r.drive > lim.maxDrive) || (lim.maxDuty && r.duty > lim.maxDuty) };
   }
 
-  const api = { plan, reorder, crowMiles, DIMS };
+  // Times along a load in the order given (the load page's ETAs): arrival at each stop, with waits
+  // for windows and time at each stop; no limits applied, nothing re-ordered.
+  function timeline(depot, stops, vehicle, params) {
+    const ctx = makeCtx(depot, stops, params);
+    const v = Object.assign({}, vehicle, { cap: null, maxDrive: null, maxDuty: null });
+    const e = settle(ctx, stops.map((_, i) => i), v);
+    return { times: e.times, late: e.late, miles: e.miles, end: e.end, start: e.start, wait: e.wait, drive: e.drive, duty: e.duty };
+  }
+
+  const api = { plan, reorder, timeline, crowMiles, DIMS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.RC_PLANNER = api;
 })(typeof window !== 'undefined' ? window : this);

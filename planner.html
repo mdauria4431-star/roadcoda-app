@@ -124,11 +124,12 @@ const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY)
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const hhmm = (m) => m == null ? '' : `${Math.floor(m / 60) % 24 === 0 ? 12 : ((Math.floor(m / 60) - 1) % 12) + 1}:${String(Math.round(m % 60)).padStart(2, '0')} ${Math.floor(m / 60) % 24 < 12 ? 'am' : 'pm'}`;
+const hhmm = (m0) => { if (m0 == null) return ''; const m = ((Math.round(m0) % 1440) + 1440) % 1440, h = Math.floor(m / 60);
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`; };
 const hrs = (m) => (m / 60).toFixed(1) + ' h';
 const DIMS = [['pallets', 'Pallets', 'cap_pallets'], ['weight', 'Weight lb', 'cap_weight_lb'], ['cube', 'Cube ft³', 'cap_cube_ft'], ['pieces', 'Pieces', 'cap_pieces']];
 const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('dispatch', 'edit');
-let TAB = 'plan', CAR = {}, CUSTS = [], EQ = [], UNITS = {}, LOADS = [], PLAN = null, tt = null, BUSY = new Set(), FLEET = [], OFF = new Set();
+let TAB = 'plan', CAR = {}, CUSTS = [], EQ = [], UNITS = {}, LOADS = [], PLAN = null, tt = null, BUSY = new Map(), FLEET = [], OFF = new Set(), DRV = new Map(), DRIVERS = [], ELD = {};
 function toast(h, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 6000); }
 const fail = (e) => toast(esc(e.message || e), true);
 
@@ -181,10 +182,20 @@ async function loadDay() {
   if (error) return fail(error);
   LOADS = (data || []).filter(l => !l.invoice_id && (l.stops || []).every(s => s.status === 'pending'));
   LOADS.forEach(l => l.stops.sort((a, b) => a.seq - b.seq));
-  // trucks and trailers already on another load that day aren't available
-  const pool = new Set(LOADS.map(l => l.id));
-  const day = (await sb.from('loads').select('id, truck_id, trailer_id').eq('service_date', $('day').value).neq('status', 'cancelled')).data || [];
-  BUSY = new Set(day.filter(l => !pool.has(l.id)).flatMap(l => [l.truck_id, l.trailer_id]).filter(Boolean));
+  // trucks and trailers on other loads (this day, or a night load from the day before): when are they out?
+  const pool = new Set(LOADS.map(l => l.id)), d0 = $('day').value, dPrev = iso(new Date(new Date(d0 + 'T12:00:00').getTime() - 864e5));
+  const other = (await sb.from('loads').select('id, load_no, service_date, status, truck_id, trailer_id, driver_id, customers(start_lat, start_lon), stops(seq, status, window_start, window_end, delivery_locations(lat, lon))')
+    .in('service_date', [dPrev, d0]).not('status', 'in', '(cancelled,delivered)')).data || [];
+  BUSY = new Map();
+  DRV = new Map();
+  other.filter(l => !pool.has(l.id) && (l.truck_id || l.trailer_id || l.driver_id)).forEach(l => { const iv = outInterval(l, l.service_date === d0 ? 0 : -1440);
+    [l.truck_id, l.trailer_id].filter(Boolean).forEach(id => { if (!BUSY.has(id)) BUSY.set(id, []); BUSY.get(id).push(iv); });
+    if (l.driver_id) { if (!DRV.has(l.driver_id)) DRV.set(l.driver_id, []); DRV.get(l.driver_id).push(iv); } });
+  // drivers who can take a route, and their ELD hours when the plan is for today
+  DRIVERS = ((await sb.from('drivers').select('id, full_name, driver_type, is_guest').eq('active', true).order('full_name')).data || [])
+    .filter(x => !x.is_guest && x.driver_type !== 'yard');
+  ELD = {};
+  if (d0 === iso(new Date())) { const h = await sb.from('driver_hos').select('driver_id, drive_left_min, shift_left_min, as_of'); (h.data || []).forEach(x => ELD[x.driver_id] = x); }
   buildFleet();
   draw();
 }
@@ -318,8 +329,45 @@ function drawImp() {
 // ── Trucks available today ──────────────────────────────────────────
 const capFrom = (src) => { const cap = {}; DIMS.forEach(([k, , col]) => { const v = src && src[col]; cap[k] = v ? Number(v) : null; }); return cap; };
 const eqNo = (id) => (EQ.find(e => e.id === id) || {}).unit_no || '';
+// When another load has a truck out: from when it leaves until it's back, in minutes of the planning day
+// (a night load from the day before comes out negative, so only its tail shows). Estimated the same way
+// as the load page's ETAs. Without map points it can't be estimated, so the truck counts as out all day.
+function outInterval(l, offset) {
+  const st = (l.stops || []).slice().sort((a, b) => a.seq - b.seq), c = l.customers || {};
+  const base = new Date(l.service_date + 'T00:00:00').getTime(), m = (t) => t ? (new Date(t).getTime() - base) / 6e4 : null;
+  const dep = c.start_lat != null ? { lat: c.start_lat, lng: c.start_lon } : null;
+  if (!dep || !st.length || !st.every(x => x.delivery_locations && x.delivery_locations.lat != null)) return { from: -1e9, to: 1e9, drive: 0, load_no: l.load_no, known: false };
+  const r = RC_PLANNER.timeline(dep, st.map(x => ({ id: x.seq, lat: x.delivery_locations.lat, lng: x.delivery_locations.lon, ws: m(x.window_start), we: m(x.window_end), service: CAR.plan_stop_min })),
+    { start: leave() }, params());
+  return { from: r.start + offset, to: r.end + offset, drive: r.drive, load_no: l.load_no, dep, known: true };
+}
+const TURN = 30;   // minutes to turn a truck around between loads
+const between = (a, b) => (a && b) ? RC_PLANNER.crowMiles(a, b) * Number(CAR.plan_road_factor) / Number(CAR.plan_mph) * 60 : 0;
+// The longest stretch of the planning day a unit is free: after the loads before it (plus turning
+// around and driving to this customer's yard), and before its next load (the same, the other way).
+function freeGap(ids) {
+  const ivs = ids.flatMap(id => BUSY.get(id) || []);
+  if (ivs.some(iv => !iv.known)) return { none: true, why: `on load ${ivs.find(iv => !iv.known).load_no} — its time can't be estimated (map points missing)` };
+  const dep = depot(), day0 = leave(), dayEnd = 1440 + 12 * 60;
+  const busy = ivs.map(iv => ({ from: iv.from - TURN - between(dep, iv.dep), to: iv.to + TURN + between(iv.dep, dep), iv })).sort((a, b) => a.from - b.from);
+  // the free stretch that covers most of the day's delivery windows (a truck out in the afternoon is
+  // offered for the morning deliveries, not the evening)
+  const ws = LOADS.flatMap(l => l.stops.filter(x => x.stop_type !== 'pickup')), lo = Math.min(...ws.map(x => minsOf(x.window_start) ?? day0), day0 + 60),
+        hi = Math.max(...ws.map(x => minsOf(x.window_end) ?? day0 + 600), day0 + 120);
+  const fit = (g) => Math.max(0, Math.min(g.to ?? dayEnd, hi) - Math.max(g.from, lo)) + ((g.to ?? dayEnd) - g.from) / 1e4;
+  const gaps = []; let cur = day0, before = null;
+  for (const b of busy) {
+    if (b.to <= cur) { if (!before || b.to > before.to) before = b; continue; }   // over before this stretch starts
+    if (b.from > cur) gaps.push({ from: cur, to: b.from, after: before, next: b });
+    cur = b.to; before = b;
+  }
+  if (cur < dayEnd) gaps.push({ from: cur, to: null, after: before, next: null });
+  const best = gaps.sort((a, b) => fit(b) - fit(a))[0];
+  if (!best || (best.to != null && best.to - best.from < 120)) return { none: true, why: `busy all day${ivs.length ? ' (load ' + [...new Set(ivs.map(iv => iv.load_no))].join(', ') + ')' : ''}` };
+  return best;
+}
 function buildFleet() {
-  const free = (e) => e.active && !BUSY.has(e.id);
+  const free = (e) => e.active;
   const units = [], usedTr = new Set(), usedEq = new Set();
   // a truck already on one of these loads keeps its trailer
   LOADS.forEach(l => { const t = EQ.find(e => e.id === l.truck_id); if (!t || usedEq.has(t.id)) return;
@@ -329,24 +377,82 @@ function buildFleet() {
     .sort((a, b) => (b.cap_pallets || 0) - (a.cap_pallets || 0) || String(a.unit_no).localeCompare(String(b.unit_no), undefined, { numeric: true }));
   EQ.filter(e => free(e) && !usedEq.has(e.id) && e.unit_type !== 'trailer')
     .sort((a, b) => (a.unit_type === 'tractor' ? 0 : 1) - (b.unit_type === 'tractor' ? 0 : 1) || String(a.unit_no).localeCompare(String(b.unit_no), undefined, { numeric: true }))
-    .forEach(t => { if (t.unit_type === 'tractor') { const tr = trailers.shift(); units.push({ truck: t, trailer: tr || null, noTrailer: !tr }); }
+    .forEach(t => { if (t.unit_type === 'tractor') {
+                      const own = (BUSY.get(t.id) || []).length ? trailers.find(tr => (BUSY.get(tr.id) || []).some(iv => (BUSY.get(t.id) || []).includes(iv))) : null;
+                      const tr = own || trailers.find(x => !BUSY.has(x.id)) || null;
+                      if (tr) trailers.splice(trailers.indexOf(tr), 1);
+                      units.push({ truck: t, trailer: tr, noTrailer: !tr }); }
                     else units.push({ truck: t, trailer: null }); });
   units.forEach(u => { u.key = u.truck.id; u.cap = capFrom(u.trailer || u.truck); u.name = [u.truck.unit_no, u.trailer?.unit_no].filter(Boolean).join(' + ');
-    u.known = DIMS.some(([k]) => u.cap[k]); });
+    u.known = DIMS.some(([k]) => u.cap[k]); u.gap = freeGap([u.truck.id, u.trailer?.id].filter(Boolean)); });
   FLEET = units;
 }
-const ticked = () => FLEET.filter(u => !u.noTrailer && !OFF.has(u.key));
+const ticked = () => FLEET.filter(u => !u.noTrailer && !(u.gap && u.gap.none) && !OFF.has(u.key));
+function gapTxt(g) {
+  if (!g) return '';
+  if (g.none) return `<div class="mini warn">${esc(g.why)}</div>`;
+  const a = g.from > leave() + 0.5 ? `free from ${hhmm(g.from)}${g.after ? ` (back from load ${esc(g.after.iv.load_no)})` : ''}`
+    : g.after && g.after.iv.to > -240 ? `back from load ${esc(g.after.iv.load_no)} by ${hhmm(g.after.iv.to)}` : '';
+  const b = g.to != null ? `must be back by ${hhmm(g.to)}${g.next ? ` (load ${esc(g.next.iv.load_no)})` : ''}` : '';
+  return a || b ? `<div class="mini">${[a, b].filter(Boolean).join(' · ')}</div>` : '';
+}
 function drawFleet() {
   const n = ticked().length;
   $('fleet-n').textContent = `${n} ticked of ${FLEET.length}`;
   $('fleet').innerHTML = FLEET.length ? `<table class="t"><thead><tr><th></th><th>Truck</th><th>Kind</th>${DIMS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th></th></tr></thead><tbody>${FLEET.map(u => `<tr>
-      <td><input type="checkbox" data-fu="${u.key}" ${u.noTrailer ? 'disabled' : OFF.has(u.key) ? '' : 'checked'} style="height:auto"></td>
-      <td><b>${esc(u.name)}</b>${u.load ? ` <span class="mini">on load ${esc(u.load.load_no)}</span>` : ''}</td>
+      <td><input type="checkbox" data-fu="${u.key}" ${u.noTrailer || u.gap?.none ? 'disabled' : OFF.has(u.key) ? '' : 'checked'} style="height:auto"></td>
+      <td><b>${esc(u.name)}</b>${u.load ? ` <span class="mini">on load ${esc(u.load.load_no)}</span>` : ''}${gapTxt(u.gap)}</td>
       <td class="mini">${esc(u.truck.unit_type === 'tractor' ? 'tractor + trailer' : String(u.truck.unit_type).replace('_', ' '))}</td>
       ${DIMS.map(([k]) => `<td class="n">${u.cap[k] ?? '—'}</td>`).join('')}
       <td class="mini">${u.noTrailer ? '<span class="warn">no free trailer</span>' : u.known ? '' : '<span class="warn">no capacity set</span>'}</td></tr>`).join('')}</tbody></table>`
     : '<div class="empty">No free trucks that day. Trucks already on another load, and inactive units, aren\'t listed.</div>';
   document.querySelectorAll('[data-fu]').forEach(c => c.onchange = () => { if (c.checked) OFF.delete(c.dataset.fu); else OFF.add(c.dataset.fu); PLAN = null; $('result').innerHTML = ''; drawFleet(); });
+}
+
+// ── Drivers: who takes each route, within their hours ────────────────
+// A driver's shift is their on-duty time with no 10-hour break in it. In one shift: at most the
+// company's driving limit (11 h) and everything done within its on-duty limit (14 h). A driver
+// already working that day gets the route if it fits their hours left (double use); otherwise a
+// rested driver. A second load in the same shift must leave an hour spare on both limits, for delays.
+// With ELD hours (plan for today), their hours left can't be exceeded either.
+const SPARE = 60;   // minutes of driving and on-duty time kept spare when a driver takes a second load in a shift
+function driverFits(d, iv, list) {
+  const H = { drive: CAR.plan_max_drive_h * 60, duty: CAR.plan_max_duty_h * 60 };
+  if (list.some(x => !x.known)) return { ok: false };
+  if (list.some(x => x.from < iv.to + 15 && iv.from < x.to + 15)) return { ok: false };
+  const all = [...list, iv].sort((a, b) => a.from - b.from), shifts = [];
+  all.forEach(x => { const s = shifts[shifts.length - 1]; if (s && x.from - s[s.length - 1].to < 600) s.push(x); else shifts.push([x]); });
+  const sh = shifts.find(g => g.includes(iv)), drive = sh.reduce((a, x) => a + (x.drive || 0), 0), span = Math.max(...sh.map(x => x.to)) - Math.min(...sh.map(x => x.from));
+  const e = ELD[d.id];
+  if (e && sh.length === 1 && list.length === 0) {           // today, ELD hours: what the driver has left now
+    if (e.drive_left_min != null && iv.drive > e.drive_left_min) return { ok: false };
+    if (e.shift_left_min != null && iv.to - iv.from > e.shift_left_min) return { ok: false };
+  }
+  const spare = sh.length > 1 ? SPARE : 0;                    // a second load in the shift keeps an hour for delays
+  if (drive > H.drive - spare + 1e-6 || span > H.duty - spare + 1e-6) return { ok: false };
+  const prev = sh.filter(x => x !== iv && x.to <= iv.from);
+  return { ok: true, sameShift: sh.length > 1, working: list.length > 0, prevEnd: prev.length ? Math.max(...prev.map(x => x.to)) : -1e9,
+           driveLeft: H.drive - drive, dutyLeft: H.duty - span, loads: sh.filter(x => x !== iv).map(x => x.load_no).filter(Boolean) };
+}
+function assignDrivers(r, fleet) {
+  const busy = new Map([...DRV].map(([k, v]) => [k, v.slice()])), out = {};
+  r.routes.filter(x => x.stops.length).sort((a, b) => a.start - b.start).forEach(rt => {
+    const iv = { from: rt.start, to: rt.end, drive: rt.drive, known: true, load_no: null };
+    const u = fleet.find(f => f.key === rt.vehicle), used = new Set(Object.values(out).filter(Boolean).map(x => x.driver.id));
+    const cands = DRIVERS.map(d => ({ d, c: driverFits(d, iv, busy.get(d.id) || []) })).filter(x => x.c.ok);
+    const keep = u.load && u.load.driver_id && cands.find(x => x.d.id === u.load.driver_id);
+    const working = cands.filter(x => x.c.sameShift).sort((a, b) => b.c.prevEnd - a.c.prevEnd);
+    const rested = cands.filter(x => !x.c.sameShift && x.c.working), fresh = cands.filter(x => !x.c.working && !used.has(x.d.id));
+    const pick = keep || working[0] || rested[0] || fresh[0] || null;
+    out[rt.vehicle] = pick ? { driver: pick.d, ...pick.c } : null;
+    if (pick) { if (!busy.has(pick.d.id)) busy.set(pick.d.id, []); busy.get(pick.d.id).push(Object.assign(iv, { load_no: 'this plan' })); }
+  });
+  return out;
+}
+function driverTxt(a) {
+  if (!a) return '<span class="warn">no driver with enough hours — assign on Dispatch</span>';
+  const left = `${hrs(a.driveLeft)} driving left after`;
+  return `<b>${esc(a.driver.full_name)}</b> <span class="mini">${a.sameShift ? `· same shift as load ${esc(a.loads.join(', '))} · ${left}` : a.working ? '· after a 10-hour break · ' + left : '· ' + left}</span>`;
 }
 
 // ── Plan the day ────────────────────────────────────────────────────
@@ -368,9 +474,11 @@ $('run').onclick = () => {
   if (missingPoints(loads).length) return fail('Some stops (or the start) have no map point yet — use "Look up missing map points" first.');
   const fleet = ticked(); if (!fleet.length) return fail('Tick at least one truck.');
   const stops = loads.flatMap(l => l.stops.filter(s => s.stop_type !== 'pickup').map(toStop));
-  const trucks = fleet.map(u => ({ id: u.key, cap: u.cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 })), dep = depot();
+  const trucks = fleet.map(u => ({ id: u.key, cap: u.cap, start: Math.max(leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
+    latestEnd: u.gap && u.gap.to != null ? u.gap.to : null, maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 })), dep = depot();
   const t0 = performance.now(); const r = RC_PLANNER.plan(dep, stops, trucks, params());
   PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal };
+  PLAN.drivers = assignDrivers(r, fleet);
   drawResult();
 };
 function capRows(load, cap) {
@@ -387,15 +495,16 @@ function drawResult() {
     ${r.unassigned.length ? `<div class="card pad" style="border-color:var(--late)"><b>Didn't fit</b> on any ticked truck — they stay on the load they're on now. Tick another truck and plan again, or move them yourself:<ul style="margin:6px 0 0 18px">${r.unassigned.map(u => `<li>${esc(byStop[u.id]?.consignee)} — ${esc(u.why)}</li>`).join('')}</ul></div>` : ''}
     <div class="routes">${used.map(rt => { const u = unitOf(rt.vehicle), overH = rt.drive > CAR.plan_max_drive_h * 60;
       return `<div class="card"><header><h2>${esc(u.name)}</h2><span class="sp"></span><span class="mini">${u.load ? 'on load ' + esc(u.load.load_no) : ''}</span></header><div class="pad">
+        <div style="margin-bottom:6px">Driver: ${driverTxt(PLAN.drivers[rt.vehicle])}</div>
         ${capRows(rt.load, rt.cap)}
         <div class="mini" style="margin-top:6px">${rt.stops.length} stops · ${Math.round(rt.miles)} mi · ${hrs(rt.drive)} driving · ${hrs(rt.duty)} on duty · back ${hhmm(rt.end)}${overH ? ' <span class="error">over hours</span>' : ''}</div>
-        <div class="mini" style="margin-top:4px">Leaves ${hhmm(leave())}. Each stop shows when the truck gets there, then its window.</div>
+        <div class="mini" style="margin-top:4px">Leaves <b>${hhmm(rt.start != null ? rt.start : leave())}</b>${rt.start != null && rt.start > leave() + 0.5 ? ` (not before ${hhmm(leave())}, so no one waits for the first window)` : ''}. Each stop shows when the truck gets there, then its window.</div>
         <ol class="st">${rt.stops.map((id, i) => { const s = byStop[id], tm = (rt.times || [])[i];
           const at = tm ? `<b>${hhmm(tm.arrive)}</b>${tm.start > tm.arrive + 0.5 ? ` <span class="mini">(waits till ${hhmm(tm.start)})</span>` : ''} · ` : '';
           return `<li>${at}${esc(s.consignee)}${s.window_start ? ` <span class="mini">window ${hhmm(minsOf(s.window_start))}–${hhmm(minsOf(s.window_end))}</span>` : ''}</li>`; }).join('')}</ol>
       </div></div>`; }).join('')}</div>
     ${fleet.length > used.length ? `<div class="mini" style="margin:6px 2px">Not needed: ${esc(fleet.filter(u => !used.some(x => x.vehicle === u.key)).map(u => u.name).join(', '))}</div>` : ''}
-    <div class="card pad row">${canEdit() ? '<button class="btn primary" id="apply">Apply this plan</button>' : ''}<span class="mini">Makes one load per truck used, with its truck and trailer on it, and puts the stops on in this order with these arrival times as their ETAs. An emptied load (like the imported list) is removed. Drivers are assigned on Dispatch.</span><span class="sp"></span><span class="mini">Planned in ${PLAN.ms} ms</span></div>
+    <div class="card pad row">${canEdit() ? '<button class="btn primary" id="apply">Apply this plan</button>' : ''}<span class="mini">Makes one load per truck used, with its truck and trailer on it, and puts the stops on in this order with these arrival times as their ETAs. An emptied load (like the imported list) is removed. Each load gets the driver shown; change it on Dispatch if you need to.</span><span class="sp"></span><span class="mini">Planned in ${PLAN.ms} ms</span></div>
     <div id="after"></div>`;
   if ($('apply')) $('apply').onclick = applyPlan;
 }
@@ -404,7 +513,8 @@ async function applyPlan() {
   // planned arrival at each stop, as a date-time on the planning day (this computer's time zone)
   const at = (mins) => { const d = new Date($('day').value + 'T00:00:00'); d.setMinutes(Math.round(mins)); return d.toISOString(); };
   const routes = r.routes.filter(x => x.stops.length).map(x => { const u = fleet.find(f => f.key === x.vehicle);
-    return { truck_id: u.truck.id, trailer_id: u.trailer ? u.trailer.id : null, stops: x.stops, etas: (x.times || []).map(t => at(t.arrive)) }; });
+    const dv = PLAN.drivers[x.vehicle];
+    return { truck_id: u.truck.id, trailer_id: u.trailer ? u.trailer.id : null, driver_id: dv ? dv.driver.id : null, stops: x.stops, etas: (x.times || []).map(t => at(t.arrive)) }; });
   if (!confirm(`Put the stops on ${routes.length} truck${routes.length === 1 ? '' : 's'} as shown?`)) return;
   $('apply').disabled = true;
   const { data, error } = await sb.rpc('plan_apply_trucks', { p_customer: $('cust').value, p_date: $('day').value, p_pool: loads.map(l => l.id), p_routes: routes });
@@ -413,7 +523,7 @@ async function applyPlan() {
   const mine = LOADS.filter(l => (data.loads || []).includes(l.id));
   $('after').innerHTML = `<div class="card pad"><b class="ok">Plan applied — ${data.stops_moved} stops on ${mine.length} load${mine.length === 1 ? '' : 's'}${data.new_loads ? ` (${data.new_loads} new)` : ''}.</b>
     ${(data.removed || []).length ? ` Removed the emptied load${data.removed.length === 1 ? '' : 's'} ${esc(data.removed.join(', '))}.` : ''}
-    Assign drivers on Dispatch, and recalculate each load's miles and price:
+    Check the drivers on Dispatch, and recalculate each load's miles and price:
     <div class="row" style="margin-top:8px">${mine.map(l => `<a class="btn small" href="loads.html?load=${l.id}&recalc=1" target="_blank" rel="noopener">Load ${esc(l.load_no)} · ${esc(capOf(l).name)}</a>`).join('')}</div></div>`;
   toast('Plan applied.');
 }
