@@ -237,12 +237,21 @@ async function load() {
     stopIds.length ? sb.from('stop_delay_log').select('at, who, what, stop_id').in('stop_id', stopIds).order('at', { ascending: false }) : { data: [] },
     l.customer_id ? sb.rpc('delay_codes_for_customer', { p_customer: l.customer_id }) : { data: [] },
     sb.from('delay_codes').select('id, code, name, billable').eq('active', true).order('sort'),
-    sb.from('carriers').select('require_trip_sheet, require_seal, close_pod_days').maybeSingle(),
+    sb.from('carriers').select('*').maybeSingle(),
     sb.from('load_activities').select('id, stop_id, activity_type_id, qty, amount, note, created_by, created_at').eq('load_id', LOAD).order('created_at'),
     sb.from('activity_types').select('id, name, unit, is_deduction, pay_source, pays_driver, bills_customer, active, sort').eq('pay_source', 'recorded').eq('active', true).order('sort'),
     sb.from('driver_hos_now').select('*'),
     sb.from('messages').select('id, from_driver, body, created_at, delivered_at, read_at').eq('load_id', LOAD).order('created_at'),
   ]);
+  // drivers' weeks without an ELD (127); nothing if not installed
+  const [wk, dep] = await Promise.all([sb.rpc('driver_week_hours', { p_day: l.service_date }),
+    sb.from('loads').select('plan_depart_at').eq('id', LOAD).maybeSingle()]);   // 125; nothing if not installed
+  l.plan_depart_at = dep && !dep.error && dep.data ? dep.data.plan_depart_at : null;
+  // the driver's loads that day, for when their shift starts (the 14 hours run from then)
+  let dayLoads = [];
+  if (l.driver_id) { let q = await sb.from('loads').select('id, plan_depart_at, stops(arrived_at, eta)').eq('service_date', l.service_date).neq('status', 'cancelled').or(`driver_id.eq.${l.driver_id},driver2_id.eq.${l.driver_id}`);
+    if (q.error) q = await sb.from('loads').select('id, stops(arrived_at, eta)').eq('service_date', l.service_date).neq('status', 'cancelled').eq('driver_id', l.driver_id);
+    dayLoads = q.data || []; }
   // Money: only for users with the money switch (the database refuses everyone else anyway)
   let margin = null, unitMargin = [];
   if (!ACC() || ACC().money) {
@@ -270,6 +279,7 @@ async function load() {
     msgs: msgs?.error ? null : (msgs?.data || []),
     tripTypes: await (async () => { const r = await sb.rpc('customer_trip_types', { p_customer: L.data.customer_id }); return r.error ? [] : (r.data || []).filter(t => t.active || t.id === L.data.trip_type_id); })(),
     hos: Object.fromEntries((hos?.error ? [] : hos?.data || []).map(h => [h.driver_id, h])),
+    week: Object.fromEntries((wk?.error ? [] : wk?.data || []).map(w => [w.driver_id, w])), dayLoads,
     labels: await (async () => {  // manifest labels per stop (81); nothing if not installed / no manifest
       const { data, error } = await sb.from('stop_label_status').select('stop_id, expected, scanned, missing, extra').eq('load_id', LOAD);
       return error ? null : Object.fromEntries((data || []).map(x => [x.stop_id, x]));
@@ -364,16 +374,30 @@ function draw() {
   const opt = (list, cur, blank) => `<option value="">${blank}</option>` + list.map(x => `<option value="${x.id}"${x.id === cur ? ' selected' : ''}>${esc(x.label)}</option>`).join('');
   const hmm = (m) => m == null ? '–' : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
   const lowOf = (h) => { const x = [h?.drive_left_min, h?.shift_left_min, h?.cycle_left_min].filter(v => v != null); return x.length ? Math.min(...x) : null; };
+  // no ELD (127): the week from the hours record or trips, and this day's on-duty time, against the company's day limit
+  const dayLim = Number(T.carrier.plan_max_duty_h || 14) * 60;
+  const estOf = (id) => { const w = T.week && T.week[id]; if (!w || w.rule === 'none' || !w.cycle_hours) return null;
+    const week = w.cycle_hours * 60 - w.prior_min - w.today_min, day = dayLim - w.today_min; return { w, week, day, low: Math.max(0, Math.min(week, day)) }; };
+  const colorOf = (low) => low != null && low < 60 ? 'var(--late)' : low != null && low < 120 ? 'var(--warn)' : 'var(--ink-3)';
+  const estLine = (id) => { const e = estOf(id); if (!e) { const w = T.week && T.week[id]; return w && w.rule === 'none' ? '<div class="mini" style="margin-top:4px;color:var(--ink-3)">DOT hours of service don\'t apply to this driver</div>' : ''; }
+    const src = { record: 'hours record', trips: 'RoadCoda trips', none: 'nothing on file for the week', 'record + trips': 'hours record and trips' }[e.w.src] || e.w.src;
+    const pm = (e.w.paper_min || 0);
+    return `<div class="mini" style="margin-top:4px;color:${colorOf(e.low)}">No ELD — about ${hmm(e.w.today_min)} on duty this day (of ${hmm(dayLim)}) · week about ${hmm(e.w.prior_min + e.w.today_min)} of ${e.w.cycle_hours}h → ${hmm(Math.max(0, e.week))} left · from the ${src}</div>`; };
   const guestIds = new Set((T.guestIds || []));   // guest drivers (77) belong to one load each
   const drvList = T.drivers.filter(d => (d.active && !guestIds.has(d.id)) || d.id === l.driver_id).map(d => {
     const h = T.hos[d.id], low = lowOf(h);
-    return { id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') + (low != null ? ` — ${hmm(low)} left${h.stale ? ' (old reading)' : ''}` : '') };
+    const est = low == null ? estOf(d.id) : null;
+    return { id: d.id, label: d.full_name + (d.active ? '' : ' (inactive)') + (low != null ? ` — ${hmm(low)} left${h.stale ? ' (old reading)' : ''}` : est ? ` — about ${hmm(Math.round(est.low))} left` : '') };
   });
-  const H = T.hos[l.driver_id], Hlow = lowOf(H);
-  const hosLine = !H || T.finished ? '' : H.paper_logs ? `<div class="mini" style="margin-top:4px;color:var(--warn)">Paper logs — this unit has no ELD. Ask the driver for their hours.</div>` : `<div class="mini" style="margin-top:4px;color:${!H.stale && Hlow != null && Hlow < 60 ? 'var(--late)' : !H.stale && Hlow != null && Hlow < 120 ? 'var(--warn)' : 'var(--ink-3)'}">
+  const hosFor = (id) => { const H = T.hos[id], Hlow = lowOf(H), pm = (T.week && T.week[id] && T.week[id].paper_min) || 0;
+    if (T.finished || !id) return '';
+    if (!H) return estLine(id);
+    return H.paper_logs ? `<div class="mini" style="margin-top:4px;color:var(--warn)">Paper logs — this unit has no ELD. Ask the driver for their hours.</div>` : `<div class="mini" style="margin-top:4px;color:${!H.stale && Hlow != null && Hlow < 60 ? 'var(--late)' : !H.stale && Hlow != null && Hlow < 120 ? 'var(--warn)' : 'var(--ink-3)'}">
       ${esc({ off: 'Off duty', sleeper: 'Sleeper', on: 'On duty', driving: 'Driving', yard: 'Yard move', personal: 'Personal conveyance', waiting: 'Waiting' }[H.duty_status] || 'Status unknown')}
-      · drive ${hmm(H.drive_left_min)} · shift ${hmm(H.shift_left_min)} · cycle ${hmm(H.cycle_left_min)}${H.break_left_min != null ? ` · break in ${hmm(H.break_left_min)}` : ''}
-      · ELD ${H.age_min} min ago${H.stale ? ' — not current' : ''}</div>`;
+      · drive ${hmm(H.drive_left_min)} · shift ${hmm(H.shift_left_min)} · cycle ${hmm(H.cycle_left_min)}${pm ? ` (less ${hmm(pm)} on paper logs not yet in the ELD)` : ''}${H.break_left_min != null ? ` · break in ${hmm(H.break_left_min)}` : ''}
+      · ELD ${H.age_min} min ago${H.stale ? ' — not current' : ''}</div>`; };
+  const H = T.hos[l.driver_id], Hlow = lowOf(H);
+  const hosLine = hosFor(l.driver_id);
   const trkList = T.units.filter(u => u.unit_type !== 'trailer' && (u.active || u.id === l.truck_id)).map(u => ({ id: u.id, label: `${u.unit_no} · ${u.unit_type.replace('_', ' ')}` }));
   const trlList = T.units.filter(u => u.unit_type === 'trailer' && (u.active || u.id === l.trailer_id)).map(u => ({ id: u.id, label: u.unit_no }));
   const eld = T.eld;
@@ -395,7 +419,7 @@ function draw() {
     </div>
     <div class="facts">
       <div class="f"><b>Driver</b><select class="ed" data-load="driver_id"${dis}>${opt(drvList, l.driver_id, '— none —')}</select>${hosLine}</div>
-      ${'driver2_id' in l && l.driver_id ? `<div class="f"><b>Co-driver (team)</b><select class="ed" data-load="driver2_id"${dis}>${opt(drvList.filter(x => x.id !== l.driver_id), l.driver2_id, '— none (single) —')}</select></div>` : ''}
+      ${'driver2_id' in l && l.driver_id ? `<div class="f"><b>Co-driver (team)</b><select class="ed" data-load="driver2_id"${dis}>${opt(drvList.filter(x => x.id !== l.driver_id), l.driver2_id, '— none (single) —')}</select>${l.driver2_id ? hosFor(l.driver2_id) : ''}</div>` : ''}
       <div class="f"><b>Truck</b><select class="ed" data-load="truck_id"${dis}>${opt(trkList, l.truck_id, '— none —')}</select></div>
       <div class="f"><b>Trailer</b>${l.bobtail
         ? `<span>Bobtail — no trailer</span>`
@@ -418,6 +442,7 @@ function draw() {
   html += marginHtml();
   html += logHtml();
   $('trip').innerHTML = html;
+  paintHoursLeft();
   wire(edit);
   wireSwap(edit);
 }
@@ -683,6 +708,7 @@ function stopsHtml(edit) {
     return `<tr id="s-${s.id}">
       <td class="n">${s.seq}</td>
       <td><span class="type${s.stop_type === 'pickup' ? ' pu' : ''}">${s.stop_type === 'pickup' ? 'PU' : 'DEL'}</span>${esc(s.consignee)}${s.address ? `<div class="mini">${esc(s.address)}</div>` : ''}${routeLine(s)}${boxLine(s)}${labelLine(s)}${sigLine(s)}</td>
+      <td class="n" data-hl="${s.id}"></td>
       <td class="n dim">${s.window_start ? hm(s.window_start) + '–' + hm(s.window_end) : hm(s.window_end) || '—'}</td>
       <td><input class="ed${tmNeed && !s.arrived_at ? ' need' : ''}" type="datetime-local" data-stop-f="arrived_at" data-stop="${s.id}" value="${toLocal(s.arrived_at)}"${dis}>${gpsLine(s, 'arrived')}</td>
       <td><input class="ed${tmNeed && !s.departed_at ? ' need' : ''}" type="datetime-local" data-stop-f="departed_at" data-stop="${s.id}" value="${toLocal(s.departed_at)}"${dis}${!s.arrived_at && !done ? ' title="Enter the arrival first"' : ''}>${gpsLine(s, 'departed')}</td>
@@ -696,8 +722,8 @@ function stopsHtml(edit) {
   }).join('');
   const gpsFill = edit && T.gps && T.l.stops.some(x => { const g = T.gps.by[x.id]; return g && ((!x.arrived_at && g.eld_arrived_at) || (!x.departed_at && g.eld_departed_at)); });
   return `<div class="card"><header><h2>Stops</h2>${gpsFill ? '<button class="btn small" data-feature="gps_times" id="gps-fill" title="Fill empty arrival / departure times from the truck\'s GPS. Each is logged and can be undone.">Use GPS times</button>' : ''}<span class="sp"></span><span class="mini">${edit ? 'Click any value to change it. Every change is logged with the value it replaced.' : T.locked ? 'Locked — a super user has to reopen it first.' : 'View only.'}</span></header>
-    <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="12" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + guestHtml(edit) + docsHtml(edit) + sheetHtml(edit);
+    <div class="boardwrap"><table class="stops"><thead><tr><th>#</th><th>Location</th><th title="The driver's estimated hours left when they finish each stop: the lower of the day (on-duty limit) and the week (60 / 70), from the ELD, the hours record or trips">Hours left</th><th>Window</th><th>Arrived</th><th>Departed</th><th>On site</th>${T.sheet?.paper ? '<th>Odometer</th><th>Receiver</th>' : ''}<th>Ordered → delivered</th><th>Seal</th><th>OS&amp;D</th><th>POD</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="13" class="empty">No stops on this load.</td></tr>'}</tbody></table></div></div>` + guestHtml(edit) + docsHtml(edit) + sheetHtml(edit);
 }
 
 // ── Documents (79): BOLs, receipts, tickets — from the driver's phone or uploaded here ──
@@ -1185,6 +1211,53 @@ function wire(edit) {
 }
 
 start();
+
+// ── Hours left at each stop: a running estimate (the driver's clock as they finish each stop) ──
+// Each stop finishes at its departure, else its arrival + the minutes at a stop, else its ETA + those
+// minutes — never earlier than now while it's still to do, so a late truck's clock keeps running.
+// With an ELD: its lowest clock (drive, shift, cycle, less paper-log days not yet in it) minus the
+// on-duty time from now to each stop. Without one: the day's on-duty window (14 h), which runs from the
+// start of the driver's shift (their first load that day, with 30 min for the pre-trip), and the 60 / 70-hour
+// week (the days before, from the hours record or trips, plus today so far). Amber under 2 h, red under 1 h — as on Dispatch.
+function paintHoursLeft() {
+  const cells = document.querySelectorAll('[data-hl]'); if (!cells.length || !T || !T.l) return;
+  const l = T.l, id = l.driver_id, put = (txt, cls, tip) => cells.forEach(c => { c.textContent = txt; c.style.color = cls; c.title = tip || ''; });
+  if (!id) return put('—', 'var(--ink-3)', 'No driver on this load yet');
+  const w = T.week && T.week[id], H = T.hos && T.hos[id];
+  if (!H && w && w.rule === 'none') return put('n/a', 'var(--ink-3)', 'DOT hours of service don\'t apply to this driver');
+  const stopMin = Number(T.carrier.plan_stop_min || 30), now = Date.now(), t = (x) => x ? +new Date(x) : null;
+  const fin = l.stops.map(s => {
+    const done = ['delivered', 'exception'].includes(s.status) || s.departed_at;
+    let f = t(s.departed_at) || (t(s.arrived_at) ? t(s.arrived_at) + stopMin * 6e4 : t(s.eta) ? t(s.eta) + stopMin * 6e4 : null);
+    if (f != null && !done) f = Math.max(f, now + (s.arrived_at ? 0 : stopMin * 6e4));
+    return f;
+  });
+  const first = l.stops[0], start = t(l.plan_depart_at) || (first && (t(first.arrived_at) || t(first.eta)) ? (t(first.arrived_at) || t(first.eta)) - 30 * 6e4 : null);
+  const hm = (m) => `${m < 0 ? '−' : ''}${Math.floor(Math.abs(m) / 60)}:${String(Math.round(Math.abs(m) % 60)).padStart(2, '0')}`;
+  const color = (m) => m < 60 ? 'var(--late)' : m < 120 ? 'var(--warn)' : 'var(--ink-2, inherit)';
+  let at;   // (finish ms) -> minutes left
+  if (H) {
+    const low = [H.drive_left_min, H.shift_left_min, H.cycle_left_min != null ? H.cycle_left_min - ((w && w.paper_min) || 0) : null].filter(v => v != null);
+    if (!low.length) return put('—', 'var(--ink-3)', 'No hours from the ELD');
+    const base = Math.min(...low), from = Math.max(now, start || now);
+    at = (f) => base - Math.max(0, (f - from) / 6e4);
+  } else if (w && w.cycle_hours) {
+    // the shift starts with the driver's first load that day (30 min before its first stop, less 30 for the
+    // pre-trip); the day's 14 hours run from then, and all of it counts toward the week
+    const dayLim = Number(T.carrier.plan_max_duty_h || 14) * 60;
+    const starts = (T.dayLoads || []).map(x => { const st = (x.stops || []).map(z => t(z.arrived_at) || t(z.eta)).filter(Boolean);
+      return t(x.plan_depart_at) || (st.length ? Math.min(...st) - 30 * 6e4 : null); }).filter(Boolean);
+    if (start) starts.push(start);
+    const shift = starts.length ? Math.min(...starts) - 30 * 6e4 : null;
+    at = (f) => { const used = shift ? Math.max(0, (f - shift) / 6e4) : 0;
+      return Math.min(dayLim - used, w.cycle_hours * 60 - (w.prior_min || 0) - used); };
+  } else return put('—', 'var(--ink-3)', 'No hours on file for this driver');
+  cells.forEach((c, i) => { const f = fin[i];
+    if (f == null) { c.textContent = '—'; c.title = 'No ETA or times yet'; c.style.color = 'var(--ink-3)'; return; }
+    const m = at(f); c.textContent = (H ? '' : '≈') + hm(m); c.style.color = color(m); c.style.fontWeight = m < 120 ? '700' : '';
+    c.title = `${H ? 'From the ELD' : 'Estimated — no ELD'}: about ${hm(Math.max(0, m))} left when this stop is done (${new Date(f).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})${m < 0 ? ' — over the limit' : ''}`; });
+}
+setInterval(paintHoursLeft, 60000);
 </script>
 </body>
 </html>
