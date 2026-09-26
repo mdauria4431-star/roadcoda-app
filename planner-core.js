@@ -21,13 +21,24 @@
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
 
+  // Miles and minutes between every two points. params.leg(a, b) can give a real value (Google's
+  // drive time, already adjusted for a truck); otherwise straight-line × road factor, at the local
+  // speed for short legs (under localMiles) and the average speed for longer ones.
   function makeCtx(depot, stops, params) {
-    const p = Object.assign({ mph: 45, roadFactor: 1.25, returnToStart: true }, params || {});
+    const p = Object.assign({ mph: 45, roadFactor: 1.25, returnToStart: true, localMph: null, localMiles: 0 }, params || {});
     COST_MPH = Number(p.mph) || 45;
     const pts = [depot, ...stops];                  // index 0 = depot, i+1 = stops[i]
-    const n = pts.length, mi = new Float64Array(n * n);
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) mi[i * n + j] = i === j ? 0 : crowMiles(pts[i], pts[j]) * p.roadFactor;
-    return { p, n, mi, stops, miles: (i, j) => mi[i * n + j], mins: (i, j) => mi[i * n + j] / p.mph * 60 };
+    const n = pts.length, mi = new Float64Array(n * n), mt = new Float64Array(n * n);
+    let real = 0, legs = 0;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      legs++;
+      const g = p.leg ? p.leg(pts[i], pts[j]) : null;
+      if (g) { mi[i * n + j] = g.miles; mt[i * n + j] = g.minutes; real++; continue; }
+      const m = crowMiles(pts[i], pts[j]) * p.roadFactor, local = p.localMph && m < p.localMiles;
+      mi[i * n + j] = m; mt[i * n + j] = m / (local ? p.localMph : p.mph) * 60;
+    }
+    return { p, n, mi, mt, stops, real, legs, miles: (i, j) => mi[i * n + j], mins: (i, j) => mt[i * n + j] };
   }
 
   // Walk a route (array of stop indexes into ctx.stops). hard = windows must hold.
@@ -109,7 +120,7 @@
         return { vehicle: vehicles[k].id, stops: r.map(i => ctx.stops[i].id), miles: e ? e.miles : 0, drive: e ? e.drive : 0, duty: e ? e.duty : 0, end: e ? e.end : null,
                  start: e ? e.start : null, wait: e ? e.wait : 0,
                  load: e ? e.load : null, cap: vehicles[k].cap || {}, late: e ? e.late : [], times: e ? e.times : [] }; }),
-      unassigned,
+      unassigned, realLegs: ctx.real, legs: ctx.legs,
       miles: routes.reduce((a, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return a + (e ? e.miles : 0); }, 0),
     };
   }
@@ -265,7 +276,7 @@
     const ctx = makeCtx(depot, stops, params);
     const v = Object.assign({}, vehicle, { cap: null, maxDrive: null, maxDuty: null });
     const e = settle(ctx, stops.map((_, i) => i), v);
-    return { times: e.times, late: e.late, miles: e.miles, end: e.end, start: e.start, wait: e.wait, drive: e.drive, duty: e.duty };
+    return { times: e.times, late: e.late, miles: e.miles, end: e.end, start: e.start, wait: e.wait, drive: e.drive, duty: e.duty, realLegs: ctx.real, legs: ctx.legs };
   }
 
   const api = { plan, reorder, timeline, crowMiles, DIMS };

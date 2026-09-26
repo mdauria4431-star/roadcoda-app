@@ -13,6 +13,7 @@
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <script src="planner-core.js"></script>
+<script src="rc-drive-times.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <style>
   *{box-sizing:border-box} [hidden]{display:none!important}
@@ -108,6 +109,9 @@
           <label>Minutes at each stop<input type="number" id="s-stop" min="0" max="240"></label>
           <label>Max driving (hours)<input type="number" id="s-drive" min="1" max="16" step="0.5"></label>
           <label>Max on duty (hours)<input type="number" id="s-duty" min="1" max="24" step="0.5"></label>
+          <label>Local speed (mph)<input type="number" id="s-lmph" min="5" max="70" step="1" title="For short legs"></label>
+          <label>Local = legs under (miles)<input type="number" id="s-lmi" min="0" max="50" step="1"></label>
+          <label>Truck time vs Google car time (×)<input type="number" id="s-tf" min="1" max="2" step="0.05"></label>
           <label>Trucks leave at<input type="time" id="s-leave"></label>
           <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="s-ret" style="height:auto"> Back to start at the end</label>
           <button class="btn primary small" id="s-save">Save</button><span class="mini" id="s-msg"></span></div></div>
@@ -144,7 +148,7 @@ async function start() {
   if (window.RC_ACCESS && !window.RC_ACCESS.can('dispatch') && !window.RC_ACCESS.can('loads')) return;
   $('app').hidden = false;
   const [c, cu, eq, up] = await Promise.all([
-    sb.from('carriers').select('plan_mph, plan_road_factor, plan_stop_min, plan_max_drive_h, plan_max_duty_h, plan_leave_at, plan_return').maybeSingle(),
+    sb.from('carriers').select('*').maybeSingle(),
     sb.from('customers').select('id, name, start_name, start_address, start_lat, start_lon, parent_customer_id').order('name'),
     sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces').order('unit_no'),
     sb.from('unit_profiles').select('*')]);
@@ -154,7 +158,7 @@ async function start() {
   const q = new URLSearchParams(location.search);
   $('day').value = q.get('day') || iso(new Date()); if (q.get('customer')) $('cust').value = q.get('customer');
   TAB = q.get('tab') || 'plan';
-  $('basis').textContent = `Planning at ${CAR.plan_mph} mph × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
+  $('basis').textContent = `Planning with Google drive times where known, otherwise ${CAR.plan_local_mph ?? CAR.plan_mph} mph under ${CAR.plan_local_miles ?? 0} mi and ${CAR.plan_mph} mph beyond × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
   $('day').onchange = $('cust').onchange = () => { PLAN = null; if (IMP) drawImp(); loadDay(); };
   if (!canEdit()) $('imp-lbl').hidden = true;
@@ -219,7 +223,9 @@ const minsOf = (ts) => { if (!ts) return null; const d = new Date(ts); return d.
 function toStop(s) { const p = pointOf(s); return { id: s.id, lat: p.lat, lng: p.lng, ws: minsOf(s.window_start), we: minsOf(s.window_end), service: CAR.plan_stop_min, demand: demandOf(s) }; }
 const leave = () => { const [h, m] = String(CAR.plan_leave_at || '06:00').split(':').map(Number); return h * 60 + m; };
 const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 });
-const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks' });
+let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
+const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks',
+  localMph: CAR.plan_local_mph != null ? Number(CAR.plan_local_mph) : null, localMiles: Number(CAR.plan_local_miles || 0), leg: DRIVE_LEG });
 // "Plan for" is remembered on this computer only
 try { const g = localStorage.getItem('rc_plan_goal'); if (g && $('goal')) $('goal').value = g; } catch (_) {}
 if ($('goal')) $('goal').onchange = () => { try { localStorage.setItem('rc_plan_goal', $('goal').value); } catch (_) {} };
@@ -483,11 +489,28 @@ function drawPool() {
   drawFleet();
   document.querySelectorAll('[data-pl]').forEach(c => c.onchange = drawPool);
 }
-$('run').onclick = () => {
+$('run').onclick = async () => {
   const loads = chosen(); if (!loads.length) return fail('Tick at least one load.');
   if (missingPoints(loads).length) return fail('Some stops (or the start) have no map point yet — use "Look up missing map points" first.');
   const fleet = ticked(); if (!fleet.length) return fail('Tick at least one truck.');
   const stops = loads.flatMap(l => l.stops.filter(s => s.stop_type !== 'pickup').map(toStop));
+  // real drive times: remembered ones, and Google for any pair of places not asked before
+  DRIVE_LEG = null; DRIVE_NOTE = '';
+  if (window.RC_DRIVE && CAR.plan_truck_factor != null) {
+    const pts = [depot(), ...stops];
+    $('run').disabled = true; $('run-msg').textContent = 'Getting drive times…';
+    const { cache, error } = await RC_DRIVE.load(sb, pts);
+    let got = { asked: 0, found: 0 };
+    if (!error) {
+      const need = RC_DRIVE.allPairs(pts).filter(([a, b]) => !cache.has(RC_DRIVE.key(a) + '|' + RC_DRIVE.key(b)) && RC_DRIVE.key(a) !== RC_DRIVE.key(b)).length;
+      if (need) { $('run-msg').textContent = `Asking Google for ${need} drive times (new places only; remembered after this)…`; got = await RC_DRIVE.fill(sb, cache, RC_DRIVE.allPairs(pts)); }
+      DRIVE_LEG = RC_DRIVE.leg(cache, CAR.plan_truck_factor);
+    }
+    $('run').disabled = false; $('run-msg').textContent = '';
+    const legs = pts.length * (pts.length - 1), have = RC_DRIVE.allPairs(pts).filter(([a, b]) => DRIVE_LEG && DRIVE_LEG(a, b)).length;
+    DRIVE_NOTE = error ? 'Drive times estimated (run 123_drive_times.sql for Google drive times).'
+      : `Drive times: ${have} of ${legs} from Google (car time × ${CAR.plan_truck_factor} for a truck)${got.asked ? `, ${got.found} of them asked for just now` : ''}${have < legs ? `; the rest estimated (${CAR.plan_local_mph} mph under ${CAR.plan_local_miles} mi, ${CAR.plan_mph} mph beyond)` : ''}.${got.error ? ` Google: ${got.error}` : ''}`;
+  }
   const trucks = fleet.map(u => ({ id: u.key, cap: u.cap, start: Math.max(leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
     latestEnd: u.gap && u.gap.to != null ? u.gap.to : null, maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 })), dep = depot();
   const t0 = performance.now(); const r = RC_PLANNER.plan(dep, stops, trucks, params());
@@ -505,6 +528,7 @@ function drawResult() {
   const used = r.routes.filter(x => x.stops.length);
   $('result').innerHTML = `<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ['Stops not placed', r.unassigned.length + '']]
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
+    ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
     <div class="mini" style="margin:6px 2px">${PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible, then the fewest miles for those trucks.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}</div>
     ${r.unassigned.length ? `<div class="card pad" style="border-color:var(--late)"><b>Didn't fit</b> on any ticked truck — they stay on the load they're on now. Tick another truck and plan again, or move them yourself:<ul style="margin:6px 0 0 18px">${r.unassigned.map(u => `<li>${esc(byStop[u.id]?.consignee)} — ${esc(u.why)}</li>`).join('')}</ul></div>` : ''}
     <div class="routes">${used.map(rt => { const u = unitOf(rt.vehicle), overH = rt.drive > CAR.plan_max_drive_h * 60;
@@ -569,6 +593,7 @@ $('ord-run').onclick = () => {
 // ── Setup ───────────────────────────────────────────────────────────
 function drawSetup() {
   $('s-mph').value = CAR.plan_mph; $('s-road').value = CAR.plan_road_factor; $('s-stop').value = CAR.plan_stop_min; $('s-drive').value = CAR.plan_max_drive_h;
+  $('s-lmph').value = CAR.plan_local_mph ?? 30; $('s-lmi').value = CAR.plan_local_miles ?? 10; $('s-tf').value = CAR.plan_truck_factor ?? 1.15;
   $('s-duty').value = CAR.plan_max_duty_h; $('s-leave').value = String(CAR.plan_leave_at || '06:00').slice(0, 5); $('s-ret').checked = !!CAR.plan_return;
   const units = EQ.filter(e => e.active);
   $('caps').innerHTML = `<table class="t"><thead><tr><th>Unit</th><th>Kind</th>${DIMS.map(([, l]) => `<th>${l}</th>`).join('')}<th></th></tr></thead><tbody>${units.map(e => `<tr data-eq="${e.id}"><td><b>${esc(e.unit_no)}</b></td><td>${esc(e.unit_type)}</td>
@@ -591,7 +616,9 @@ function drawSetup() {
 }
 $('s-save').onclick = async () => {
   const args = { p_mph: +$('s-mph').value, p_road: +$('s-road').value, p_stop_min: +$('s-stop').value, p_drive_h: +$('s-drive').value, p_duty_h: +$('s-duty').value, p_leave: $('s-leave').value || '06:00', p_return: $('s-ret').checked };
-  const { error } = await sb.rpc('set_plan_settings', args); if (error) return $('s-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`;
+  Object.assign(args, { p_local_mph: +$('s-lmph').value, p_local_miles: +$('s-lmi').value, p_truck_factor: +$('s-tf').value });
+  const { error } = await sb.rpc('set_plan_settings', args); if (error) return $('s-msg').innerHTML = `<span class="error">${esc(error.message)}${/set_plan_settings|schema cache/.test(error.message) ? ' — run 123_drive_times.sql in the SQL Editor.' : ''}</span>`;
+  Object.assign(CAR, { plan_local_mph: args.p_local_mph, plan_local_miles: args.p_local_miles, plan_truck_factor: args.p_truck_factor });
   Object.assign(CAR, { plan_mph: args.p_mph, plan_road_factor: args.p_road, plan_stop_min: args.p_stop_min, plan_max_drive_h: args.p_drive_h, plan_max_duty_h: args.p_duty_h, plan_leave_at: args.p_leave, plan_return: args.p_return });
   $('s-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
