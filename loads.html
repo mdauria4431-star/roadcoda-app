@@ -16,6 +16,7 @@
 <script src="config.js"></script>
 <script src="access.js"></script>
 <script src="shell.js"></script>
+<script src="planner-core.js"></script>
 <script src="new-customer.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;
@@ -616,15 +617,43 @@ function noticeSection(l) {
     ${rows.length ? `<div class="hint">${rows.map(n => `Stop ${seqOf[n.stop_id] ?? '?'} · ${NOTICE[n.event]} → ${esc(n.to_email || '')}: <b>${esc(n.status)}</b>${n.sent_at ? ' ' + time(n.sent_at) : ''}${n.detail && n.status !== 'sent' ? ` (${esc(n.detail)})` : ''}${['failed', 'muted', 'skipped'].includes(n.status) ? ` <a href="#" data-resend="${n.id}">send again</a>` : ''}`).join('<br>')}</div>`
       : '<div class="hint">No customer emails yet for this load. Only stop customers with notifications turned on (Customers tab) get them.</div>'}`;
 }
+// ETAs for a load that hasn't started: drive the stops in their current order from the start,
+// with the company's planning settings (speed, road factor, time at each stop, leaving time).
+let PLAN_SET = null;
+async function loadEtas(l, stops) {
+  const out = { at: {}, note: '' };
+  if (!window.RC_PLANNER || !stops.length || !stops.every(s => s.status === 'pending' && !s.arrived_at)) return out;
+  if (!PLAN_SET) { const r = await sb.from('carriers').select('plan_mph, plan_road_factor, plan_stop_min, plan_leave_at, plan_return').maybeSingle(); PLAN_SET = r.data || {}; }
+  const c = l.customers || {}, P = PLAN_SET;
+  if (P.plan_mph == null) return out;
+  const missing = stops.filter(s => !s.delivery_locations || s.delivery_locations.lat == null).length;
+  if (c.start_lat == null || missing) {
+    out.note = `ETAs need map points for ${c.start_lat == null ? "the start" : ''}${c.start_lat == null && missing ? ' and ' : ''}${missing ? missing + ' stop' + (missing === 1 ? '' : 's') : ''}. The Route planner looks them up ("Look up missing map points").`;
+    return out;
+  }
+  const mins = (t) => { if (!t) return null; const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
+  const clock = (m) => new Date(2000, 0, 1, 0, Math.round(m)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const [h, m] = String(P.plan_leave_at || '06:00').split(':').map(Number);
+  const r = RC_PLANNER.timeline({ lat: c.start_lat, lng: c.start_lon },
+    stops.map(s => ({ id: s.id, lat: s.delivery_locations.lat, lng: s.delivery_locations.lon, ws: mins(s.window_start), we: mins(s.window_end), service: P.plan_stop_min })),
+    { start: h * 60 + m }, { mph: Number(P.plan_mph), roadFactor: Number(P.plan_road_factor), returnToStart: !!P.plan_return });
+  stops.forEach((s, i) => { const t = r.times[i], ws = mins(s.window_start);
+    out.at[s.id] = { text: clock(t.arrive), early: ws != null && ws - t.arrive >= 1, late: r.late.some(x => x.id === s.id) }; });
+  const late = r.late.length;
+  out.note = `ETAs: leaving <b>${clock(r.start != null ? r.start : h * 60 + m)}</b>${r.start != null && r.start > h * 60 + m + 0.5 ? ' (as late as the windows allow)' : ''}, ${P.plan_mph} mph, ${P.plan_stop_min} min at each stop, in this stop order${late ? ` · <span class="error">${late} stop${late === 1 ? '' : 's'} would be late</span>` : ''}. Change the order with ▲▼ or in the Route planner.`;
+  return out;
+}
+
 async function showDetail(id) {
   const { data: l, error } = await sb.from('loads')
-    .select('id, load_no, status, service_date, miles, invoice_id, trip_type_id, trip_types(name), hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, pcm_state_miles, pcm_version, customer_id, customers(name, start_address), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), notify_muted, notification_queue(id, stop_id, event, status, to_email, sent_at, created_at, detail), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, eta, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, service_date, miles, invoice_id, trip_type_id, trip_types(name), hub_required, ask_odometer, deadhead_miles, hub_start, hub_end, route_miles, miles_note, origin_address, round_trip, miles_source, toll_estimate, pcm_state_miles, pcm_version, customer_id, customers(name, start_address, start_lat, start_lon), drivers(full_name), equipment(unit_no), load_billing(linehaul, fuel_surcharge, pricing_note), load_costs(id, cost_type, amount), toll_transactions(id, txn_at, agency, exit_plaza, amount, status), notify_muted, notification_queue(id, stop_id, event, status, to_email, sent_at, created_at, detail), stops(id, seq, stop_type, consignee, address, location_id, added_by, added_note, needs_review, delivery_locations(id, name, address, phone, lat, lon, delivery_instructions, door_code, gate_code, other_code_name, other_code, after_hours_contact, after_hours_phone), window_start, window_end, eta, arrived_at, departed_at, status, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered, billed_amount), scans(id, barcode, photo_path, scanned_at))')
     .eq('id', id).single();
   if (error) { $('detail').hidden = false; $('detail').innerHTML = `<p class="error">${esc(error.message)}</p>`; return; }
   const b = Array.isArray(l.load_billing) ? l.load_billing[0] : l.load_billing;
   const editable = !l.invoice_id && l.status !== 'cancelled';
   const tollRows = l.toll_transactions || [];
   const sortedStops = l.stops.sort((a, b) => a.seq - b.seq);
+  const eta = await loadEtas(l, sortedStops);
   const stops = sortedStops.map(s => {
     const pu = s.stop_type === 'pickup';
     const open = editable && s.status === 'pending' && !s.arrived_at;
@@ -638,7 +667,8 @@ async function showDetail(id) {
           <button class="btn small danger" data-rm="${s.id}" data-seq="${s.seq}">Remove stop</button>` : ''}
           ${s.needs_review ? `<button class="btn small" data-rv="${s.id}">Mark reviewed</button>` : ''}</div>` : ''}</div>
       <div class="mono" style="text-align:right">Window ${time(s.window_start)}–${time(s.window_end)}<br>
-        ${s.status === 'pending' && s.eta && s.eta !== s.window_start ? `ETA ${time(s.eta)}${s.window_start && s.eta < s.window_start ? ' <span style="color:var(--muted)">(early, waits)</span>' : ''}<br>` : ''}
+        ${eta.at[s.id] ? `ETA ${eta.at[s.id].text}${eta.at[s.id].early ? ' <span style="color:var(--muted)">(early, waits)</span>' : eta.at[s.id].late ? ' <span class="error">late</span>' : ''}<br>`
+          : s.status === 'pending' && s.eta && (s.eta !== s.window_start || l.equipment) ? `ETA ${time(s.eta)}${s.window_start && s.eta < s.window_start ? ' <span style="color:var(--muted)">(early, waits)</span>' : ''}<br>` : ''}
         Arrived ${time(s.arrived_at)} · Departed ${time(s.departed_at)}<br>${s.odometer != null ? `Odometer ${s.odometer} · ${s.leg_miles} mi from previous<br>` : l.hub_required && s.status === 'pending' ? '<span style="color:var(--muted)">Odometer due on arrival</span><br>' : ''}
         <span class="pill s-${s.status === 'pending' ? 'planned' : s.status === 'arrived' ? 'in_progress' : s.status === 'exception' ? 'cancelled' : 'delivered'}">${s.status === 'exception' ? esc(issueLabel(s)) : ({pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered'}[s.status] || esc(s.status))}</span>
         ${s.late_reason ? `<br><span class="error">${esc(s.late_reason)}</span>` : ''}</div></div>`;
@@ -656,6 +686,7 @@ async function showDetail(id) {
       ${l.miles_note ? ` · note: ${esc(l.miles_note)}` : ''}</p>
     <p id="d-eld" class="hint" hidden></p>
     ${b?.pricing_note ? `<div class="note money">${esc(b.pricing_note)}</div>` : ''}
+    ${eta.note ? `<p class="hint" style="margin:0 0 6px">${eta.note}</p>` : ''}
     ${stops}
     ${editable ? `<details id="as-box" style="margin-top:10px"><summary class="btn" style="display:inline-flex;align-items:center;cursor:pointer;list-style:none">+ Add stop / pickup to this load</summary>
       <div class="grid" style="margin-top:10px">
