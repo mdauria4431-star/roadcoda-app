@@ -157,14 +157,15 @@ async function load() {
 async function show(id) {
   CUR = id; history.replaceState(null, '', '?driver=' + id);
   document.querySelectorAll('#board tr[data-id]').forEach(tr => tr.classList.toggle('on', tr.dataset.id === id));
-  const [d, ch, ci] = await Promise.all([
+  const [d, ch, ci, hr] = await Promise.all([
     sb.from('drivers').select('*').eq('id', id).single(),
     sb.from('driver_checks').select('*').eq('driver_id', id),
     sb.from('retention_checkins').select('*').eq('driver_id', id).not('answered_at', 'is', null).order('answered_at', { ascending: false }),
+    sb.from('driver_hours').select('work_date', { count: 'exact', head: true }).eq('driver_id', id).in('source', ['onboarding', 'eld_change']),   // 127
   ]);
   if (d.error) return;
   const dr = d.data, done = new Map((ch.data || []).map(c => [c.item_id, c])), edit = can('drivers', 'edit') || can('safety', 'edit');
-  const auto = { cdl: !!dr.cdl_number, med_card: !!dr.med_card_expires, app: !!dr.user_id };
+  const auto = { cdl: !!dr.cdl_number, med_card: !!dr.med_card_expires, app: !!dr.user_id, hours8: (hr && hr.count || 0) >= 8 };
   const week = dr.hire_date ? Math.floor((new Date() - new Date(dr.hire_date + 'T12:00:00')) / 864e5 / 7) + 1 : null;
   const line = (i) => { const c = done.get(i.id), a = i.auto_key ? auto[i.auto_key] : null;
     return `<label class="chk" style="flex-direction:row;font-weight:500"><input type="checkbox" data-item="${i.id}" ${c || a ? 'checked' : ''} ${i.auto_key || !edit ? 'disabled' : ''}>

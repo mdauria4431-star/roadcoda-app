@@ -133,7 +133,7 @@
         <label>Home terminal<select id="f-home_terminal_id"><option value="">–</option></select></label>
         <label>Hire date<input id="f-hire_date" type="date"></label>
         <label>Driver type<select id="f-driver_type"><option value="road">Road driver</option><option value="team">Team driver</option><option value="yard">Yard jockey (clocks in / out, hourly)</option></select></label>
-        <label>Hours-of-service rule<select id="f-hos_rule"><option value="company">Company default</option><option value="70_8">70 hours / 8 days</option><option value="60_7">60 hours / 7 days</option><option value="short_haul">Short-haul (150 air-miles)</option><option value="intrastate">Intrastate (state rules)</option></select>
+        <label>Hours-of-service rule<select id="f-hos_rule"><option value="company">Company default</option><option value="70_8">70 hours / 8 days</option><option value="60_7">60 hours / 7 days</option><option value="short_haul">Short-haul (150 air-miles)</option><option value="intrastate">Intrastate (state rules)</option><option value="none">DOT hours of service don't apply</option></select>
           <span class="mini" id="hos-hint">Used when there's no ELD data for this driver.</span></label>
         <label id="hos-state-l" hidden>State (intrastate)<input id="f-hos_state" maxlength="2" placeholder="CT" style="text-transform:uppercase"></label>
         <label>Trip sheets<select id="f-trip_mode"><option value="app">Uses the driver app (sheet = audit copy)</option><option value="paper">Paper trip sheets (office enters trips)</option></select></label>
@@ -213,6 +213,39 @@
           <span id="pin-mode-msg" class="hint"></span>
         </div>
         <p class="hint">With the CDL option, tell drivers to keep the card <b>in the truck</b> and their license with them, so one lost item isn't enough to get in.</p>
+      </details>
+    </section>
+
+    <section class="card">
+      <details class="types" id="hos"><summary>Hours of service record <span id="hos-badge" class="hint"></span></summary>
+        <p class="hint">Each driver's hours on duty and driving, by day, for when the ELD can't tell: a new driver's previous 8 days (their signed statement), the last 8 days when you change ELD supplier, and days on paper logs (a truck with no ELD, like a rental). The Route planner counts these toward the 60 / 70-hour week. The ELD stays the legal record.</p>
+        <h3 style="margin:12px 0 4px">Paper logs needed</h3>
+        <div id="hos-need" class="hint">Loading…</div>
+        <h3 style="margin:16px 0 4px">Enter hours</h3>
+        <div class="row" style="align-items:flex-end">
+          <label>Driver<select id="hos-drv"></select></label>
+          <label>What<select id="hos-kind">
+            <option value="onboarding">New driver: previous 8 days (signed statement)</option>
+            <option value="paper_log">One day on a paper log</option>
+            <option value="eld_change">Changing ELD supplier: last 8 days</option>
+            <option value="office">Other (one day)</option></select></label>
+          <label id="hos-end-l">Last day<input type="date" id="hos-end"></label>
+          <label id="hos-day-l" hidden>Day<input type="date" id="hos-day"></label>
+        </div>
+        <div id="hos-grid" style="margin-top:8px"></div>
+        <div class="row" style="margin-top:8px;align-items:flex-end">
+          <label id="hos-off-l">Last relieved from duty<input type="datetime-local" id="hos-off"></label>
+          <label>Log or statement (photo or PDF)<input type="file" id="hos-file" accept="image/*,.pdf"></label>
+          <label id="hos-eld-l" style="flex-direction:row;align-items:center;gap:6px;font-weight:500" hidden><input type="checkbox" id="hos-eld" style="height:auto"> Entered in the ELD</label>
+          <button class="btn primary small" id="hos-save" type="button">Save hours</button><span id="hos-msg" class="hint"></span>
+        </div>
+        <div id="hos-recent" style="margin-top:12px"></div>
+        <details style="margin-top:14px"><summary>Changing ELD supplier: the whole fleet at once</summary>
+          <p class="hint">Type each driver's on-duty hours for the last 8 days from the old ELD's report (blank = not entered; 0 = off duty). Attach the report if you have it as one file.</p>
+          <div id="hos-fleet"></div>
+          <div class="row" style="margin-top:8px;align-items:flex-end"><label>Old ELD's report<input type="file" id="hos-fleet-file" accept="image/*,.pdf,.csv,.xlsx"></label>
+            <button class="btn primary small" id="hos-fleet-save" type="button">Save the fleet's hours</button><span id="hos-fleet-msg" class="hint"></span></div>
+        </details>
       </details>
     </section>
 
@@ -427,7 +460,7 @@ function edit(d, quiet) {
   if (!$('f-hos_rule').value) $('f-hos_rule').value = 'company';
   $('f-hos_rule').closest('label').hidden = !!(d && !('hos_rule' in d)); hosVis();
   if (d && d.id) sb.rpc('driver_hos_rule', { p_driver: d.id }).then(({ data }) => {
-    if (!data) return;
+    if (!data || /^(none|short_haul)$/.test($('f-hos_rule').value)) return;
     $('hos-hint').textContent = data.eld ? 'This driver has ELD data — the ELD\'s own hours are used while it\'s connected. This rule is the fallback.'
       : data.assumed ? 'Company cycle not set yet, so 60 hours / 7 days is assumed. Set it on the Company page.' : 'Used when there\'s no ELD data for this driver.';
   });
@@ -495,7 +528,9 @@ $('events').onclick = async (ev) => {
   const id = cur.id; await load(); edit(drivers.find(d => d.id === id), true);
 };
 
-function hosVis() { $('hos-state-l').hidden = $('f-hos_rule').value !== 'intrastate'; }
+function hosVis() { const r = $('f-hos_rule').value; $('hos-state-l').hidden = r !== 'intrastate';
+  if (r === 'none') $('hos-hint').textContent = 'For drivers DOT hours of service don\'t cover (e.g. vehicles under 10,001 lb). The Route planner still keeps them within the company\'s own daily limit.';
+  else if (r === 'short_haul') $('hos-hint').textContent = 'No ELD or logbook needed within 150 air-miles, but the 11-hour driving, 14-hour day and 60 / 70-hour limits still apply; RoadCoda keeps the time record from their trips.'; }
 $('f-hos_rule').onchange = hosVis;
 function readForm() {
   const v = {};
@@ -826,7 +861,7 @@ $('up-btn').onclick = () => RCUpload.open({
     if (term) { const t = terminals.find(x => (x.name || '').toLowerCase() === term.toLowerCase()); if (t) v.home_terminal_id = t.id; else warnings.push(`No terminal called "${term}" — add it under Terminals, then set it on the driver`); }
     const hr = T(get('hos_rule')).toLowerCase();
     if (hr) {
-      v.hos_rule = /intra|state rule/.test(hr) ? 'intrastate' : /short|150|100/.test(hr) ? 'short_haul' : /70|8 ?day/.test(hr) ? '70_8' : /60|7 ?day/.test(hr) ? '60_7' : /company|default/.test(hr) ? 'company' : null;
+      v.hos_rule = /not apply|n\/a|exempt|none|non.?cmv/.test(hr) ? 'none' : /intra|state rule/.test(hr) ? 'intrastate' : /short|150|100/.test(hr) ? 'short_haul' : /70|8 ?day/.test(hr) ? '70_8' : /60|7 ?day/.test(hr) ? '60_7' : /company|default/.test(hr) ? 'company' : null;
       if (!v.hos_rule) { warnings.push(`HOS rule "${T(get('hos_rule'))}" not recognized — the company default is used`); v.hos_rule = 'company'; }
       const hs = T(get('hos_state')).toUpperCase();
       if (v.hos_rule === 'intrastate') { if (/^[A-Z]{2}$/.test(hs)) v.hos_state = hs; else warnings.push('Intrastate rule without a two-letter state — add the state on the driver'); }
@@ -855,6 +890,113 @@ $('up-btn').onclick = () => RCUpload.open({
 });
 
 start();
+
+// ── Hours of service record (127) ─────────────────────────────────────
+const HOS = { ok: null };
+const hDay = (k, end) => { const d = new Date((end || new Date().toISOString().slice(0, 10)) + 'T12:00:00'); d.setDate(d.getDate() - k); return d.toISOString().slice(0, 10); };
+const hFmt = (d) => new Date(d + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+const hHrs = (m) => m == null ? '' : String(Math.round(m / 6) / 10);
+const hMin = (v) => v === '' || v == null ? null : Math.round(Number(v) * 60);
+function hosCan() { return window.RC_ACCESS ? (RC_ACCESS.can('drivers', 'edit') || RC_ACCESS.can('safety', 'edit')) : true; }
+async function hosUpload(input, driverId, day) {
+  const f = input.files && input.files[0]; if (!f) return null;
+  const path = `${me.carrier_id}/${driverId || 'fleet'}/${day}-${Date.now()}-${f.name.replace(/[^\w.\-]+/g, '_')}`;
+  const { error } = await sb.storage.from('hos-logs').upload(path, f, { contentType: f.type || 'application/octet-stream' });
+  if (error) throw new Error(`The file couldn't be uploaded (${error.message}), so nothing was saved. Try again, or save without the file and add it later.`); return path;
+}
+async function hosNeed() {
+  const { data, error } = await sb.rpc('paper_logs_needed', { p_days: 14 });
+  if (error) { HOS.ok = !/paper_logs_needed|schema cache|driver_hours/.test(error.message);
+    $('hos-need').innerHTML = `<span class="error">${esc(error.message)}${HOS.ok ? '' : ' — run 127_driver_hours.sql in the Supabase SQL Editor.'}</span>`; return; }
+  HOS.ok = true;
+  const rows = data || [];
+  $('hos-badge').textContent = rows.length ? `· ${rows.length} to do` : '';
+  $('hos-need').innerHTML = rows.length ? `<div class="tablewrap"><table class="types"><thead><tr><th>Day</th><th>Driver</th><th>Loads</th><th>Truck</th><th></th></tr></thead><tbody>${rows.map(r => `<tr>
+      <td>${hFmt(r.work_date)}</td><td>${esc(r.full_name)}</td><td>${esc(r.load_nos || '')}</td><td>${esc(r.trucks || '')} <span class="hint">no ELD</span></td>
+      <td>${r.status === 'log needed' ? `<button class="btn small" data-hos-enter="${r.driver_id}|${r.work_date}">Enter the log</button>`
+            : `<button class="btn small" data-hos-eld="${r.driver_id}|${r.work_date}">Entered in the ELD</button>`}</td></tr>`).join('')}</tbody></table></div>`
+    : 'None in the last 14 days — every day on a truck without an ELD has its log here.';
+  document.querySelectorAll('[data-hos-enter]').forEach(b => b.onclick = () => { const [d, day] = b.dataset.hosEnter.split('|');
+    $('hos-drv').value = d; $('hos-kind').value = 'paper_log'; $('hos-day').value = day; hosForm(); $('hos-grid').scrollIntoView({ block: 'center' }); });
+  document.querySelectorAll('[data-hos-eld]').forEach(b => b.onclick = async () => { const [d, day] = b.dataset.hosEld.split('|');
+    const { error } = await sb.from('driver_hours').update({ eld_entered_at: new Date().toISOString() }).eq('driver_id', d).eq('work_date', day);
+    if (error) return alert(error.message); hosNeed(); });
+}
+function hosForm() {
+  const k = $('hos-kind').value, eight = k === 'onboarding' || k === 'eld_change';
+  $('hos-end-l').hidden = !eight; $('hos-day-l').hidden = eight; $('hos-off-l').hidden = k !== 'onboarding'; $('hos-eld-l').hidden = k !== 'paper_log';
+  if (!$('hos-end').value) $('hos-end').value = hDay(1);
+  if (!$('hos-day').value) $('hos-day').value = hDay(1);
+  const days = eight ? [...Array(8)].map((_, i) => hDay(7 - i, $('hos-end').value)) : [$('hos-day').value];
+  $('hos-grid').innerHTML = `<div class="tablewrap"><table class="types"><thead><tr><th>Day</th><th>On duty (h, driving included)</th><th>Driving (h)</th>${eight ? '' : '<th>Truck</th>'}</tr></thead><tbody>${days.map(d => `<tr data-hos-row="${d}">
+      <td>${hFmt(d)}</td><td><input type="number" min="0" max="24" step="0.25" data-f="on" placeholder="0 = off duty"></td><td><input type="number" min="0" max="24" step="0.25" data-f="dr"></td>
+      ${eight ? '' : `<td><select data-f="truck"><option value="">—</option>${(HOS.trucks || []).map(t => `<option value="${t.id}">${esc(t.unit_no)}</option>`).join('')}</select></td>`}</tr>`).join('')}</tbody></table></div>`;
+  hosRecent();
+}
+async function hosRecent() {
+  const d = $('hos-drv').value; if (!d || HOS.ok === false) { $('hos-recent').innerHTML = ''; return; }
+  const { data } = await sb.from('driver_hours').select('*').eq('driver_id', d).gte('work_date', hDay(21)).order('work_date', { ascending: false });
+  const rows = data || [], by = Object.fromEntries(rows.map(r => [r.work_date, r]));
+  // fill the form with what's on file
+  document.querySelectorAll('[data-hos-row]').forEach(tr => { const r = by[tr.dataset.hosRow]; if (!r) return;
+    tr.querySelector('[data-f=on]').value = hHrs(r.on_duty_min); tr.querySelector('[data-f=dr]').value = hHrs(r.drive_min);
+    const t = tr.querySelector('[data-f=truck]'); if (t && r.truck_id) t.value = r.truck_id; });
+  const on8 = rows.filter(r => r.source === 'onboarding' || r.source === 'eld_change').length;
+  const label = { onboarding: 'new-driver statement', eld_change: 'old ELD', paper_log: 'paper log', office: 'typed in' };
+  $('hos-recent').innerHTML = rows.length ? `<div class="hint">On file, last 3 weeks${on8 >= 8 ? ' · previous 8 days complete ✓' : ''}:</div><div class="tablewrap"><table class="types"><thead><tr><th>Day</th><th>On duty</th><th>Driving</th><th>From</th><th>File</th><th></th></tr></thead><tbody>${rows.map(r => `<tr>
+      <td>${hFmt(r.work_date)}</td><td>${hHrs(r.on_duty_min)} h</td><td>${r.drive_min != null ? hHrs(r.drive_min) + ' h' : '—'}</td>
+      <td>${label[r.source] || r.source}${r.source === 'paper_log' ? (r.eld_entered_at ? ' · in the ELD' : ' · <span class="error">not in the ELD yet</span>') : ''}</td>
+      <td>${r.file_path ? `<button class="btn small" data-hos-file="${esc(r.file_path)}">Open</button>` : '<span class="hint">none</span>'}</td>
+      <td>${hosCan() ? `<button class="btn small" data-hos-del="${r.work_date}">Remove</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="hint">Nothing on file for this driver in the last 3 weeks.</div>';
+  document.querySelectorAll('[data-hos-file]').forEach(b => b.onclick = async () => { const { data: u, error } = await sb.storage.from('hos-logs').createSignedUrl(b.dataset.hosFile, 300); if (error) return alert(error.message); window.open(u.signedUrl, '_blank', 'noopener'); });
+  document.querySelectorAll('[data-hos-del]').forEach(b => b.onclick = async () => { if (!confirm('Remove this day from the hours record?')) return;
+    const { error } = await sb.from('driver_hours').delete().eq('driver_id', d).eq('work_date', b.dataset.hosDel); if (error) return alert(error.message); hosForm(); hosNeed(); });
+}
+async function hosSave() {
+  const d = $('hos-drv').value, k = $('hos-kind').value; if (!d) return;
+  const rows = [...document.querySelectorAll('[data-hos-row]')].map(tr => ({ day: tr.dataset.hosRow, on: tr.querySelector('[data-f=on]').value, dr: tr.querySelector('[data-f=dr]').value, truck: tr.querySelector('[data-f=truck]')?.value || null }))
+    .filter(r => r.on !== '');
+  if (!rows.length) return $('hos-msg').innerHTML = '<span class="error">Type the hours on duty (0 for a day off).</span>';
+  if (rows.some(r => +r.on < 0 || +r.on > 24 || (r.dr !== '' && +r.dr > +r.on))) return $('hos-msg').innerHTML = '<span class="error">On duty is 0–24 h, and driving can\'t be more than on duty.</span>';
+  if ((k === 'onboarding' || k === 'eld_change') && rows.length < 8) return $('hos-msg').innerHTML = '<span class="error">Fill in all 8 days (0 for a day off).</span>';
+  $('hos-save').disabled = true; $('hos-msg').textContent = 'Saving…';
+  try {
+    const path = await hosUpload($('hos-file'), d, rows[rows.length - 1].day);
+    const off = k === 'onboarding' && $('hos-off').value ? new Date($('hos-off').value).toISOString() : null;
+    const up = rows.map(r => ({ driver_id: d, work_date: r.day, on_duty_min: hMin(r.on), drive_min: r.dr === '' ? null : hMin(r.dr), source: k, truck_id: r.truck || null,
+      ...(path ? { file_path: path } : {}), ...(off ? { off_duty_at: off } : {}), ...(k === 'paper_log' ? { eld_entered_at: $('hos-eld').checked ? new Date().toISOString() : null } : {}) }));
+    const { error } = await sb.from('driver_hours').upsert(up, { onConflict: 'driver_id,work_date' });
+    if (error) throw error;
+    $('hos-msg').innerHTML = `<span class="ok">Saved ${up.length} day${up.length === 1 ? '' : 's'}.</span>`; $('hos-file').value = '';
+    hosRecent(); hosNeed();
+  } catch (e) { $('hos-msg').innerHTML = `<span class="error">${esc(e.message)}${/driver_hours|hos-logs|Bucket/.test(e.message) ? ' — run 127_driver_hours.sql in the Supabase SQL Editor.' : ''}</span>`; }
+  $('hos-save').disabled = false;
+}
+function hosFleet() {
+  const days = [...Array(8)].map((_, i) => hDay(8 - i)), act = drivers.filter(x => x.active && !x.is_guest);
+  $('hos-fleet').innerHTML = `<div class="tablewrap"><table class="types"><thead><tr><th>Driver</th>${days.map(d => `<th>${hFmt(d)}</th>`).join('')}</tr></thead><tbody>${act.map(x => `<tr data-hf="${x.id}"><td>${esc(x.full_name)}</td>${days.map(d => `<td><input type="number" min="0" max="24" step="0.25" data-d="${d}" style="width:64px"></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+async function hosFleetSave() {
+  const up = [];
+  document.querySelectorAll('[data-hf]').forEach(tr => tr.querySelectorAll('[data-d]').forEach(i => { if (i.value !== '') up.push({ driver_id: tr.dataset.hf, work_date: i.dataset.d, on_duty_min: hMin(i.value), source: 'eld_change' }); }));
+  if (!up.length) return $('hos-fleet-msg').innerHTML = '<span class="error">Nothing typed in yet.</span>';
+  if (up.some(r => r.on_duty_min < 0 || r.on_duty_min > 1440)) return $('hos-fleet-msg').innerHTML = '<span class="error">Hours are 0–24 a day.</span>';
+  $('hos-fleet-save').disabled = true;
+  try { const path = await hosUpload($('hos-fleet-file'), null, hDay(1)); if (path) up.forEach(r => r.file_path = path);
+    const { error } = await sb.from('driver_hours').upsert(up, { onConflict: 'driver_id,work_date' }); if (error) throw error;
+    $('hos-fleet-msg').innerHTML = `<span class="ok">Saved ${up.length} driver-days.</span>`; hosNeed(); hosRecent();
+  } catch (e) { $('hos-fleet-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  $('hos-fleet-save').disabled = false;
+}
+$('hos').addEventListener('toggle', async () => {
+  if (!$('hos').open || HOS.init) return; HOS.init = true;
+  HOS.trucks = ((await sb.from('equipment').select('id, unit_no, unit_type').eq('active', true).neq('unit_type', 'trailer').order('unit_no')).data) || [];
+  $('hos-drv').innerHTML = drivers.filter(x => x.active && !x.is_guest).map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('');
+  ['hos-kind', 'hos-end', 'hos-day'].forEach(id => $(id).onchange = hosForm); $('hos-drv').onchange = () => hosForm();
+  $('hos-save').onclick = hosSave; $('hos-fleet-save').onclick = hosFleetSave;
+  if (!hosCan()) { $('hos-save').hidden = true; $('hos-fleet-save').hidden = true; }
+  hosForm(); hosFleet(); hosNeed();
+});
 </script>
 </body>
 </html>

@@ -229,14 +229,28 @@ const DONE = ['delivered', 'exception'];
 let HOS = {}, UNREAD = {}, DRV2 = {}, LEGS = {};
 const hmm = (m) => m == null ? '–' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 const DUTYNAME = { off: 'Off duty', sleeper: 'Sleeper', on: 'On duty', driving: 'Driving', yard: 'Yard move', personal: 'Personal conveyance', waiting: 'Waiting', unknown: 'Status unknown' };
+// Without an ELD (127): the week from the hours record or trips, and today's on-duty time so far or planned,
+// against the company's day limit — shown as ≈ (an estimate). With an ELD, paper-log days not yet keyed into
+// it come off its cycle hours.
+let WEEKH = {}, DAYLIM = { duty: 14 * 60 };
 function hosTag(driverId) {
-  const h = HOS[driverId]; if (!h) return '';
+  let h = HOS[driverId]; const w = WEEKH[driverId];
+  if (!h) {
+    if (!w || w.rule === 'none' || !w.cycle_hours) return '';
+    const week = w.cycle_hours * 60 - w.prior_min - w.today_min, day = DAYLIM.duty - w.today_min, low = Math.max(0, Math.min(week, day));
+    const cls = low < 60 ? 'low' : low < 120 ? 'mid' : '';
+    const src = w.src === 'record' ? 'the hours record' : w.src === 'trips' ? 'RoadCoda trips' : w.src === 'none' ? 'nothing on file for the week' : 'the hours record and trips';
+    const tip = `No ELD — estimated from ${src}: today about ${hmm(w.today_min)} on duty (of ${hmm(DAYLIM.duty)}), this week about ${hmm(w.prior_min + w.today_min)} of ${w.cycle_hours} h (${w.cycle_days} days) → ${hmm(Math.max(0, week))} left`;
+    return `<span class="hos ${cls}" title="${esc(tip)}">≈${hmm(Math.round(low))}</span>`;
+  }
+  if (w && w.paper_min && h.cycle_left_min != null) h = Object.assign({}, h, { cycle_left_min: Math.max(0, h.cycle_left_min - w.paper_min), paper: w.paper_min });
   const left = [h.drive_left_min, h.shift_left_min, h.cycle_left_min].filter(x => x != null);
   if (!left.length) return '';
   const low = Math.min(...left);
   const cls = h.stale ? 'old' : low < 60 ? 'low' : low < 120 ? 'mid' : '';
   const tip = `${DUTYNAME[h.duty_status] || h.duty_status} · drive ${hmm(h.drive_left_min)} · shift ${hmm(h.shift_left_min)} · cycle ${hmm(h.cycle_left_min)}` +
-    (h.break_left_min != null ? ` · break due in ${hmm(h.break_left_min)}` : '') + ` · from the ELD ${h.age_min} min ago${h.stale ? ' — not current' : ''}`;
+    (h.break_left_min != null ? ` · break due in ${hmm(h.break_left_min)}` : '') + ` · from the ELD ${h.age_min} min ago${h.stale ? ' — not current' : ''}` +
+    (h.paper ? ` · cycle less ${hmm(h.paper)} on paper logs not yet entered in the ELD` : '');
   return `<span class="hos ${cls}" title="${esc(tip)}">${hmm(low)}</span>`;
 }
 
@@ -319,7 +333,7 @@ function rowHtml(r, day) {
     <td class="n">${esc(l.load_no)}${old}</td>
     <td class="n">${esc(l.equipment?.unit_no || '')}${swapTag(l.id)}</td>
     <td class="n dim">${trailer}</td>
-    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (l.driver2_id && DRV2[l.driver2_id] ? ` <span class="dim">+ ${esc(DRV2[l.driver2_id])}</span>` : '') + (r.finished ? '' : hosTag(l.driver_id)) + (UNREAD[l.driver_id] ? `<a href="messages.html?driver=${l.driver_id}" class="hos low" style="text-decoration:none" title="${UNREAD[l.driver_id]} unread message${UNREAD[l.driver_id] > 1 ? 's' : ''} from this driver">✉ ${UNREAD[l.driver_id]}</a>` : '') : '<span class="none">—</span>'}</td>
+    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (l.driver2_id && DRV2[l.driver2_id] ? ` <span class="dim">+ ${esc(DRV2[l.driver2_id])}</span>${r.finished ? '' : hosTag(l.driver2_id)}` : '') + (r.finished ? '' : hosTag(l.driver_id)) + (UNREAD[l.driver_id] ? `<a href="messages.html?driver=${l.driver_id}" class="hos low" style="text-decoration:none" title="${UNREAD[l.driver_id]} unread message${UNREAD[l.driver_id] > 1 ? 's' : ''} from this driver">✉ ${UNREAD[l.driver_id]}</a>` : '') : '<span class="none">—</span>'}</td>
     <td class="dim">${esc(l.customers?.name || '')}</td>
     <td><span class="ofn${r.n > 1 ? '' : ' solo'}">${r.at}/${r.n}</span>${r.shown ? esc(name) : name}</td>
     <td class="n">${pu}</td>
@@ -351,6 +365,10 @@ async function loadBoard(quiet) {
       sb.from('driver_hos_now').select('driver_id, duty_status, age_min, stale, drive_left_min, shift_left_min, cycle_left_min, break_left_min'),
       sb.from('message_threads').select('driver_id, unread').gt('unread', 0),
     ]);
+    // drivers' weeks without an ELD (127); nothing if not installed
+    { const [wk, cr] = await Promise.all([sb.rpc('driver_week_hours', { p_day: day }), sb.from('carriers').select('plan_max_duty_h').maybeSingle()]);
+      WEEKH = {}; (wk.error ? [] : wk.data || []).forEach(x => WEEKH[x.driver_id] = x);
+      if (cr.data && cr.data.plan_max_duty_h) DAYLIM.duty = Number(cr.data.plan_max_duty_h) * 60; }
     UNREAD = {}; (msgR.error ? [] : msgR.data || []).forEach(m => UNREAD[m.driver_id] = m.unread);
     // crew changes mid-route (113); nothing if not installed
     LEGS = {};
