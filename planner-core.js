@@ -96,7 +96,13 @@
 
   // Plan the day: which stop on which truck, in what order. Windows, capacity and hours are hard limits;
   // a stop that fits nowhere comes back in `unassigned` with the reason.
+  // params.goal: 'miles' (default) = fewest total miles; 'trucks' = as few trucks as the windows,
+  // capacity and hours allow, then the fewest miles for those trucks. Windows are never broken either way.
   function plan(depot, stops, vehicles, params) {
+    if (params && params.goal === 'trucks') return planFewestTrucks(depot, stops, vehicles, params);
+    return planMiles(depot, stops, vehicles, params);
+  }
+  function planMiles(depot, stops, vehicles, params) {
     const ctx = makeCtx(depot, stops, params);
     const routes = vehicles.map(() => []), unassigned = [];
     const order = stops.map((s, i) => i).sort((a, b) =>
@@ -118,6 +124,90 @@
     improve(ctx, routes, vehicles, true);
     return summarize(ctx, routes, vehicles, unassigned);
   }
+  // ── Fewest trucks ──────────────────────────────────────────────────
+  // Cheapest place for stop si across the given routes (hard limits); null if it fits nowhere.
+  function bestInsert(ctx, routes, vehicles, si, skip) {
+    let best = null;
+    for (let k = 0; k < routes.length; k++) {
+      if (k === skip) continue;
+      const base = evalRoute(ctx, routes[k], vehicles[k], true); if (!base) continue;
+      for (let pos = 0; pos <= routes[k].length; pos++) {
+        const cand = routes[k].slice(0, pos).concat([si], routes[k].slice(pos));
+        const e = evalRoute(ctx, cand, vehicles[k], true); if (!e) continue;
+        const add = e.miles - base.miles;
+        if (!best || add < best.add) best = { k, cand, add };
+      }
+    }
+    return best;
+  }
+  const capSize = (v) => (v.cap && (v.cap.pallets || v.cap.cube || v.cap.weight || v.cap.pieces)) || 1e9;
+  const byWindow = (ctx) => (a, b) => ((ctx.stops[a].we ?? 1e9) - (ctx.stops[b].we ?? 1e9)) || (ctx.miles(0, b + 1) - ctx.miles(0, a + 1));
+  // Empty whole trucks: take the lightest used truck and try to fit every one of its stops on the
+  // others (still on time, still within capacity and hours). Keep going while a truck can be emptied.
+  function eliminate(ctx, routes, vehicles) {
+    for (let guard = 0; guard < vehicles.length; guard++) {
+      const used = routes.map((r, k) => k).filter(k => routes[k].length);
+      if (used.length <= 1) break;
+      used.sort((a, b) => routes[a].length - routes[b].length || capSize(vehicles[a]) - capSize(vehicles[b]));
+      let done = false;
+      for (const k of used) {
+        const trial = routes.map(r => r.slice()); trial[k] = [];
+        const others = trial.map((r, j) => (j === k || !r.length) ? null : j).filter(j => j !== null);
+        let ok = true;
+        for (const si of routes[k].slice().sort(byWindow(ctx))) {
+          const sub = others.map(j => trial[j]), vs = others.map(j => vehicles[j]);
+          const b = bestInsert(ctx, sub, vs, si, -1);
+          if (!b) { ok = false; break; }
+          trial[others[b.k]] = b.cand;
+        }
+        if (ok) { routes.splice(0, routes.length, ...trial); done = true; break; }
+      }
+      if (!done) break;
+    }
+    return routes;
+  }
+  // Shorten the miles without re-opening an emptied truck: improve only the trucks in use.
+  function improveUsed(ctx, routes, vehicles) {
+    const used = routes.map((r, k) => k).filter(k => routes[k].length);
+    const sub = improve(ctx, used.map(k => routes[k]), used.map(k => vehicles[k]), true);
+    used.forEach((k, i) => { routes[k] = sub[i]; });
+    return routes;
+  }
+  // Fill one truck at a time (biggest first): each stop goes on the truck already being filled if it
+  // fits on time, and a new truck is started only when it doesn't.
+  function fillInTurn(ctx, vehicles) {
+    const routes = vehicles.map(() => []), unassigned = [];
+    const opened = [];
+    const order = ctx.stops.map((s, i) => i).sort(byWindow(ctx));
+    const bySize = vehicles.map((v, k) => k).sort((a, b) => capSize(vehicles[b]) - capSize(vehicles[a]));
+    for (const si of order) {
+      const sub = opened.map(k => routes[k]), vs = opened.map(k => vehicles[k]);
+      let b = opened.length ? bestInsert(ctx, sub, vs, si, -1) : null;
+      if (b) { routes[opened[b.k]] = b.cand; continue; }
+      const next = bySize.find(k => !opened.includes(k) && evalRoute(ctx, [si], vehicles[k], true));
+      if (next != null) { opened.push(next); routes[next] = [si]; } else unassigned.push({ id: ctx.stops[si].id, why: whyNot(ctx, si, vehicles) });
+    }
+    return { routes, unassigned };
+  }
+  function planFewestTrucks(depot, stops, vehicles, params) {
+    const ctx = makeCtx(depot, stops, params);
+    const tries = [];
+    // A: the fewest-miles plan, then empty trucks from it
+    const a = planMiles(depot, stops, vehicles, params);
+    const idx = Object.fromEntries(stops.map((s, i) => [s.id, i]));
+    const ra = a.routes.map(r => r.stops.map(id => idx[id]));
+    eliminate(ctx, ra, vehicles); improveUsed(ctx, ra, vehicles); eliminate(ctx, ra, vehicles); improveUsed(ctx, ra, vehicles);
+    tries.push({ routes: ra, unassigned: a.unassigned });
+    // B: fill one truck at a time, then empty any truck that still can be
+    const b = fillInTurn(ctx, vehicles);
+    improveUsed(ctx, b.routes, vehicles); eliminate(ctx, b.routes, vehicles); improveUsed(ctx, b.routes, vehicles);
+    tries.push(b);
+    const score = (t) => [t.unassigned.length, t.routes.filter(r => r.length).length,
+      t.routes.reduce((m, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return m + (e ? e.miles : 0); }, 0)];
+    tries.sort((x, y) => { const p = score(x), q = score(y); return p[0] - q[0] || p[1] - q[1] || p[2] - q[2]; });
+    return summarize(ctx, tries[0].routes, vehicles, tries[0].unassigned);
+  }
+
   function whyNot(ctx, si, vehicles) {
     const s = ctx.stops[si];
     const tooBig = vehicles.every(v => DIMS.some(d => v.cap && v.cap[d] && ((s.demand && s.demand[d]) || 0) > v.cap[d]));

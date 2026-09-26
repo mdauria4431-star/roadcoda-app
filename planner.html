@@ -83,7 +83,7 @@
     <div data-pane="plan" style="display:flex;flex-direction:column;gap:12px">
       <div class="card"><header><h2>Loads to plan across</h2><span class="sp"></span><span class="mini">Only loads not started yet. Each load is one truck; its truck (or trailer) sets the capacity.</span></header>
         <div id="pool"></div>
-        <div class="pad row"><button class="btn primary" id="run">Plan these loads</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
+        <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="miles">Fewest miles</option><option value="trucks">Fewest trucks</option></select></label><button class="btn primary" id="run">Plan these loads</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
       <div id="result"></div>
     </div>
 
@@ -193,7 +193,10 @@ const minsOf = (ts) => { if (!ts) return null; const d = new Date(ts); return d.
 function toStop(s) { const p = pointOf(s); return { id: s.id, lat: p.lat, lng: p.lng, ws: minsOf(s.window_start), we: minsOf(s.window_end), service: CAR.plan_stop_min, demand: demandOf(s) }; }
 const leave = () => { const [h, m] = String(CAR.plan_leave_at || '06:00').split(':').map(Number); return h * 60 + m; };
 const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 });
-const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return });
+const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'miles' });
+// "Plan for" is remembered on this computer only
+try { const g = localStorage.getItem('rc_plan_goal'); if (g && $('goal')) $('goal').value = g; } catch (_) {}
+if ($('goal')) $('goal').onchange = () => { try { localStorage.setItem('rc_plan_goal', $('goal').value); } catch (_) {} };
 const depot = () => { const c = custOf(); return c.start_lat != null ? { lat: c.start_lat, lng: c.start_lon } : null; };
 
 // ── Missing map points: look them up once (the same Google key as miles) ──
@@ -237,7 +240,7 @@ $('run').onclick = () => {
   const trucks = loads.map(truckOf), dep = depot();
   const before = loads.map(l => RC_PLANNER.reorder(dep, l.stops.filter(s => s.stop_type !== 'pickup').map(toStop), truckOf(l), params()).before.miles).reduce((a, b) => a + b, 0);
   const t0 = performance.now(); const r = RC_PLANNER.plan(dep, stops, trucks, params());
-  PLAN = { loads, result: r, before, ms: Math.round(performance.now() - t0) };
+  PLAN = { loads, result: r, before, ms: Math.round(performance.now() - t0), goal: params().goal };
   drawResult();
 };
 function capRows(load, cap) {
@@ -249,6 +252,7 @@ function drawResult() {
   const lnOf = (id) => loads.find(l => l.id === id);
   $('result').innerHTML = `<div class="tiles">${[['Estimated miles', Math.round(r.miles) + ''], ['Before', Math.round(before) + ''], ['Saved', before > r.miles ? Math.round(before - r.miles) + ' mi' : '—'],
       ['Trucks used', r.routes.filter(x => x.stops.length).length + ' of ' + loads.length], ['Stops not placed', r.unassigned.length + '']].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
+    <div class="mini" style="margin:6px 2px">${PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few trucks as possible, then the fewest miles for those trucks.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}</div>
     ${r.unassigned.length ? `<div class="card pad" style="border-color:var(--late)"><b>Didn't fit</b> — these stay on their current load; move them yourself or add a truck:<ul style="margin:6px 0 0 18px">${r.unassigned.map(u => `<li>${esc(byStop[u.id]?.consignee)} — ${esc(u.why)}</li>`).join('')}</ul></div>` : ''}
     <div class="routes">${r.routes.map(rt => { const l = lnOf(rt.vehicle), c = capOf(l), overH = rt.drive > CAR.plan_max_drive_h * 60;
       return `<div class="card"><header><h2>Load ${esc(l.load_no)} · ${esc(c.name)}</h2><span class="sp"></span><span class="mini">${esc(l.drivers?.full_name || '')}</span></header><div class="pad">
