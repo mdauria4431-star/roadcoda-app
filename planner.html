@@ -395,13 +395,16 @@ function drawResult() {
           return `<li>${at}${esc(s.consignee)}${s.window_start ? ` <span class="mini">window ${hhmm(minsOf(s.window_start))}–${hhmm(minsOf(s.window_end))}</span>` : ''}</li>`; }).join('')}</ol>
       </div></div>`; }).join('')}</div>
     ${fleet.length > used.length ? `<div class="mini" style="margin:6px 2px">Not needed: ${esc(fleet.filter(u => !used.some(x => x.vehicle === u.key)).map(u => u.name).join(', '))}</div>` : ''}
-    <div class="card pad row">${canEdit() ? '<button class="btn primary" id="apply">Apply this plan</button>' : ''}<span class="mini">Makes one load per truck used, with its truck and trailer on it, and puts the stops on in this order. An emptied load (like the imported list) is removed. Drivers are assigned on Dispatch.</span><span class="sp"></span><span class="mini">Planned in ${PLAN.ms} ms</span></div>
+    <div class="card pad row">${canEdit() ? '<button class="btn primary" id="apply">Apply this plan</button>' : ''}<span class="mini">Makes one load per truck used, with its truck and trailer on it, and puts the stops on in this order with these arrival times as their ETAs. An emptied load (like the imported list) is removed. Drivers are assigned on Dispatch.</span><span class="sp"></span><span class="mini">Planned in ${PLAN.ms} ms</span></div>
     <div id="after"></div>`;
   if ($('apply')) $('apply').onclick = applyPlan;
 }
 async function applyPlan() {
   const { loads, fleet, result: r } = PLAN;
-  const routes = r.routes.filter(x => x.stops.length).map(x => { const u = fleet.find(f => f.key === x.vehicle); return { truck_id: u.truck.id, trailer_id: u.trailer ? u.trailer.id : null, stops: x.stops }; });
+  // planned arrival at each stop, as a date-time on the planning day (this computer's time zone)
+  const at = (mins) => { const d = new Date($('day').value + 'T00:00:00'); d.setMinutes(Math.round(mins)); return d.toISOString(); };
+  const routes = r.routes.filter(x => x.stops.length).map(x => { const u = fleet.find(f => f.key === x.vehicle);
+    return { truck_id: u.truck.id, trailer_id: u.trailer ? u.trailer.id : null, stops: x.stops, etas: (x.times || []).map(t => at(t.arrive)) }; });
   if (!confirm(`Put the stops on ${routes.length} truck${routes.length === 1 ? '' : 's'} as shown?`)) return;
   $('apply').disabled = true;
   const { data, error } = await sb.rpc('plan_apply_trucks', { p_customer: $('cust').value, p_date: $('day').value, p_pool: loads.map(l => l.id), p_routes: routes });
