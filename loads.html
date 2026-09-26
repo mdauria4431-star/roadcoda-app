@@ -974,7 +974,9 @@ async function drawImport() {
       p_loads: payload, p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York' });
     if (error) { $('imp-go').disabled = false; $('imp-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
     $('imp-body').innerHTML = `<p class="ok">Created ${data.loads} load${data.loads === 1 ? '' : 's'} with ${data.stops} stops for ${dt2($('imp-date').value)}.
-      ${data.new_locations ? `${data.new_locations} new delivery customer${data.new_locations === 1 ? ' was' : 's were'} added to the database.` : ''}</p>`;
+      ${data.new_locations ? `${data.new_locations} new delivery customer${data.new_locations === 1 ? ' was' : 's were'} added to the database.` : ''}</p>
+      <p><a class="btn primary" href="planner.html?tab=plan&day=${encodeURIComponent($('imp-date').value)}&customer=${encodeURIComponent($('imp-cust').value)}">Plan these on your trucks</a>
+      <span class="hint">Opens the Route planner for this customer and day, with your available trucks listed.</span></p>`;
     $('day').value = $('imp-date').value; loadList();
   };
 }
