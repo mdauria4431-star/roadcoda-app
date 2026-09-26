@@ -112,6 +112,7 @@
           <label>Local speed (mph)<input type="number" id="s-lmph" min="5" max="70" step="1" title="For short legs"></label>
           <label>Local = legs under (miles)<input type="number" id="s-lmi" min="0" max="50" step="1"></label>
           <label>Truck time vs Google car time (×)<input type="number" id="s-tf" min="1" max="2" step="0.05"></label>
+          <label>Arrive before a window closes by at least (min)<input type="number" id="s-buf" min="0" max="240" step="5"></label>
           <label>Trucks leave at<input type="time" id="s-leave"></label>
           <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="s-ret" style="height:auto"> Back to start at the end</label>
           <button class="btn primary small" id="s-save">Save</button><span class="mini" id="s-msg"></span></div></div>
@@ -158,7 +159,7 @@ async function start() {
   const q = new URLSearchParams(location.search);
   $('day').value = q.get('day') || iso(new Date()); if (q.get('customer')) $('cust').value = q.get('customer');
   TAB = q.get('tab') || 'plan';
-  $('basis').textContent = `Planning with Google drive times where known, otherwise ${CAR.plan_local_mph ?? CAR.plan_mph} mph under ${CAR.plan_local_miles ?? 0} mi and ${CAR.plan_mph} mph beyond × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
+  $('basis').textContent = `${CAR.plan_window_buffer ? `Arriving at least ${CAR.plan_window_buffer} min before each window closes. ` : ''}Planning with Google drive times where known, otherwise ${CAR.plan_local_mph ?? CAR.plan_mph} mph under ${CAR.plan_local_miles ?? 0} mi and ${CAR.plan_mph} mph beyond × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
   $('day').onchange = $('cust').onchange = () => { PLAN = null; if (IMP) drawImp(); loadDay(); };
   if (!canEdit()) $('imp-lbl').hidden = true;
@@ -225,7 +226,8 @@ const leave = () => { const [h, m] = String(CAR.plan_leave_at || '06:00').split(
 const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 });
 let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
 const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks',
-  localMph: CAR.plan_local_mph != null ? Number(CAR.plan_local_mph) : null, localMiles: Number(CAR.plan_local_miles || 0), leg: DRIVE_LEG });
+  localMph: CAR.plan_local_mph != null ? Number(CAR.plan_local_mph) : null, localMiles: Number(CAR.plan_local_miles || 0), leg: DRIVE_LEG,
+  buffer: Number(CAR.plan_window_buffer || 0) });
 // "Plan for" is remembered on this computer only
 try { const g = localStorage.getItem('rc_plan_goal'); if (g && $('goal')) $('goal').value = g; } catch (_) {}
 if ($('goal')) $('goal').onchange = () => { try { localStorage.setItem('rc_plan_goal', $('goal').value); } catch (_) {} };
@@ -529,6 +531,7 @@ function drawResult() {
   $('result').innerHTML = `<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ['Stops not placed', r.unassigned.length + '']]
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
     ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
+    ${CAR.plan_window_buffer ? `<div class="mini" style="margin:6px 2px">Every stop is planned to arrive at least ${CAR.plan_window_buffer} min before its window closes${PLAN.result.routes.some(x => (x.times || []).some(t => t.tight)) ? ' — except the ones marked <span class="warn">tight</span>, which can\'t be reached with that much spare' : ''}.</div>` : ''}
     <div class="mini" style="margin:6px 2px">${PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible, then the fewest miles for those trucks.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}</div>
     ${r.unassigned.length ? `<div class="card pad" style="border-color:var(--late)"><b>Didn't fit</b> on any ticked truck — they stay on the load they're on now. Tick another truck and plan again, or move them yourself:<ul style="margin:6px 0 0 18px">${r.unassigned.map(u => `<li>${esc(byStop[u.id]?.consignee)} — ${esc(u.why)}</li>`).join('')}</ul></div>` : ''}
     <div class="routes">${used.map(rt => { const u = unitOf(rt.vehicle), overH = rt.drive > CAR.plan_max_drive_h * 60;
@@ -538,7 +541,7 @@ function drawResult() {
         <div class="mini" style="margin-top:6px">${rt.stops.length} stops · ${Math.round(rt.miles)} mi · ${hrs(rt.drive)} driving · ${hrs(rt.duty)} on duty · back ${hhmm(rt.end)}${overH ? ' <span class="error">over hours</span>' : ''}</div>
         <div class="mini" style="margin-top:4px">Leaves <b>${hhmm(rt.start != null ? rt.start : leave())}</b>${rt.start != null && rt.start > leave() + 0.5 ? ` (not before ${hhmm(leave())}, so no one waits for the first window)` : ''}. Each stop shows when the truck gets there, then its window.</div>
         <ol class="st">${rt.stops.map((id, i) => { const s = byStop[id], tm = (rt.times || [])[i];
-          const at = tm ? `<b>${hhmm(tm.arrive)}</b>${tm.start > tm.arrive + 0.5 ? ` <span class="mini">(waits till ${hhmm(tm.start)})</span>` : ''} · ` : '';
+          const at = tm ? `<b>${hhmm(tm.arrive)}</b>${tm.start > tm.arrive + 0.5 ? ` <span class="mini">(waits till ${hhmm(tm.start)})</span>` : ''}${tm.tight ? ` <span class="warn">tight — ${Math.max(0, Math.round(tm.spare))} min spare</span>` : ''} · ` : '';
           return `<li>${at}${esc(s.consignee)}${s.window_start ? ` <span class="mini">window ${hhmm(minsOf(s.window_start))}–${hhmm(minsOf(s.window_end))}</span>` : ''}</li>`; }).join('')}</ol>
       </div></div>`; }).join('')}</div>
     ${fleet.length > used.length ? `<div class="mini" style="margin:6px 2px">Not needed: ${esc(fleet.filter(u => !used.some(x => x.vehicle === u.key)).map(u => u.name).join(', '))}</div>` : ''}
@@ -593,6 +596,7 @@ $('ord-run').onclick = () => {
 // ── Setup ───────────────────────────────────────────────────────────
 function drawSetup() {
   $('s-mph').value = CAR.plan_mph; $('s-road').value = CAR.plan_road_factor; $('s-stop').value = CAR.plan_stop_min; $('s-drive').value = CAR.plan_max_drive_h;
+  $('s-buf').value = CAR.plan_window_buffer ?? 30;
   $('s-lmph').value = CAR.plan_local_mph ?? 30; $('s-lmi').value = CAR.plan_local_miles ?? 10; $('s-tf').value = CAR.plan_truck_factor ?? 1.15;
   $('s-duty').value = CAR.plan_max_duty_h; $('s-leave').value = String(CAR.plan_leave_at || '06:00').slice(0, 5); $('s-ret').checked = !!CAR.plan_return;
   const units = EQ.filter(e => e.active);
@@ -619,6 +623,9 @@ $('s-save').onclick = async () => {
   Object.assign(args, { p_local_mph: +$('s-lmph').value, p_local_miles: +$('s-lmi').value, p_truck_factor: +$('s-tf').value });
   const { error } = await sb.rpc('set_plan_settings', args); if (error) return $('s-msg').innerHTML = `<span class="error">${esc(error.message)}${/set_plan_settings|schema cache/.test(error.message) ? ' — run 123_drive_times.sql in the SQL Editor.' : ''}</span>`;
   Object.assign(CAR, { plan_local_mph: args.p_local_mph, plan_local_miles: args.p_local_miles, plan_truck_factor: args.p_truck_factor });
+  const bufErr = (await sb.rpc('set_plan_buffer', { p_min: +$('s-buf').value || 0 })).error;
+  if (bufErr) return $('s-msg').innerHTML = `<span class="error">${esc(bufErr.message)}${/set_plan_buffer|schema cache/.test(bufErr.message) ? ' — run 124_window_buffer.sql in the SQL Editor.' : ''}</span>`;
+  CAR.plan_window_buffer = +$('s-buf').value || 0;
   Object.assign(CAR, { plan_mph: args.p_mph, plan_road_factor: args.p_road, plan_stop_min: args.p_stop_min, plan_max_drive_h: args.p_drive_h, plan_max_duty_h: args.p_duty_h, plan_leave_at: args.p_leave, plan_return: args.p_return });
   $('s-msg').innerHTML = '<span class="ok">Saved.</span>';
 };

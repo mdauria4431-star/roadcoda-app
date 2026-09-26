@@ -650,11 +650,15 @@ async function loadEtas(l, stops) {
     }
   }
   const r = RC_PLANNER.timeline(dep, pts, { start: h * 60 + m }, { mph: Number(P.plan_mph), roadFactor: Number(P.plan_road_factor), returnToStart: !!P.plan_return,
-    localMph: P.plan_local_mph != null ? Number(P.plan_local_mph) : null, localMiles: Number(P.plan_local_miles || 0), leg });
+    localMph: P.plan_local_mph != null ? Number(P.plan_local_mph) : null, localMiles: Number(P.plan_local_miles || 0), leg, buffer: Number(P.plan_window_buffer || 0) });
   stops.forEach((s, i) => { const t = r.times[i], ws = mins(s.window_start);
-    out.at[s.id] = { text: clock(t.arrive), early: ws != null && ws - t.arrive >= 1, late: r.late.some(x => x.id === s.id) }; });
-  const late = r.late.length;
-  out.note = `ETAs: leaving <b>${clock(r.start != null ? r.start : h * 60 + m)}</b>${r.start != null && r.start > h * 60 + m + 0.5 ? ' (as late as the windows allow)' : ''}${drive || `, ${P.plan_local_mph != null ? `${P.plan_local_mph} mph under ${P.plan_local_miles} mi, ` : ''}${P.plan_mph} mph`}, ${P.plan_stop_min} min at each stop, in this stop order${late ? ` · <span class="error">${late} stop${late === 1 ? '' : 's'} would be late</span>` : ''}. Change the order with ▲▼ or in the Route planner.`;
+    out.at[s.id] = { text: clock(t.arrive), early: ws != null && ws - t.arrive >= 1, late: r.late.some(x => x.id === s.id), tight: !!t.tight, spare: t.spare }; });
+  const late = r.late.length, tightN = r.times.filter(t => t.tight).length;
+  if (late && !l.equipment && stops.length > 8) {
+    out.note = `<b>Not planned onto trucks yet.</b> These ETAs are one truck doing all ${stops.length} stops in list order, so ${late} would be late. <a href="planner.html?tab=plan&day=${encodeURIComponent(l.service_date)}&customer=${encodeURIComponent(l.customer_id)}">Open the Route planner</a> to share them over your trucks, every stop on time.`;
+    return out;
+  }
+  out.note = `ETAs: leaving <b>${clock(r.start != null ? r.start : h * 60 + m)}</b>${r.start != null && r.start > h * 60 + m + 0.5 ? ' (as late as the windows allow)' : ''}${drive || `, ${P.plan_local_mph != null ? `${P.plan_local_mph} mph under ${P.plan_local_miles} mi, ` : ''}${P.plan_mph} mph`}, ${P.plan_stop_min} min at each stop, in this stop order${late ? ` · <span class="error">${late} stop${late === 1 ? '' : 's'} would be late</span>` : ''}${tightN ? ` · <span style="color:var(--warn,#f0a93b)">${tightN} tight (under ${P.plan_window_buffer} min before the window closes)</span>` : ''}. Change the order with ▲▼ or in the Route planner.`;
   return out;
 }
 
@@ -681,7 +685,7 @@ async function showDetail(id) {
           <button class="btn small danger" data-rm="${s.id}" data-seq="${s.seq}">Remove stop</button>` : ''}
           ${s.needs_review ? `<button class="btn small" data-rv="${s.id}">Mark reviewed</button>` : ''}</div>` : ''}</div>
       <div class="mono" style="text-align:right">Window ${time(s.window_start)}–${time(s.window_end)}<br>
-        ${eta.at[s.id] ? `ETA ${eta.at[s.id].text}${eta.at[s.id].early ? ' <span style="color:var(--muted)">(early, waits)</span>' : eta.at[s.id].late ? ' <span class="error">late</span>' : ''}<br>`
+        ${eta.at[s.id] ? `ETA ${eta.at[s.id].text}${eta.at[s.id].early ? ' <span style="color:var(--muted)">(early, waits)</span>' : eta.at[s.id].late ? ' <span class="error">late</span>' : eta.at[s.id].tight ? ` <span style="color:var(--warn,#f0a93b)">tight · ${Math.max(0, Math.round(eta.at[s.id].spare))} min spare</span>` : ''}<br>`
           : s.status === 'pending' && s.eta && (s.eta !== s.window_start || l.equipment) ? `ETA ${time(s.eta)}${s.window_start && s.eta < s.window_start ? ' <span style="color:var(--muted)">(early, waits)</span>' : ''}<br>` : ''}
         Arrived ${time(s.arrived_at)} · Departed ${time(s.departed_at)}<br>${s.odometer != null ? `Odometer ${s.odometer} · ${s.leg_miles} mi from previous<br>` : l.hub_required && s.status === 'pending' ? '<span style="color:var(--muted)">Odometer due on arrival</span><br>' : ''}
         <span class="pill s-${s.status === 'pending' ? 'planned' : s.status === 'arrived' ? 'in_progress' : s.status === 'exception' ? 'cancelled' : 'delivered'}">${s.status === 'exception' ? esc(issueLabel(s)) : ({pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered'}[s.status] || esc(s.status))}</span>

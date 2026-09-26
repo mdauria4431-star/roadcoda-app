@@ -54,8 +54,15 @@
       if (k === 0 && s.ws != null && t < s.ws) { start += s.ws - t; t = s.ws; }   // leave later, don't wait
       const arrive = t;
       if (s.ws != null && t < s.ws) { wait += s.ws - t; t = s.ws; }             // early: wait for the window
-      times.push({ arrive, start: t });
-      if (s.we != null && t > s.we) { if (hard) return null; late.push({ id: s.id, minutes: Math.round(t - s.we) }); }
+      // safety margin: arrive at least `buffer` minutes before the window closes (a stop that can't be
+      // reached with it at all is placed without it, marked noBuffer, and shown as tight)
+      const buf = s.noBuffer ? 0 : (ctx.p.buffer || 0);
+      const tight = s.we != null && t > s.we - (ctx.p.buffer || 0) && t <= s.we;
+      times.push({ arrive, start: t, tight, spare: s.we != null ? s.we - t : null });
+      if (s.we != null && t > s.we - buf) {
+        if (hard) return null;
+        if (t > s.we) late.push({ id: s.id, minutes: Math.round(t - s.we) });
+      }
       t += s.service || 0;
       for (const d of DIMS) load[d] += (s.demand && s.demand[d]) || 0;
       prev = node;
@@ -153,7 +160,18 @@
       else unassigned.push({ id: stops[si].id, why: whyNot(ctx, si, vehicles) });
     }
     improve(ctx, routes, vehicles, true);
+    placeTight(ctx, routes, vehicles, unassigned);
     return summarize(ctx, routes, vehicles, unassigned);
+  }
+  // A stop that fits nowhere with the safety margin: try it without (it'll show as tight)
+  function placeTight(ctx, routes, vehicles, unassigned) {
+    if (!(ctx.p.buffer > 0) || !unassigned.length) return;
+    for (let u = unassigned.length - 1; u >= 0; u--) {
+      const si = ctx.stops.findIndex(x => x.id === unassigned[u].id); if (si < 0) continue;
+      ctx.stops[si].noBuffer = true;
+      const b = bestInsert(ctx, routes, vehicles, si, -1);
+      if (b) { routes[b.k] = b.cand; unassigned.splice(u, 1); } else ctx.stops[si].noBuffer = false;
+    }
   }
   // ── Fewest trucks ──────────────────────────────────────────────────
   // Cheapest place for stop si across the given routes (hard limits); null if it fits nowhere.
@@ -236,6 +254,7 @@
     const score = (t) => [t.unassigned.length, t.routes.filter(r => r.length).length,
       t.routes.reduce((m, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return m + (e ? cost(e) : 0); }, 0)];
     tries.sort((x, y) => { const p = score(x), q = score(y); return p[0] - q[0] || p[1] - q[1] || p[2] - q[2]; });
+    placeTight(ctx, tries[0].routes, vehicles, tries[0].unassigned);
     return summarize(ctx, tries[0].routes, vehicles, tries[0].unassigned);
   }
 
