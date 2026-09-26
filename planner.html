@@ -13,6 +13,7 @@
 <script src="access.js"></script>
 <script src="shell.js"></script>
 <script src="planner-core.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <style>
   *{box-sizing:border-box} [hidden]{display:none!important}
   body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
@@ -81,7 +82,9 @@
 
     <!-- Plan the day -->
     <div data-pane="plan" style="display:flex;flex-direction:column;gap:12px">
-      <div class="card"><header><h2>Stops to plan</h2><span class="sp"></span><span class="mini">From this customer's loads for the day that haven't started, such as an imported delivery list.</span></header>
+      <div class="card"><header><h2>Stops to plan</h2><span class="sp"></span><span class="mini">This customer's stops for the day that haven't started.</span>
+          <label class="btn small" id="imp-lbl" style="cursor:pointer">Import delivery list<input id="imp-file" type="file" accept=".xlsx,.xls,.csv,.txt" hidden></label></header>
+        <div id="imp-box"></div>
         <div id="pool"></div></div>
       <div class="card"><header><h2>Trucks available today</h2><span class="sp"></span><span class="mini" id="fleet-n"></span></header>
         <div class="pad mini" style="padding-bottom:0">Untick any truck that's down or not available. The planner decides how many of the ticked trucks it needs and which stops go on each. A tractor is paired with a free trailer, biggest first; a trailer sets the capacity.</div>
@@ -152,7 +155,8 @@ async function start() {
   TAB = q.get('tab') || 'plan';
   $('basis').textContent = `Planning at ${CAR.plan_mph} mph × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
-  $('day').onchange = $('cust').onchange = () => { PLAN = null; loadDay(); };
+  $('day').onchange = $('cust').onchange = () => { PLAN = null; if (IMP) drawImp(); loadDay(); };
+  if (!canEdit()) $('imp-lbl').hidden = true;
   if (!canEdit()) document.querySelectorAll('#run, #s-save').forEach(e => e.hidden = true);
   await loadDay();
 }
@@ -228,6 +232,84 @@ $('geo').onclick = async () => {
   drawPool();
 };
 
+// ── Import the day's delivery list (Excel or CSV) ──────────────────
+// Same column matching as Loads › Import delivery list. Every row becomes a stop on one list for the
+// day; the planner then shares them over the trucks. PDFs, or a file whose columns need matching by
+// hand, go through Loads › Import delivery list.
+const IMP_FIELDS = [
+  ['name', /store ?name|consignee|ship ?to|deliver(y)? ?to|customer|location|name|account ?name|dest/i],
+  ['code', /store ?(#|no|num)|code|site|loc(ation)? ?(#|no|id)|acct|account ?(#|no)|dest ?(#|no)|^#$|^store$/i],
+  ['address', /address|street|addr/i], ['city', /city|town/i], ['state', /^st$|state|prov/i], ['zip', /zip|postal/i],
+  ['wstart', /open|start|from|earliest|window|appt|appointment|time/i], ['wend', /close|end|latest|until|^to$/i],
+  ['qty', /qty|quantity|pallets?|cases|pieces|pcs|units|count|plts?|cages?|totes?|boxes/i], ['unit', /unit|uom|type/i],
+  ['route', /route|load|trip|run|truck/i], ['type', /^type$|stop ?type|p\/?u|pu ?\/ ?del|pick|action|activity/i]];
+const IMP_UNITS = ['pallets', 'boxes', 'cages', 'parts', 'totes', 'other'];
+let IMP = null;
+function impTime(v) {
+  if (v === '' || v == null) return '';
+  if (typeof v === 'number') { const m = Math.round((v % 1) * 1440); return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+  const t = String(v).trim().toLowerCase().match(/^(\d{1,2}):?(\d{2})?\s*(a|p)?/); if (!t) return '';
+  let h = parseInt(t[1], 10), m = parseInt(t[2] || '0', 10);
+  if (String(v).replace(/\D/g, '').length === 4 && !String(v).includes(':')) { h = parseInt(String(v).slice(0, 2), 10); m = parseInt(String(v).slice(2, 4), 10); }
+  if (t[3] === 'p' && h < 12) h += 12; if (t[3] === 'a' && h === 12) h = 0;
+  return h < 24 && m < 60 ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` : '';
+}
+function impParse(rows) {
+  const header = Math.max(0, rows.slice(0, 15).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
+  const head = rows[header].map(h => String(h).trim()), map = {}, used = new Set();
+  for (const key of ['type', 'code', 'route', 'qty', 'unit', 'zip', 'state', 'city', 'address', 'wend', 'wstart', 'name']) {
+    const re = IMP_FIELDS.find(f => f[0] === key)[1], i = head.findIndex((h, j) => h && !used.has(j) && re.test(h));
+    if (i >= 0) { map[key] = i; used.add(i); } }
+  const g = (r, k) => map[k] != null ? r[map[k]] : '';
+  const stops = rows.slice(header + 1).map(r => {
+    let ws = g(r, 'wstart'), we = g(r, 'wend');
+    if (typeof ws === 'string' && /[-–]/.test(ws) && !we) { const [a, b] = ws.split(/\s*[-–]\s*/); ws = a; we = b; }
+    const zip = String(g(r, 'zip')).trim();
+    const address = [g(r, 'address'), g(r, 'city'), [g(r, 'state'), /^\d{3,4}$/.test(zip) ? zip.padStart(5, '0') : zip].filter(Boolean).join(' ')].map(x => String(x).trim()).filter(Boolean).join(', ');
+    const unitRaw = String(g(r, 'unit') || '').toLowerCase();
+    return { type: /^\s*p/i.test(String(g(r, 'type'))) ? 'pickup' : 'delivery', name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address,
+             window_start: impTime(ws), window_end: impTime(we), unit: IMP_UNITS.find(u => unitRaw.startsWith(u.replace(/e?s$/, ''))) || 'pallets',
+             qty: parseFloat(String(g(r, 'qty')).replace(/[^\d.]/g, '')) || 0 };
+  }).filter(x => x.name || x.code);
+  return { head, map, stops };
+}
+$('imp-file').onchange = async () => {
+  const f = $('imp-file').files[0]; if (!f) return;
+  const box = $('imp-box'); box.innerHTML = '<div class="pad mini">Reading the file…</div>';
+  try {
+    if (!window.XLSX) throw new Error('The spreadsheet reader did not load. Check your internet connection and refresh.');
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: false, raw: /\.(csv|txt)$/i.test(f.name) });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' })
+      .map(r => r.map(c => (c == null ? '' : c))).filter(r => r.some(c => String(c).trim() !== ''));
+    if (!rows.length) throw new Error('No rows found in that file.');
+    IMP = impParse(rows); IMP.file = f.name; drawImp();
+  } catch (e) { box.innerHTML = `<div class="pad error">${esc(e.message || e)}</div>`; }
+  $('imp-file').value = '';
+};
+function drawImp() {
+  const box = $('imp-box'); if (!IMP) { box.innerHTML = ''; return; }
+  const { map, head, stops } = IMP, has = (k) => map[k] != null;
+  const missing = [!has('name') && !has('code') ? 'store name or code' : '', !has('address') ? 'address' : ''].filter(Boolean);
+  const dels = stops.filter(x => x.type !== 'pickup'), win = dels.filter(x => x.window_start || x.window_end).length, qty = dels.reduce((a, x) => a + x.qty, 0);
+  const d = new Date($('day').value + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  box.innerHTML = `<div class="pad" style="border-bottom:1px solid var(--line-soft)">
+    <div><b>${esc(IMP.file)}</b>: ${stops.length} stop${stops.length === 1 ? '' : 's'} found · ${win} with a delivery window · ${Math.round(qty * 10) / 10} units</div>
+    <div class="mini" style="margin-top:4px">Columns used: ${Object.entries(map).map(([k, i]) => esc(head[i])).join(', ') || 'none'}</div>
+    ${missing.length ? `<div class="error" style="margin-top:6px">No ${missing.join(' or ')} column found. Use <a href="loads.html">Loads › Import delivery list</a> to match the columns yourself.</div>` : ''}
+    <div class="row" style="margin-top:8px"><button class="btn primary" id="imp-go" ${missing.length || !stops.length || !canEdit() ? 'disabled' : ''}>Add these stops for ${esc(custOf().name || '')} on ${esc(d)}</button>
+      <button class="btn" id="imp-x">Cancel</button><span class="mini" id="imp-msg"></span></div></div>`;
+  $('imp-x').onclick = () => { IMP = null; drawImp(); };
+  $('imp-go').onclick = async () => {
+    $('imp-go').disabled = true; $('imp-msg').textContent = 'Adding…';
+    const { data, error } = await sb.rpc('create_loads_from_import', { p_customer_id: $('cust').value, p_date: $('day').value,
+      p_loads: [{ load_no: null, stops: IMP.stops }], p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York' });
+    if (error) { $('imp-go').disabled = false; $('imp-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    IMP = null; drawImp();
+    toast(`Added ${data.stops} stops${data.new_locations ? ` (${data.new_locations} new delivery customer${data.new_locations === 1 ? '' : 's'} added)` : ''}. Now tick your trucks and Plan the day.`);
+    PLAN = null; $('result').innerHTML = ''; await loadDay();
+  };
+}
+
 // ── Trucks available today ──────────────────────────────────────────
 const capFrom = (src) => { const cap = {}; DIMS.forEach(([k, , col]) => { const v = src && src[col]; cap[k] = v ? Number(v) : null; }); return cap; };
 const eqNo = (id) => (EQ.find(e => e.id === id) || {}).unit_no || '';
@@ -269,7 +351,7 @@ function drawPool() {
       const c = capOf(l), dels = l.stops.filter(s => s.stop_type !== 'pickup'), dem = dels.reduce((a, s) => { const d = demandOf(s); DIMS.forEach(([k]) => a[k] += d[k]); return a; }, { pallets: 0, weight: 0, cube: 0, pieces: 0 });
       return `<tr><td><input type="checkbox" data-pl="${l.id}" checked style="height:auto"></td><td><b>${esc(l.load_no)}</b></td><td>${esc(c.name)}${c.known ? '' : ' <span class="mini warn">no capacity set</span>'}</td><td>${esc(l.drivers?.full_name || '—')}</td><td class="n">${dels.length}</td>
         ${DIMS.map(([k]) => `<td class="n">${Math.round(dem[k] * 10) / 10}${c.cap[k] ? ' / ' + c.cap[k] : ''}</td>`).join('')}</tr>`; }).join('')}</tbody></table>`
-    : `<div class="empty">No stops for ${esc(custOf().name || 'this customer')} on this day that haven't started. Import the day's delivery list on Loads (all deliveries on one load), or build loads on Dispatch, then plan them here.</div>`;
+    : `<div class="empty">No stops for ${esc(custOf().name || 'this customer')} on this day yet. Use <b>Import delivery list</b> above to add the day's deliveries, or build loads on Dispatch.</div>`;
   const miss = missingPoints(chosen()); $('geo').hidden = !miss.length || !canEdit();
   if (miss.length) $('geo').textContent = `Look up ${miss.length} missing map point${miss.length > 1 ? 's' : ''}`;
   $('run').disabled = !LOADS.length;
