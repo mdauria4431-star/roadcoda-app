@@ -30,13 +30,15 @@
 
   // Walk a route (array of stop indexes into ctx.stops). hard = windows must hold.
   function evalRoute(ctx, route, v, hard) {
-    let t = v.start || 0, drive = 0, miles = 0, prev = 0, late = [];
+    let t = v.start || 0, drive = 0, miles = 0, prev = 0, late = [], times = [];
     const load = { pallets: 0, weight: 0, cube: 0, pieces: 0 };
     for (const si of route) {
       const s = ctx.stops[si], node = si + 1;
       const leg = ctx.mins(prev, node);
       t += leg; drive += leg; miles += ctx.miles(prev, node);
+      const arrive = t;
       if (s.ws != null && t < s.ws) t = s.ws;                         // early: wait for the window
+      times.push({ arrive, start: t });
       if (s.we != null && t > s.we) { if (hard) return null; late.push({ id: s.id, minutes: Math.round(t - s.we) }); }
       t += s.service || 0;
       for (const d of DIMS) load[d] += (s.demand && s.demand[d]) || 0;
@@ -46,7 +48,7 @@
     for (const d of DIMS) { const c = v.cap && v.cap[d]; if (c && load[d] > c + 1e-9) return null; }
     if (v.maxDrive && drive > v.maxDrive + 1e-9) return null;
     if (v.maxDuty && t - (v.start || 0) > v.maxDuty + 1e-9) return null;
-    return { miles, drive, duty: t - (v.start || 0), end: t, load, late };
+    return { miles, drive, duty: t - (v.start || 0), end: t, load, late, times };
   }
   const cost = (e) => e.miles + e.late.reduce((a, x) => a + x.minutes, 0) * 5;   // lateness weighs heavily (reorder only)
 
@@ -88,7 +90,7 @@
     return {
       routes: routes.map((r, k) => { const e = evalRoute(ctx, r, vehicles[k], false);
         return { vehicle: vehicles[k].id, stops: r.map(i => ctx.stops[i].id), miles: e ? e.miles : 0, drive: e ? e.drive : 0, duty: e ? e.duty : 0, end: e ? e.end : null,
-                 load: e ? e.load : null, cap: vehicles[k].cap || {}, late: e ? e.late : [] }; }),
+                 load: e ? e.load : null, cap: vehicles[k].cap || {}, late: e ? e.late : [], times: e ? e.times : [] }; }),
       unassigned,
       miles: routes.reduce((a, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return a + (e ? e.miles : 0); }, 0),
     };

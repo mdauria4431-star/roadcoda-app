@@ -291,12 +291,17 @@ function drawImp() {
   const { map, head, stops } = IMP, has = (k) => map[k] != null;
   const missing = [!has('name') && !has('code') ? 'store name or code' : '', !has('address') ? 'address' : ''].filter(Boolean);
   const dels = stops.filter(x => x.type !== 'pickup'), win = dels.filter(x => x.window_start || x.window_end).length, qty = dels.reduce((a, x) => a + x.qty, 0);
+  // stores already on this day (the same list imported before, here or on Loads)
+  const key = (n) => String(n || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const onDay = new Set(LOADS.flatMap(l => l.stops.map(x => key(x.consignee))));
+  const dup = stops.filter(x => onDay.has(key(x.name)) || [...onDay].some(k => x.code && k.includes(key(x.code))));
   const d = new Date($('day').value + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   box.innerHTML = `<div class="pad" style="border-bottom:1px solid var(--line-soft)">
     <div><b>${esc(IMP.file)}</b>: ${stops.length} stop${stops.length === 1 ? '' : 's'} found · ${win} with a delivery window · ${Math.round(qty * 10) / 10} units</div>
     <div class="mini" style="margin-top:4px">Columns used: ${Object.entries(map).map(([k, i]) => esc(head[i])).join(', ') || 'none'}</div>
+    ${dup.length ? `<div class="error" style="margin-top:6px">${dup.length === stops.length ? 'All' : dup.length} of these stores already have a stop on this day — this list looks like it's been added already. Adding it again would deliver to them twice.</div>` : ''}
     ${missing.length ? `<div class="error" style="margin-top:6px">No ${missing.join(' or ')} column found. Use <a href="loads.html">Loads › Import delivery list</a> to match the columns yourself.</div>` : ''}
-    <div class="row" style="margin-top:8px"><button class="btn primary" id="imp-go" ${missing.length || !stops.length || !canEdit() ? 'disabled' : ''}>Add these stops for ${esc(custOf().name || '')} on ${esc(d)}</button>
+    <div class="row" style="margin-top:8px"><button class="btn primary" id="imp-go" ${missing.length || !stops.length || !canEdit() ? 'disabled' : ''}>${dup.length ? 'Add them anyway' : 'Add these stops'} for ${esc(custOf().name || '')} on ${esc(d)}</button>
       <button class="btn" id="imp-x">Cancel</button><span class="mini" id="imp-msg"></span></div></div>`;
   $('imp-x').onclick = () => { IMP = null; drawImp(); };
   $('imp-go').onclick = async () => {
@@ -384,7 +389,10 @@ function drawResult() {
       return `<div class="card"><header><h2>${esc(u.name)}</h2><span class="sp"></span><span class="mini">${u.load ? 'on load ' + esc(u.load.load_no) : ''}</span></header><div class="pad">
         ${capRows(rt.load, rt.cap)}
         <div class="mini" style="margin-top:6px">${rt.stops.length} stops · ${Math.round(rt.miles)} mi · ${hrs(rt.drive)} driving · ${hrs(rt.duty)} on duty · back ${hhmm(rt.end)}${overH ? ' <span class="error">over hours</span>' : ''}</div>
-        <ol class="st">${rt.stops.map(id => { const s = byStop[id]; return `<li>${esc(s.consignee)}${s.window_start ? ` <span class="mini">${hhmm(minsOf(s.window_start))}–${hhmm(minsOf(s.window_end))}</span>` : ''}</li>`; }).join('')}</ol>
+        <div class="mini" style="margin-top:4px">Leaves ${hhmm(leave())}. Each stop shows when the truck gets there, then its window.</div>
+        <ol class="st">${rt.stops.map((id, i) => { const s = byStop[id], tm = (rt.times || [])[i];
+          const at = tm ? `<b>${hhmm(tm.arrive)}</b>${tm.start > tm.arrive + 0.5 ? ` <span class="mini">(waits till ${hhmm(tm.start)})</span>` : ''} · ` : '';
+          return `<li>${at}${esc(s.consignee)}${s.window_start ? ` <span class="mini">window ${hhmm(minsOf(s.window_start))}–${hhmm(minsOf(s.window_end))}</span>` : ''}</li>`; }).join('')}</ol>
       </div></div>`; }).join('')}</div>
     ${fleet.length > used.length ? `<div class="mini" style="margin:6px 2px">Not needed: ${esc(fleet.filter(u => !used.some(x => x.vehicle === u.key)).map(u => u.name).join(', '))}</div>` : ''}
     <div class="card pad row">${canEdit() ? '<button class="btn primary" id="apply">Apply this plan</button>' : ''}<span class="mini">Makes one load per truck used, with its truck and trailer on it, and puts the stops on in this order. An emptied load (like the imported list) is removed. Drivers are assigned on Dispatch.</span><span class="sp"></span><span class="mini">Planned in ${PLAN.ms} ms</span></div>
