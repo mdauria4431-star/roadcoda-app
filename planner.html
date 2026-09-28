@@ -771,22 +771,36 @@ $('run').onclick = async () => {
 // Stops the plan leaves off, each with its reason and what would fix it. "Tick another truck" is only
 // offered when the reason is room and there is an unticked truck to tick.
 function notPlaced(list, byStop) {
+  // Each stop left off: what went wrong in plain words, then exactly what to do — with a button where
+  // one click fixes it (an earlier leave time, planned again).
   const spare = FLEET.filter(u => !u.noTrailer && !(u.gap && u.gap.none) && OFF.has(u.key)).length, buf = Number(CAR.plan_window_buffer || 0);
-  const fix = (why) => {
-    if (/no room left/.test(why) && PLAN.bind && PLAN.bind.spare) return `${PLAN.bind.spare} truck${PLAN.bind.spare === 1 ? ' is' : 's are'} free but no driver is; add a driver for the day${PLAN.multi ? '' : ', or tick "More than one load per tractor"'}`;
-    if (/no room left/.test(why)) return spare > 0 ? `tick another truck (${spare} not ticked) and plan again` : 'every truck is already in use; move it to another day or add a truck';
-    if (/bigger than any truck/.test(why)) return 'one item on it is bigger than any truck holds, so it can\'t be split; use a bigger trailer';
-    if (/window/.test(why)) return `the window is too early or too short to reach with the ${buf}-min margin; try an earlier "Trucks can leave from" (now ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}), or check the window`;
-    if (/driver's hours/.test(why)) return 'too far to do and get back within the driver\'s hours; plan it as a separate or team load';
-    if (/map point/.test(why)) return 'fix the address, then "Look up missing map points"';
-    if (/no trucks/.test(why)) return 'tick at least one truck';
-    return '';
+  const leaveNow = leave(), clock = (m) => m < 0 ? `${hhmm(m)} the night before` : hhmm(m);
+  let fixLeave = null;                                    // the earliest leave time that fixes every window problem
+  const say = (u) => {
+    const why = u.why || '';
+    if (/window/.test(why) && u.leaveBy != null) {
+      const need = Math.floor(u.leaveBy / 5) * 5;         // on the 5 minutes, a little early
+      const what = `To get there by <b>${hhmm(u.arriveBy)}</b> (${buf ? `${buf} min before the window closes at ${hhmm(u.windowEnd)}` : `when the window closes`}), a truck has to leave the DC by <b>${clock(need)}</b>.`;
+      if (need < leaveNow && need >= 0) { fixLeave = fixLeave == null ? need : Math.min(fixLeave, need);
+        return `${what} Right now trucks can't leave before <b>${hhmm(leaveNow)}</b>.<br><b>What to do:</b> press the button below to let trucks leave from ${hhmm(need)}, or ask the store for a later window.`; }
+      if (need < 0) return `${what} That's the day before this plan.<br><b>What to do:</b> plan this store on the day before as a night load, or ask the store for a later window.`;
+      return `${what} Trucks may leave by then, but no truck with a free driver is ready that early (they're on other loads or still resting).<br><b>What to do:</b> free up a truck and driver before ${hhmm(need)}, or ask the store for a later window.`;
+    }
+    if (/no room left/.test(why) && PLAN.bind && PLAN.bind.spare) return `The trucks that have a driver today can't fit this stop (they're full, out of hours, or can't make its window in time). ${PLAN.bind.spare} truck${PLAN.bind.spare === 1 ? ' is' : 's are'} sitting with no driver.<br><b>What to do:</b> add a driver for the day${PLAN.multi ? '' : ', or tick "More than one load per tractor" so one driver can run two loads'}, then plan again.`;
+    if (/no room left/.test(why)) return spare > 0 ? `The ticked trucks are full or out of hours.<br><b>What to do:</b> tick another truck (${spare} not ticked) and plan again.`
+      : `Every truck is already full or out of hours.<br><b>What to do:</b> move this store to another day, or add a truck.`;
+    if (/bigger than any truck/.test(why)) return `One item on this order is bigger than any of your trucks can carry, so it can't be split.<br><b>What to do:</b> use a bigger trailer, or ask the customer to break it down.`;
+    if (/driver's hours/.test(why)) return `The trip there and back${u.tripMin ? ` takes about <b>${hrs(u.tripMin)}</b>, which is` : ' is'} longer than one driver's day (${CAR.plan_max_drive_h} h driving, ${CAR.plan_max_duty_h} h on duty).<br><b>What to do:</b> tick the Team box on a truck (two drivers), or deliver it over two days.`;
+    if (/map point/.test(why)) return `RoadCoda can't find this address on the map.<br><b>What to do:</b> fix the address on the stop, then press "Look up missing map points".`;
+    if (/no trucks/.test(why)) return `No trucks were ticked.<br><b>What to do:</b> tick at least one truck.`;
+    return esc(why);
   };
   const room = list.filter(u => /no room left/.test(u.why)).length, other = list.length - room;
-  const head = other && !room ? `<b>Can't be planned</b> — no truck could take ${list.length === 1 ? 'this stop' : 'these stops'} within the rules, whatever trucks or drivers are free. ${list.length === 1 ? 'It stays' : 'They stay'} on the load ${list.length === 1 ? 'it\'s' : 'they\'re'} on now:`
-    : `<b>Not placed</b> — ${list.length === 1 ? 'it stays' : 'they stay'} on the load ${list.length === 1 ? 'it\'s' : 'they\'re'} on now. Why, and what would fix it:`;
-  return `<div class="card pad" style="border-color:var(--late)">${head}<ul style="margin:6px 0 0 18px">${list.map(u => { const f = fix(u.why || '');
-    return `<li><b>${esc(byStop[u.id]?.consignee)}</b> — ${esc(u.why)}${f ? `<span class="mini"> · ${esc(f)}</span>` : ''}</li>`; }).join('')}</ul></div>`;
+  const head = other && !room ? `<b>${list.length === 1 ? "This stop can't" : "These stops can't"} be planned as things are set now.</b> ${list.length === 1 ? 'It stays' : 'They stay'} on the load ${list.length === 1 ? "it's" : "they're"} on until you fix it:`
+    : `<b>${list.length === 1 ? 'This stop was' : 'These stops were'} left off the plan.</b> ${list.length === 1 ? 'It stays' : 'They stay'} on the load ${list.length === 1 ? "it's" : "they're"} on until you fix it:`;
+  const items = list.map(u => `<li style="margin-bottom:6px"><b>${esc(byStop[u.id]?.consignee)}</b><div style="font-size:13px;line-height:1.5;margin-top:2px">${say(u)}</div></li>`).join('');
+  const btn = fixLeave != null ? `<div style="margin-top:8px"><button class="btn primary small" id="fix-leave" data-at="${hhmm(fixLeave).length ? String(Math.floor(fixLeave / 60)).padStart(2, '0') + ':' + String(fixLeave % 60).padStart(2, '0') : ''}">Let trucks leave from ${hhmm(fixLeave)} and plan again</button></div>` : '';
+  return `<div class="card pad" style="border-color:var(--late)">${head}<ul style="margin:8px 0 0 18px">${items}</ul>${btn}</div>`;
 }
 function capRows(load, cap) {
   return DIMS.map(([k, l]) => { const c = cap[k], v = Math.round((load ? load[k] : 0) * 10) / 10, pct = c ? Math.min(100, 100 * v / c) : 0;
@@ -833,6 +847,7 @@ function drawResult() {
     <div class="card pad row">${canEdit() ? '<button class="btn primary" id="apply">Apply this plan</button>' : ''}<span class="mini">${PLAN.multi ? 'Makes one load per run (a tractor doing two runs gets two loads, same driver, trailers as shown),' : 'Makes one load per truck used,'} with its truck and trailer on it, and puts the stops on in this order with these arrival times as their ETAs. An emptied load (like the imported list) is removed. Each load gets the driver shown; change it on Dispatch if you need to.</span><span class="sp"></span><span class="mini">Planned in ${PLAN.ms < 2000 ? PLAN.ms + ' ms' : (PLAN.ms / 1000).toFixed(1) + ' s'}${PLAN.result.timedOut ? ' (time limit reached: the best plan found is shown, every stop on time and within hours)' : ''}</span></div>
     <div id="after"></div>`;
   if ($('apply')) $('apply').onclick = applyPlan;
+  if ($('fix-leave')) $('fix-leave').onclick = () => { const el = $('leave-at'); el.value = $('fix-leave').dataset.at; el.onchange(); $('run').click(); };
 }
 async function applyPlan() {
   const { loads, fleet, result: r } = PLAN;

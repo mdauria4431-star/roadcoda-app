@@ -313,7 +313,7 @@
                  costParts: e && COSTS && e.stops ? { equipment: (vehicles[k].dayCost || 0) + (e.reloads.length ? (vehicles[k].trailer2Cost || 0) : 0), driver: e.duty / 60 * (COSTS.driverHr || 0) * (vehicles[k].drivers || 1), miles: e.miles * (COSTS.perMile || 0) } : null,
                  runMiles: e ? e.runMiles.filter((m, g) => e.runStops[g]) : [], cap2: vehicles[k].cap2 || vehicles[k].cap || {},
                  load: e ? e.load : null, cap: vehicles[k].cap || {}, late: e ? e.late : [], times: e ? e.times.filter(t => !t.reload) : [] }; }),
-      unassigned, realLegs: ctx.real, legs: ctx.legs,
+      unassigned: unassigned.map(u => explain(ctx, u, vehicles)), realLegs: ctx.real, legs: ctx.legs,
       miles: routes.reduce((a, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return a + (e ? e.miles : 0); }, 0),
       cost: COSTS ? routes.reduce((a, r, k) => { const e = settle(ctx, r, vehicles[k]); return a + (e ? e.dollars : 0); }, 0) : null,
     };
@@ -546,6 +546,20 @@
     return summarize(ctx, tries[0].routes, vehicles, tries[0].unassigned);
   }
 
+  // Figures a dispatcher can act on, added to a stop that couldn't be placed: for a window it can't make,
+  // when a truck would have to leave the DC (arriveBy = the margin before the close; leaveBy = that less the
+  // drive there); for a trip too long for a driver's day, how long it takes there and back.
+  function explain(ctx, u, vehicles) {
+    if (!u || u.leaveBy != null) return u;
+    const si = ctx.stops.findIndex(x => x.id === u.id); if (si < 0) return u;
+    const s = ctx.stops[si], out = Object.assign({}, u), there = ctx.mins(0, si + 1), back = ctx.mins(si + 1, 0);
+    if (/window/.test(u.why || '') && s.we != null && isFinite(there)) {
+      out.arriveBy = s.we - (ctx.p.buffer || 0); out.leaveBy = out.arriveBy - there; out.windowEnd = s.we;
+      out.earliest = vehicles.length ? Math.min(...vehicles.map(v => v.start || 0)) : null;
+    }
+    if (/hours/.test(u.why || '') && isFinite(there)) out.tripMin = there + (s.service || 0) + (ctx.p.returnToStart ? back : 0);
+    return out;
+  }
   function whyNot(ctx, si, vehicles) {
     const s = ctx.stops[si];
     if (!vehicles.length) return 'no trucks available';
