@@ -885,6 +885,29 @@ function notPlaced(list, byStop) {
   const btn = fixLeave != null ? `<div style="margin-top:8px"><button class="btn primary small" id="fix-leave" data-at="${hhmm(fixLeave).length ? String(Math.floor(fixLeave / 60)).padStart(2, '0') + ':' + String(fixLeave % 60).padStart(2, '0') : ''}">Let trucks leave from ${hhmm(fixLeave)} and plan again</button></div>` : '';
   return `<div class="card pad" style="border-color:var(--late)">${head}<ul style="margin:8px 0 0 18px">${items}</ul>${btn}</div>`;
 }
+// A load going out under half full gets one plain line saying why, so the dispatcher doesn't have to guess.
+// The reasons are checked against the plan: a window that closes before any other store opens (or opens
+// after every other has closed), the truck needing to be back for its next load, a driver short on hours,
+// or simply that nothing else could reach its windows in time.
+function lightWhy(rt, run, g, byStop, used) {
+  const fill = Math.max(0, ...DIMS.map(([k]) => run.cap && run.cap[k] && run.load ? (run.load[k] || 0) / run.cap[k] : 0));
+  if (!run.stops.length || fill >= 0.5) return '';
+  const w = (id) => winOf(byStop[id] || {}), mine = new Set(run.stops), names = (ids) => ids.map(id => esc((byStop[id] || {}).consignee || '')).join(' and ');
+  const others = used.flatMap(x => runsOf(x).flatMap(r => r.stops)).filter(id => !mine.has(id)).map(w).filter(x => x.ws != null && x.we != null);
+  const mw = run.stops.map(w).filter(x => x.ws != null && x.we != null), pct = Math.round(fill * 100);
+  let why = '';
+  if (mw.length && others.length && Math.max(...mw.map(x => x.we)) <= Math.min(...others.map(x => x.ws)))
+    why = `${names(run.stops)}${run.stops.length === 1 ? "'s window closes" : "'s windows close"} at ${hhmm(Math.max(...mw.map(x => x.we)))}, before any other store opens (${hhmm(Math.min(...others.map(x => x.ws)))}), so nothing else can ride with ${run.stops.length === 1 ? 'it' : 'them'}.`;
+  else if (mw.length && others.length && Math.min(...mw.map(x => x.ws)) >= Math.max(...others.map(x => x.we)))
+    why = `${names(run.stops)} ${run.stops.length === 1 ? "doesn't open" : "don't open"} until ${hhmm(Math.min(...mw.map(x => x.ws)))}, after every other store's window has closed.`;
+  else if (run.reload)
+    why = `the truck has to be back at the DC by ${hhmm(run.reload.arrive)} to hook its next load; more stops on this trip would make that load's windows late.`;
+  else if (rt.duty > (CAR.plan_max_duty_h * 60) - 90)
+    why = `the driver's day is nearly full (${hrs(rt.duty)} on duty), so there's no time for more stops.`;
+  else
+    why = `the planner found no other stop that fits this trip and still reaches every window with the ${Number(CAR.plan_window_buffer || 0)}-min margin; the rest ride on trucks that get to them sooner.`;
+  return `<div class="mini" style="margin:4px 0 0 4px;color:var(--text,inherit)"><b>Light load (${pct}% full):</b> ${why}</div>`;
+}
 function capRows(load, cap) {
   return DIMS.map(([k, l]) => { const c = cap[k], v = Math.round((load ? load[k] : 0) * 10) / 10, pct = c ? Math.min(100, 100 * v / c) : 0;
     return `<div class="cap"><span>${l}</span><div class="meter">${c ? `<i style="width:${pct}%" class="${pct > 95 ? 'full' : ''}"></i>` : ''}</div><span class="mini" style="text-align:right">${v}${c ? ' / ' + c : ' (no limit)'}</span></div>`; }).join('');
@@ -924,6 +947,7 @@ function drawResult() {
         <ol class="st">${run.stops.map((id, i) => { const s = byStop[id], tm = run.times[i];
           const at = tm ? `<b>${hhmm(tm.arrive)}</b>${tm.start > tm.arrive + 0.5 ? ` <span class="mini">(waits till ${hhmm(tm.start)})</span>` : ''}${tm.tight ? ` <span class="warn">tight — ${Math.max(0, Math.round(tm.spare))} min spare</span>` : ''} · ` : '';
           return `<li>${at}${esc(s.consignee)}${s.window_start ? ` <span class="mini">window ${hhmm(minsOf(s.window_start))}–${hhmm(minsOf(s.window_end))}</span>` : ''}</li>`; }).join('')}</ol>
+        ${lightWhy(rt, run, g, byStop, used)}
         ${run.reload ? (() => { const idle = run.reload.leave - run.reload.arrive - RELOAD_MIN();
           return `<div class="mini" style="margin:4px 0 0 4px">↩ Back at the DC <b>${hhmm(run.reload.arrive)}</b> · drop trailer ${esc(run.trailer?.unit_no || '')}, hook ${esc(runsOf(rt)[g + 1].trailer?.unit_no || '')} (${RELOAD_MIN()} min)${idle > 5 ? ` · waits ${hrs(idle)} for the next load's windows` : ''} · leaves <b>${hhmm(run.reload.leave)}</b></div>`; })() : ''}`).join('')}
       </div></div>`; }).join('')}</div>
