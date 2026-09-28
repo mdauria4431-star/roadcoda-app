@@ -56,6 +56,14 @@
   .inv table td,.inv table th{padding:8px 10px}
   .num{text-align:right}
   @media print{ .top,.tabs,.bar,.noprint,#list-card{display:none!important} body{background:#fff} .card{border:0} .wrap{padding:0} }
+  .sc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 16px}
+  .sc-tile{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .sc-tile .k{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .sc-tile .v{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;margin-top:4px}
+  .sc-tile .s{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .sc-good{color:var(--ok)} .sc-mid{color:var(--warn)} .sc-bad{color:var(--bad)}
+  #sc-table td.n,#sc-table th.n{text-align:right}
+  @media print{ body.sc-print #list-card{display:block!important} body.sc-print .top{display:flex!important} body.sc-print #list .bar{display:none!important} }
 
   @media (prefers-color-scheme: dark){
     :root{--ink:#e8edf2;--muted:#a3adb8;--line:#2b3642;--bg:#0f1419;--card:#182029;--ok:#5fd08c;--bad:#ff8a7d;--warn:#f0b35a;color-scheme:dark}
@@ -131,6 +139,8 @@ async function start() {
   // Returnable containers (cages, totes…): the tab shows only when their stores are holding some
   if (allowed.includes('boxes')) { const bx = await sb.rpc('portal_containers'); BOXES = bx.error ? [] : (bx.data || []); }
   if (BOXES.length) tabs.push(['boxes', 'Containers']);
+  // On-time scorecard (134): with the Loads / Deliveries tab, once the carrier has installed it
+  if (allowed.includes('loads')) { const t0 = iso(new Date()); const sc = await sb.rpc('portal_scorecard', { p_from: t0, p_to: t0, p_by: 'week' }); if (!sc.error) tabs.push(['score', 'Scorecard']); }
   if (ME.is_admin) tabs.push(['team', 'Team']);
   if (!tabs.length) { $('list').innerHTML = `<div class="empty">Nothing is switched on for your login yet. Ask ${esc(ME.carrier)}${ME.carrier_phone ? ' (' + esc(ME.carrier_phone) + ')' : ''} or your company's portal admin.</div>`; return; }
   $('tabs').innerHTML = tabs.map(([k, t]) => `<button data-t="${k}">${t}</button>`).join('');
@@ -161,6 +171,7 @@ function go(t) {
   if (t === 'file') return fileTab();
   if (t === 'boxes') return boxesTab();
   if (t === 'team') return teamTab();
+  if (t === 'score') return scoreTab();
   loadsTab();
 }
 
@@ -182,6 +193,46 @@ async function teamTab() {
     if (e) { alert(e.message); c.checked = !c.checked; return; }
     if (c.dataset.u === ME.user_id) location.reload();
   });
+}
+
+// ── On-time scorecard (134): how the carrier is doing for them, by week, month or quarter ──
+const SC_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const scPct = (a, b) => b ? Math.round(1000 * a / b) / 10 : null;
+const scPT = (p) => p == null ? '—' : (p >= 99.95 ? '100' : p.toFixed(1)) + '%';
+const scCls = (p) => p == null ? '' : p >= 95 ? 'sc-good' : p >= 90 ? 'sc-mid' : 'sc-bad';
+const scMin = (m) => m == null ? '—' : Math.abs(m) >= 60 ? `${Math.floor(Math.abs(m) / 60)} h ${Math.abs(m) % 60} min` : `${Math.abs(m)} min`;
+const scNum = (n) => n == null ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+function scName(d, by) { const [y, m, dd] = d.split('-').map(Number); return by === 'month' ? `${SC_MON[m - 1]} ${y}` : by === 'quarter' ? `Q${Math.floor((m - 1) / 3) + 1} ${y}` : `Week of ${SC_MON[m - 1]} ${dd}`; }
+function scoreTab() {
+  const t = new Date(), f = new Date(t.getFullYear(), t.getMonth() - 5, 1);
+  $('bar').innerHTML = `<label>Show by<select id="sc-by"><option value="week">Week</option><option value="month" selected>Month</option><option value="quarter">Quarter</option></select></label>
+    <label>From<input type="date" id="f"></label><label>To<input type="date" id="t"></label><button class="btn" id="sc-print">Print / PDF</button><span class="sp"></span>
+    <span class="hint">How ${esc(ME.carrier)} is doing on ${ME.kind === 'billing' ? 'your deliveries' + ((ME.accounts || []).length > 1 ? ' (all your DCs)' : '') : 'deliveries to your location' + ((ME.locations || []).length > 1 ? 's' : '')}.</span>`;
+  $('f').value = iso(f); $('t').value = iso(t);
+  $('f').onchange = $('t').onchange = $('sc-by').onchange = scoreList;
+  $('sc-print').onclick = () => { document.body.classList.add('sc-print'); window.print(); setTimeout(() => document.body.classList.remove('sc-print'), 500); };
+  scoreList();
+}
+async function scoreList() {
+  $('list').innerHTML = '<div class="empty">Loading…</div>';
+  const by = $('sc-by').value;
+  const { data, error } = await sb.rpc('portal_scorecard', { p_from: $('f').value, p_to: $('t').value, p_by: by });
+  if (error) { $('list').innerHTML = `<div class="empty err">${esc(error.message)}</div>`; return; }
+  const R = data || [];
+  if (!R.length) { $('list').innerHTML = '<div class="empty">No deliveries in these dates.</div>'; return; }
+  const T = R.reduce((a, r) => { a.stops += +r.stops; a.done += +r.done; a.w += +r.windowed; a.ot += +r.on_time; a.late += +r.late; a.lm += (r.avg_late_min || 0) * r.late;
+    if (r.avg_dwell_min != null) { a.dm += r.avg_dwell_min * r.done; a.dn += +r.done; } a.en += +r.eta_checked; a.e15 += +r.eta_within_15; a.iss += +r.issues; a.cl += +r.claims; return a; },
+    { stops: 0, done: 0, w: 0, ot: 0, late: 0, lm: 0, dm: 0, dn: 0, en: 0, e15: 0, iss: 0, cl: 0 });
+  const ot = scPct(T.ot, T.w);
+  const tiles = [['On time', `<span class="${scCls(ot)}">${scPT(ot)}</span>`, `${scNum(T.ot)} of ${scNum(T.w)} deliveries`], ['Late', scNum(T.late), T.late ? `by ${scMin(Math.round(T.lm / T.late))} on average` : 'none'],
+    ['Time on site', T.dn ? scMin(Math.round(T.dm / T.dn)) : '—', 'average per delivery'], ['Arrived as planned', scPT(scPct(T.e15, T.en)), 'within 15 min of the plan'],
+    ['Issues', scNum(T.iss), 'short, damaged, over, refused or closed']];
+  const noCl = R.some(r => r.claims == null); if (!noCl) tiles.push(['Claims', scNum(T.cl), '']);
+  $('list').innerHTML = `<div class="sc-tiles">${tiles.map(([k, v, s]) => `<div class="sc-tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('')}</div>
+    <div style="overflow-x:auto"><table id="sc-table"><thead><tr><th>${{ week: 'Week', month: 'Month', quarter: 'Quarter' }[by]}</th><th class="n">Deliveries</th><th class="n">Delivered</th><th class="n">On time</th><th class="n">Late</th><th class="n">Late by</th><th class="n">Time on site</th><th class="n">Arrived as planned</th><th class="n">Issues</th>${noCl ? '' : '<th class="n">Claims</th>'}</tr></thead><tbody>
+    ${R.map(r => { const p = scPct(r.on_time, r.windowed); return `<tr><td>${scName(r.period, by)}</td><td class="n">${scNum(r.stops)}</td><td class="n">${scNum(r.done)}</td><td class="n ${scCls(p)}">${scPT(p)}</td><td class="n">${scNum(r.late)}</td><td class="n">${r.late ? scMin(r.avg_late_min) : '—'}</td><td class="n">${scMin(r.avg_dwell_min)}</td><td class="n">${scPT(scPct(r.eta_within_15, r.eta_checked))}</td><td class="n">${scNum(r.issues)}</td>${noCl ? '' : `<td class="n">${scNum(r.claims)}</td>`}</tr>`; }).join('')}
+    </tbody></table></div>
+    <p class="hint" style="padding:10px 16px;margin:0">On time means the driver arrived by the close of your delivery window. Time on site is arrival to departure. Only days up to today count.</p>`;
 }
 
 // ── Loads / deliveries ────────────────────────────────────────────────

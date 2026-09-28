@@ -59,23 +59,23 @@
   // Six visible groups instead of eleven flat links. Setup is weekly work, so
   // it folds away — that's what buys the dispatch board its width.
   var GROUPS = [
-    { name: 'Daily', items: ['index.html', 'dispatch.html', 'map.html', 'dock.html', 'planner.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
+    { name: 'Daily', items: ['index.html', 'dispatch.html', 'map.html', 'dock.html', 'planner.html', 'messages.html', 'ratings.html', 'scorecard.html', 'templates.html', 'loads.html', 'containers.html'] },
     { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'office-payroll.html', 'profit.html', 'costs.html', 'tolls.html', 'ifta.html', 'qb-export.html'] },
     { name: 'Safety', items: ['safety.html', 'incidents.html', 'claims.html', 'compliance.html', 'retention.html', 'handbooks.html'] },
     { name: 'Setup', items: ['getting-started.html', 'settings-check.html', 'setup-report.html', 'company.html', 'customers.html', 'edi.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'texts.html', 'users.html', 'features.html', 'devices.html'], fold: true },
   ];
   var ICON = {
-    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'dock.html': '▣', 'texts.html': '✉', 'company.html': '⌂', 'edi.html': '⇄', 'devices.html': '▯', 'getting-started.html': '✓', 'setup-report.html': '⚑', 'settings-check.html': '☑', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
+    'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'scorecard.html': '✓', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'dock.html': '▣', 'texts.html': '✉', 'company.html': '⌂', 'edi.html': '⇄', 'devices.html': '▯', 'getting-started.html': '✓', 'setup-report.html': '⚑', 'settings-check.html': '☑', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
     'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'costs.html': '¢', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
-    'driver.html': '▢', 'account.html': '⊙', 'rc-report-link': '⚑', 'privacy.html': '§',
+    'driver.html': '▢', 'account.html': '⊙', 'rc-report-link': '⚑', 'whats-new.html': '✦', 'privacy.html': '§',
   };
   var NAME = { 'index.html': 'Home', 'dispatch.html': 'Dispatch', 'loads.html': 'Loads',
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'costs.html': 'Cost report', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'setup-report.html': 'What we found', 'settings-check.html': 'Settings check', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages', 'company.html': 'Company', 'edi.html': 'EDI' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'costs.html': 'Cost report', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'scorecard.html': 'On-time scorecard', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'setup-report.html': 'What we found', 'settings-check.html': 'Settings check', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages', 'company.html': 'Company', 'edi.html': 'EDI' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -207,6 +207,13 @@
       var pv = document.createElement('a');
       pv.href = 'privacy.html'; pv.textContent = 'Privacy';
       nav.appendChild(pv); links['privacy.html'] = pv;
+    }
+    // What's new (#68): a link at the foot of the menu with a count of things this person hasn't seen yet
+    if (!links['whats-new.html'] && !(acc && acc.guest)) {
+      var wn = document.createElement('a');
+      wn.href = 'whats-new.html'; wn.textContent = "What's new";
+      if (here === 'whats-new.html') wn.className = 'on';
+      nav.appendChild(wn); links['whats-new.html'] = wn;
     }
     if (!links['rc-report-link'] && !(acc && acc.guest)) {
       var rp = document.createElement('a');
@@ -382,9 +389,44 @@
 
     var out = header.querySelector('#signout');
     if (out) foot.appendChild(out);
+    whatsNew(links['whats-new.html'], acc, here);
+  }
+
+  // What's new (#68): the count on the menu link, and on Home a one-line note until they've looked
+  function whatsNew(a, acc, here) {
+    if (!a || here === 'whats-new.html') return;
+    if (!window.RC_WN) {        // whats-new.js still loading
+      var sc = document.querySelector('script[src="whats-new.js"]');
+      if (sc && !sc.dataset.rcWait) { sc.dataset.rcWait = '1'; sc.addEventListener('load', function () { whatsNew(a, acc, here); }); }
+      return;
+    }
+    if (a.querySelector('.rc-wn-badge')) return;
+    var n = window.RC_WN.unseen(acc).length;
+    if (!n) return;
+    var b = document.createElement('span');
+    b.className = 'rc-wn-badge'; b.textContent = n;
+    b.style.cssText = 'margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center';
+    a.appendChild(b); a.title = n + " new — what's new in RoadCoda";
+    if ((here === 'index.html' || here === '') && !document.getElementById('rc-wn-note')) {
+      var main = document.querySelector('main'); if (!main) return;
+      var note = document.createElement('div');
+      note.id = 'rc-wn-note';
+      note.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin:0 0 12px;border:1px solid var(--accent);border-radius:10px;background:color-mix(in srgb, var(--accent) 10%, transparent);font-size:13.5px';
+      var first = window.RC_WN.unseen(acc)[0];
+      note.innerHTML = '<span style="font-weight:700">✦ ' + (n === 1 ? '1 new thing' : n + ' new things') + ' in RoadCoda</span>'
+        + '<span style="color:var(--muted)">' + String(first.title).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }) + (n > 1 ? ' and more' : '') + '</span>'
+        + '<a href="whats-new.html" style="margin-left:auto;font-weight:600">See what\'s new →</a>'
+        + '<button type="button" aria-label="Dismiss" style="border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer">×</button>';
+      note.querySelector('button').onclick = function () { window.RC_WN.markSeen(); note.remove(); if (b.parentNode) b.remove(); };
+      main.insertBefore(note, main.firstChild);
+    }
   }
 
   function start() {
+    // What's new (#68): the list lives in whats-new.js, loaded on every office page from here
+    if (!window.RC_WHATS_NEW && !document.querySelector('script[src="whats-new.js"]')) {
+      var w = document.createElement('script'); w.src = 'whats-new.js'; document.head.appendChild(w);
+    }
     // Let access.js settle first so grouping sees the final link set
     var ready = window.RC_ACCESS_READY || Promise.resolve(null);
     ready.then(build, build);

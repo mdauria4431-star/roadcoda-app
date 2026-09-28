@@ -158,7 +158,7 @@
       nav.querySelectorAll('a').forEach((a) => { const h = a.getAttribute('href'), s = SCREEN_OF[h]; if ((s && s !== 'home' && !can(s)) || (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) || (data.guest && h === 'account.html')) a.remove(); });
       // Every page gets the same full menu: add any standard page this page's own list left out,
       // if this user can open it (the sidebar then groups them).
-      const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
+      const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'], ['scorecard.html', 'Scorecard'],
         ['templates.html', 'Templates'], ['planner.html', 'Route planner'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
         ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['costs.html', 'Cost report'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['compliance.html', 'Compliance'], ['claims.html', 'Claims'], ['handbooks.html', 'Handbooks'],
         ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
@@ -170,6 +170,7 @@
         if (s && s !== 'home' && !can(s)) return;
         if (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) return;
         if (h === 'costs.html' && !(data.features && 'cost_report' in data.features)) return;   // before 132
+        if (h === 'scorecard.html' && !(can('customers') || can('dispatch'))) return;           // 134
         const a = document.createElement('a'); a.href = h; a.textContent = t; if (h === here) a.className = 'on';
         nav.appendChild(a);
       });

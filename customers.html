@@ -110,6 +110,7 @@
         <button class="btn" id="cu-up-btn" type="button" title="The companies you bill">Upload bill-to customers</button>
         <button class="btn" id="st-up-btn" type="button" title="Their stores, DCs and yards — one file can cover several customers">Upload stops</button>
         <a class="btn" id="rates-link" href="rates.html" style="display:inline-flex;align-items:center;text-decoration:none">Rates &amp; billing settings</a>
+        <a class="btn" id="score-link" href="scorecard.html" style="display:inline-flex;align-items:center;text-decoration:none" title="On-time %, time on site, issues, claims and miles — for this customer's business reviews">On-time scorecard</a>
       </div>
       <p class="hint" id="cust-info" style="margin:10px 0 0"></p>
       <div id="cust-note" hidden style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
@@ -347,6 +348,7 @@ function pickCustomer() {
   if (c && 'notes' in c) { $('cust-note-t').value = c.notes || ''; $('cust-note-msg').textContent = '';
     const ed = !window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit'); $('cust-note-t').disabled = !ed; $('cust-note-save').hidden = !ed; }
   $('rates-link').href = c ? `rates.html?customer=${encodeURIComponent(c.id)}` : 'rates.html';
+  $('score-link').href = c ? `scorecard.html?customer=${encodeURIComponent(c.parent_customer_id || c.id)}` : 'scorecard.html';
   $('cust-info').innerHTML = c ? [c.customer_code && `Code ${esc(c.customer_code)}`, c.contact_name && esc(c.contact_name), c.contact_phone && esc(c.contact_phone), c.contact_email && esc(c.contact_email),
     c.master_bill ? 'Weekly master bill' : 'Invoice per load',
     `Bills ${({ delivered: 'loads delivered', started: 'loads started', service_date: 'by service date' })[c.bill_basis] || 'by service date'} from ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][c.week_start_dow ?? 0]} ${String(c.bill_start_time || '00:00').slice(0, 5)}`, ({ hub: 'Hub miles', pcmiler: 'PC*MILER miles' })[c.miles_basis] || 'Route miles', c.start_name && `Trucks start at ${esc(c.start_name)}`].filter(Boolean).join(' · ') : '';

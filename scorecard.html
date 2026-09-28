@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On-time scorecard · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .dim{color:var(--muted)}
+  .error{color:var(--late)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .s{font-size:12px;color:var(--muted);margin-top:3px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px;min-width:1000px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:right;
+    padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
+  .t th:first-child{text-align:left}
+  .t th.sorted{color:var(--accent-hi)}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft);text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;white-space:nowrap}
+  .t td:first-child{text-align:left;font-family:inherit;font-size:13px}
+  .t tr.grp{cursor:pointer}
+  .t tr.grp:hover{background:var(--row-hover)}
+  .t tr.sub td:first-child{padding-left:30px;color:var(--muted)}
+  .t tr.tot td{font-weight:600;background:var(--panel-2)}
+  .t tr.lds > td{padding:0;background:var(--panel-2)}
+  .t tr.lds table{min-width:0}
+  .neg{color:var(--late)}
+  .pct{display:inline-block;min-width:52px}
+  .est{color:var(--warn);font-size:11px;margin-left:6px}
+  .good{color:var(--ok, #2fa36b)} .mid{color:var(--warn)} .bad{color:var(--late)}
+  @media print{ header, .bar .btn, .bar select, .noprint, aside, nav{display:none!important} main{padding:0!important} .card,.tile{break-inside:avoid} body{background:#fff;color:#000} }
+</style>
+<link rel="stylesheet" href="app.css">
+<style>
+  .t th{cursor:default}
+  .note{padding:10px 16px;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+  .ph{font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="loads.html">Loads</a><a href="customers.html">Customers</a><a class="on" href="scorecard.html">Scorecard</a><a href="drivers.html">Drivers</a><a href="equipment.html">Equipment</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>On-time scorecard <span class="ph" id="title-cust"></span></h1>
+    <div class="bar">
+      <label>Customer<select id="cust"></select></label>
+      <label>Show by<select id="by"><option value="week">Week</option><option value="month" selected>Month</option><option value="quarter">Quarter</option></select></label>
+      <label>Period<select id="preset"><option value="13w">Last 13 weeks</option><option value="6m" selected>Last 6 months</option><option value="ytd">This year</option><option value="4q">Last 4 quarters</option><option value="custom">Pick dates…</option></select></label>
+      <label>From<input id="from" type="date"></label>
+      <label>To<input id="to" type="date"></label>
+      <button class="btn small" id="csv">Download (CSV)</button>
+      <button class="btn small" id="print" title="Print it, or save it as a PDF for the business review">Print / PDF</button>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="card">
+      <header><h2 id="tbl-h">By month</h2><span class="sp"></span><span class="mini noprint">Newest at the bottom. Only days up to today count.</span></header>
+      <div class="wrap" id="table"><div class="empty">Loading…</div></div>
+      <div class="note"><b>On time</b> — the driver arrived by the close of the delivery window (stops with no window aren't counted). <b>Late by</b> — the average for the late ones only.
+        <b>Time on site</b> — arrival to departure at the store. <b>ETA kept</b> — arrivals within 15 minutes of the planned time (arrivals more than 4 hours off, from a load re-planned after the fact, are left out). <b>Issues</b> — deliveries marked short, damaged, over, refused or closed.
+        <b>Claims</b> — claims filed for this customer or its loads, by the date of the loss. <b>Actual miles</b> — from hub readings, when drivers enter them.
+        Everything under this customer (its DCs and accounts) is included. The customer sees the same scorecard in their portal (Loads › Scorecard).</div>
+    </div>
+  </section>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const num = (n) => n == null ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const pct = (a, b) => b ? Math.round(1000 * a / b) / 10 : null;
+const pctTxt = (p) => p == null ? '—' : (p >= 99.95 ? '100' : p.toFixed(1)) + '%';
+const cls = (p) => p == null ? '' : p >= 95 ? 'good' : p >= 90 ? 'mid' : 'bad';
+const mins = (m) => m == null ? '—' : Math.abs(m) >= 60 ? `${Math.floor(Math.abs(m) / 60)} h ${Math.abs(m) % 60} min` : `${Math.abs(m)} min`;
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+let ROWS = [], CUST = [];
+
+function perName(d, by) {
+  const [y, m, dd] = d.split('-').map(Number);
+  if (by === 'month') return `${MON[m - 1]} ${y}`;
+  if (by === 'quarter') return `Q${Math.floor((m - 1) / 3) + 1} ${y}`;
+  return `Week of ${MON[m - 1]} ${dd}, ${y}`;
+}
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  const A = window.RC_ACCESS;
+  if (A && A.can && !(A.can('customers') || A.can('dispatch'))) {
+    document.querySelector('main').insertAdjacentHTML('beforeend', '<div class="card empty">The scorecard needs Customers or Dispatch in your access. Ask the owner to add it (Users).</div>'); return;
+  }
+  $('app').hidden = false;
+  const { data: cs } = await sb.from('customers').select('id, name, parent_customer_id').is('parent_customer_id', null).order('name');
+  CUST = cs || [];
+  const want = new URLSearchParams(location.search).get('customer');
+  $('cust').innerHTML = CUST.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  if (want && CUST.some(c => c.id === want)) $('cust').value = want;
+  if (!CUST.length) { $('table').innerHTML = '<div class="empty">Add a customer first (Customers).</div>'; return; }
+  setPeriod(); load();
+}
+function setPeriod() {
+  const p = $('preset').value, t = new Date(); let f = new Date(t);
+  if (p === '13w') f.setDate(t.getDate() - 90);
+  else if (p === '6m') f = new Date(t.getFullYear(), t.getMonth() - 5, 1);
+  else if (p === 'ytd') f = new Date(t.getFullYear(), 0, 1);
+  else if (p === '4q') f = new Date(t.getFullYear(), Math.floor(t.getMonth() / 3) * 3 - 9, 1);
+  else return;
+  $('from').value = iso(f); $('to').value = iso(t);
+  $('by').value = p === '13w' ? 'week' : p === '4q' ? 'quarter' : $('by').value === 'quarter' && p === '6m' ? 'month' : $('by').value;
+}
+async function load() {
+  $('table').innerHTML = '<div class="empty">Loading…</div>';
+  const by = $('by').value;
+  $('tbl-h').textContent = { week: 'By week', month: 'By month', quarter: 'By quarter' }[by];
+  $('title-cust').textContent = '· ' + ($('cust').selectedOptions[0]?.textContent || '');
+  const { data, error } = await sb.rpc('customer_scorecard_rows', { p_customer: $('cust').value, p_from: $('from').value, p_to: $('to').value, p_by: by });
+  if (error) { $('table').innerHTML = `<div class="empty error">${esc(error.message)}${/customer_scorecard_rows|schema cache/.test(error.message) ? ' — run 134_scorecard.sql in the SQL Editor.' : ''}</div>`; $('tiles').innerHTML = ''; return; }
+  ROWS = data || []; draw();
+}
+function totals() {
+  const T = { loads: 0, stops: 0, done: 0, windowed: 0, on_time: 0, late: 0, lateMin: 0, dwellMin: 0, dwellN: 0, eta_checked: 0, eta_within_15: 0, issues: 0, claims: 0, pm: 0, am: 0, amN: 0 };
+  ROWS.forEach(r => {
+    T.loads += +r.loads; T.stops += +r.stops; T.done += +r.done; T.windowed += +r.windowed; T.on_time += +r.on_time; T.late += +r.late;
+    if (r.avg_late_min != null) T.lateMin += r.avg_late_min * r.late;
+    if (r.avg_dwell_min != null) { T.dwellMin += r.avg_dwell_min * r.done; T.dwellN += +r.done; }
+    T.eta_checked += +r.eta_checked; T.eta_within_15 += +r.eta_within_15; T.issues += +r.issues; T.claims += +r.claims;
+    T.pm += +(r.planned_miles || 0); if (r.actual_miles != null) { T.am += +r.actual_miles; T.amN++; }
+  });
+  return T;
+}
+function draw() {
+  const by = $('by').value, T = totals(), ot = pct(T.on_time, T.windowed);
+  $('tiles').innerHTML = [
+    ['On time', `<span class="${cls(ot)}">${pctTxt(ot)}</span>`, `${num(T.on_time)} of ${num(T.windowed)} deliveries with a window`],
+    ['Late', num(T.late), T.late ? `by ${mins(Math.round(T.lateMin / T.late))} on average` : 'none'],
+    ['Time on site', T.dwellN ? mins(Math.round(T.dwellMin / T.dwellN)) : '—', 'average, arrival to departure'],
+    ['ETA kept', pctTxt(pct(T.eta_within_15, T.eta_checked)), 'arrived within 15 min of plan'],
+    ['Issues', num(T.issues), `${pctTxt(pct(T.issues, T.done))} of ${num(T.done)} delivered`],
+    ['Claims', num(T.claims), ''],
+    ['Miles', num(T.pm), T.amN ? `planned · ${num(T.am)} actual` : 'planned'],
+  ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+  if (!ROWS.length) { $('table').innerHTML = '<div class="empty">No deliveries for this customer in these dates.</div>'; return; }
+  const cols = [by === 'week' ? 'Week' : by === 'month' ? 'Month' : 'Quarter', 'Loads', 'Stops', 'Delivered', 'On time', 'Late', 'Late by', 'Time on site', 'ETA kept', 'ETA vs arrival', 'Issues', 'Claims', 'Planned miles', 'Actual miles'];
+  const row = (r) => { const p = pct(r.on_time, r.windowed);
+    return `<td>${esc(r.name)}</td><td>${num(r.loads)}</td><td>${num(r.stops)}</td><td>${num(r.done)}</td><td class="${cls(p)}">${pctTxt(p)}</td><td>${num(r.late)}</td><td>${r.late ? mins(r.avg_late_min) : '—'}</td>
+      <td>${mins(r.avg_dwell_min)}</td><td>${pctTxt(pct(r.eta_within_15, r.eta_checked))}</td><td>${r.avg_eta_diff_min == null ? '—' : r.avg_eta_diff_min === 0 ? 'on plan' : mins(r.avg_eta_diff_min) + (r.avg_eta_diff_min > 0 ? ' later' : ' early')}</td>
+      <td>${num(r.issues)}</td><td>${num(r.claims)}</td><td>${num(r.planned_miles)}</td><td>${num(r.actual_miles)}</td>`; };
+  $('table').innerHTML = `<table class="t"><thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>
+    ${ROWS.map(r => `<tr>${row(Object.assign({ name: perName(r.period, by) }, r))}</tr>`).join('')}
+    <tr class="tot">${row({ name: 'All', loads: T.loads, stops: T.stops, done: T.done, windowed: T.windowed, on_time: T.on_time, late: T.late, avg_late_min: T.late ? Math.round(T.lateMin / T.late) : null,
+      avg_dwell_min: T.dwellN ? Math.round(T.dwellMin / T.dwellN) : null, eta_checked: T.eta_checked, eta_within_15: T.eta_within_15, avg_eta_diff_min: null, issues: T.issues, claims: T.claims, planned_miles: T.pm, actual_miles: T.amN ? T.am : null })}</tr></tbody></table>`;
+}
+$('preset').onchange = () => { setPeriod(); if ($('preset').value !== 'custom') load(); };
+$('from').onchange = $('to').onchange = () => { $('preset').value = 'custom'; load(); };
+$('by').onchange = $('cust').onchange = load;
+$('print').onclick = () => window.print();
+$('csv').onclick = () => {
+  const by = $('by').value, q = (s) => `"${String(s).replace(/"/g, '""')}"`;
+  const lines = [['Customer', 'Period', 'Starts', 'Loads', 'Stops', 'Delivered', 'With a window', 'On time', 'On time %', 'Late', 'Avg minutes late', 'Avg minutes on site', 'ETA checked', 'ETA within 15 min', 'Avg minutes arrival vs ETA', 'Issues', 'Claims', 'Planned miles', 'Actual miles'].join(',')];
+  ROWS.forEach(r => lines.push([q($('cust').selectedOptions[0]?.textContent || ''), q(perName(r.period, by)), r.period, r.loads, r.stops, r.done, r.windowed, r.on_time, pct(r.on_time, r.windowed) ?? '', r.late, r.avg_late_min ?? '', r.avg_dwell_min ?? '', r.eta_checked, r.eta_within_15, r.avg_eta_diff_min ?? '', r.issues, r.claims, r.planned_miles ?? '', r.actual_miles ?? ''].join(',')));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `scorecard-${$('from').value}-to-${$('to').value}.csv`; a.click();
+};
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value, password: $('password').value }); if (error) $('login-error').textContent = error.message; else location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+start();
+</script>
+</body>
+</html>
