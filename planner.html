@@ -84,7 +84,9 @@
     <!-- Plan the day -->
     <div data-pane="plan" style="display:flex;flex-direction:column;gap:12px">
       <div class="card"><header><h2>Stops to plan</h2><span class="sp"></span><span class="mini">This customer's stops for the day that haven't started.</span>
+          <button class="btn small" id="tpl-go" title="Make this day's list from the customer's saved templates, then plan it">Create from template and plan</button>
           <label class="btn small" id="imp-lbl" style="cursor:pointer">Import delivery list<input id="imp-file" type="file" accept=".xlsx,.xls,.csv,.txt" hidden></label></header>
+        <div id="tpl-msg"></div>
         <div id="imp-box"></div>
         <div id="pool"></div></div>
       <div class="card"><header><h2>Trucks available today</h2><span class="sp"></span><span class="mini" id="fleet-n"></span></header>
@@ -181,9 +183,9 @@ async function start() {
   TAB = q.get('tab') || 'plan';
   setBasis();
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
-  $('day').onchange = $('cust').onchange = () => { PLAN = null; if (IMP) drawImp(); loadDay(); };
+  $('day').onchange = $('cust').onchange = () => { PLAN = null; if ($('tpl-msg')) $('tpl-msg').innerHTML = ''; if (IMP) drawImp(); loadDay(); };
   if (!canEdit()) $('imp-lbl').hidden = true;
-  if (!canEdit()) document.querySelectorAll('#run, #s-save').forEach(e => e.hidden = true);
+  if (!canEdit()) document.querySelectorAll('#run, #s-save, #tpl-go').forEach(e => e.hidden = true);
   await loadDay();
 }
 $('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
@@ -767,6 +769,38 @@ function driverTxt(a) {
 }
 
 // ── Plan the day ────────────────────────────────────────────────────
+// ── Create from template, then plan (one click) ─────────────────────
+// For a customer whose stores are the same by day of week: make the day's list from its templates (the same
+// rules as Templates › Create loads — no doubles, priced from the rate sheet in effect that day, skipped and
+// added dates respected), then plan it on the ticked trucks. Nothing is made until someone clicks.
+async function fromTemplate() {
+  const day = $('day').value, A = acctIds(), cname = custOf().name || 'This customer', box = $('tpl-msg');
+  const say = (html, bad) => { box.innerHTML = `<div class="pad mini" style="${bad ? 'color:var(--late)' : ''}">${html}</div>`; };
+  const dow = new Date(day + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long' });
+  const [tq, sq] = await Promise.all([sb.from('load_templates').select('id, name, customer_id, active').in('customer_id', [...A]),
+                                      sb.rpc('template_schedule', { p_from: day, p_to: day })]);
+  if (tq.error || sq.error) return say(esc((tq.error || sq.error).message), true);
+  const mine = new Set((tq.data || []).filter(t => t.active !== false).map(t => t.id));
+  if (!mine.size) return say(`${esc(cname)} has no templates yet. To make one: plan and apply a normal day, open a load, and use "Save as template" on the Templates page.`, true);
+  const rows = (sq.data || []).filter(r => mine.has(r.template_id) && r.run_date === day);
+  if (!rows.length) return say(`None of ${esc(cname)}${/s$/i.test(cname) ? "'" : "'s"} ${mine.size} template${mine.size === 1 ? '' : 's'} runs on ${dow}s. Check the days on the Templates page, or add this date there.`, true);
+  const todo = rows.filter(r => r.why !== 'skipped' && !r.load_id), made = rows.filter(r => r.load_id), skip = rows.filter(r => r.why === 'skipped');
+  const names = (list) => esc([...new Set(list.map(r => r.name))].join(', '));
+  if (!todo.length) {
+    if (!made.length) return say(`${dow}'s template${skip.length === 1 ? ' is' : 's are'} skipped for this date (${names(skip)})${skip[0] && skip[0].note ? ': ' + esc(skip[0].note) : ''}.`, true);
+    say(`This day already has its list from ${names(made)} (load${made.length === 1 ? '' : 's'} ${esc(made.map(r => r.load_no).join(', '))}). Planning it now.`);
+    return $('run').click();
+  }
+  if (!confirm(`Create ${todo.length} load${todo.length === 1 ? '' : 's'} for ${dow} ${day} from ${[...new Set(todo.map(r => r.name))].join(', ')}, then plan ${todo.length === 1 ? 'it' : 'them'}?`)) return;
+  $('tpl-go').disabled = true;
+  const { data, error } = await sb.rpc('create_template_loads', { p_from: day, p_to: day, p_templates: [...new Set(todo.map(r => r.template_id))] });
+  $('tpl-go').disabled = false;
+  if (error) return say(esc(error.message), true);
+  await loadDay();
+  say(`Made ${data.length} load${data.length === 1 ? '' : 's'} from ${names(todo)} (${esc(data.map(x => x.load_no).join(', '))})${made.length ? `; ${made.length} already made earlier` : ''}${skip.length ? `; skipped for this date: ${names(skip)}` : ''}. Planning ${data.length + made.length === 1 ? 'it' : 'them'} now.`);
+  $('run').click();
+}
+if ($('tpl-go')) $('tpl-go').onclick = fromTemplate;
 const chosen = () => LOADS.filter(l => { const c = document.querySelector(`[data-pl="${l.id}"]`); return !c || c.checked; });
 function drawPool() {
   $('pool').innerHTML = LOADS.length ? `<table class="t"><thead><tr><th></th><th>Load</th><th>Truck</th><th>Driver</th><th class="n">Stops</th>${DIMS.map(([, l]) => `<th class="n">${l}</th>`).join('')}</tr></thead><tbody>${LOADS.map(l => {

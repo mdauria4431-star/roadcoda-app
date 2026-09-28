@@ -60,13 +60,13 @@
   // it folds away — that's what buys the dispatch board its width.
   var GROUPS = [
     { name: 'Daily', items: ['index.html', 'dispatch.html', 'map.html', 'dock.html', 'planner.html', 'messages.html', 'ratings.html', 'templates.html', 'loads.html', 'containers.html'] },
-    { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'office-payroll.html', 'profit.html', 'tolls.html', 'ifta.html', 'qb-export.html'] },
+    { name: 'Money', items: ['invoices.html', 'activity.html', 'payroll.html', 'office-payroll.html', 'profit.html', 'costs.html', 'tolls.html', 'ifta.html', 'qb-export.html'] },
     { name: 'Safety', items: ['safety.html', 'incidents.html', 'claims.html', 'compliance.html', 'retention.html', 'handbooks.html'] },
     { name: 'Setup', items: ['getting-started.html', 'settings-check.html', 'setup-report.html', 'company.html', 'customers.html', 'edi.html', 'customer-logins.html', 'drivers.html', 'equipment.html', 'rates.html', 'integrations.html', 'texts.html', 'users.html', 'features.html', 'devices.html'], fold: true },
   ];
   var ICON = {
     'index.html': '◎', 'dispatch.html': '▤', 'messages.html': '✉', 'ratings.html': '★', 'incidents.html': '⚠', 'safety.html': '▥', 'retention.html': '♥', 'handbooks.html': '▭', 'compliance.html': '☑', 'claims.html': '⚖', 'features.html': '⊞', 'planner.html': '⤳', 'map.html': '⊕', 'dock.html': '▣', 'texts.html': '✉', 'company.html': '⌂', 'edi.html': '⇄', 'devices.html': '▯', 'getting-started.html': '✓', 'setup-report.html': '⚑', 'settings-check.html': '☑', 'templates.html': '↻', 'loads.html': '▸', 'containers.html': '▦',
-    'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
+    'invoices.html': '§', 'activity.html': '≡', 'payroll.html': '$', 'office-payroll.html': '$', 'profit.html': '%', 'costs.html': '¢', 'tolls.html': '¤', 'ifta.html': '⛽', 'qb-export.html': '⇪',
     'customers.html': '·', 'drivers.html': '·', 'equipment.html': '·',
     'rates.html': '·', 'integrations.html': '·', 'users.html': '·',
     'driver.html': '▢', 'account.html': '⊙', 'rc-report-link': '⚑', 'privacy.html': '§',
@@ -75,7 +75,7 @@
     'invoices.html': 'Invoices', 'tolls.html': 'Tolls', 'customers.html': 'Customers',
     'drivers.html': 'Drivers', 'equipment.html': 'Equipment', 'rates.html': 'Rates',
     'integrations.html': 'Integrations', 'users.html': 'Users', 'driver.html': 'Driver app',
-    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'setup-report.html': 'What we found', 'settings-check.html': 'Settings check', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages', 'company.html': 'Company', 'edi.html': 'EDI' };
+    'account.html': 'My account', 'trip.html': 'Trip', 'templates.html': 'Templates', 'payroll.html': 'Payroll', 'activity.html': 'Activity file', 'profit.html': 'Profit', 'costs.html': 'Cost report', 'messages.html': 'Messages', 'incidents.html': 'Incidents', 'safety.html': 'Safety dashboard', 'customer-logins.html': 'Customer logins', 'ratings.html': 'Ratings', 'retention.html': 'Retention', 'getting-started.html': 'Getting started', 'setup-report.html': 'What we found', 'settings-check.html': 'Settings check', 'features.html': 'Features', 'devices.html': 'Devices', 'planner.html': 'Route planner', 'map.html': 'Live map', 'dock.html': 'Dock scanning', 'texts.html': 'Text messages', 'company.html': 'Company', 'edi.html': 'EDI' };
 
   function href(a) { return (a.getAttribute('href') || '').split('/').pop(); }
 
@@ -164,6 +164,13 @@
       pr.href = 'profit.html'; pr.textContent = 'Profit';
       if (here === 'profit.html') pr.className = 'on';
       nav.appendChild(pr); links['profit.html'] = pr;
+    }
+    // The cost report (132): same money switch, when the module is on
+    if (!links['costs.html'] && (!acc || acc.money) && acc && acc.feature && acc.feature('cost_report') && acc.features && 'cost_report' in acc.features) {
+      var cr = document.createElement('a');
+      cr.href = 'costs.html'; cr.textContent = 'Cost report';
+      if (here === 'costs.html') cr.className = 'on';
+      nav.appendChild(cr); links['costs.html'] = cr;
     }
     // The activity file lives with invoicing: whoever can open Invoices gets it
     if (links['invoices.html'] && !links['activity.html'] && (!acc || !acc.feature || acc.feature('activity_files'))) {

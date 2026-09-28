@@ -142,7 +142,8 @@ const CORE = ['Dispatch board & loads', 'Load templates', 'Customers & delivery 
 const PRESETS = [
   ['essentials', 'Essentials', 'Run loads, prove delivery, bill and pay — nothing extra.', 'Everything under "Always included"'],
   ['growing', 'Growing fleet', 'Essentials plus the tools most fleets add first.', 'Tolls, QuickBooks, profit, activity files, invoice drafts on delivery, documents, GPS stop times, trip sheets, driver files, IFTA, payroll company files'],
-  ['everything', 'Everything', 'The complete system — every module switched on.', 'All modules (add-ons are separate)']];
+  ['everything', 'Everything', 'The complete system — every module switched on.', 'All modules (add-ons are separate)'],
+  ['private', 'Private fleet', 'You deliver your own goods on your own trucks — no invoicing.', 'Route planner, driver app and proof of delivery, cost per stop, case and order, driver files, IFTA, payroll company files; invoicing, rate sheets and profit off']];
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();

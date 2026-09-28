@@ -126,8 +126,8 @@
         <label for="f-miles">Miles<input id="f-miles" type="number" min="0" step="1"></label>
         <label for="f-driver">Driver<select id="f-driver"></select></label>
         <label for="f-truck">Truck<select id="f-truck"></select></label>
-        <label for="f-linehaul" class="money">Linehaul $<input id="f-linehaul" type="number" min="0" step="0.01"></label>
-        <label for="f-fsc" class="money">Fuel surcharge $<input id="f-fsc" type="number" min="0" step="0.01"></label>
+        <label for="f-linehaul" class="money" data-feature="invoicing">Linehaul $<input id="f-linehaul" type="number" min="0" step="0.01"></label>
+        <label for="f-fsc" class="money" data-feature="invoicing">Fuel surcharge $<input id="f-fsc" type="number" min="0" step="0.01"></label>
       </div>
       <div class="grid" style="margin-top:12px;grid-template-columns:3fr 1fr 1fr">
         <label for="f-origin">Start address (yard or pickup)<input id="f-origin"></label>
@@ -702,7 +702,7 @@ async function showDetail(id) {
     <div class="toolbar"><h2 style="flex-grow:1;margin:0">Load ${esc(l.load_no)} · ${esc(l.customers?.name)}</h2>
       <span class="pill s-${l.status}">${STATUS_LABEL[l.status]}</span>${problemPill(l.stops)}
       ${editable ? '<button class="btn primary" id="d-addstop" type="button">+ Add stop / pickup</button>' : ''}</div>
-    <p>${esc(l.drivers?.full_name || 'No driver')} · ${esc(l.equipment?.unit_no || 'No truck')} · ${Math.round(l.miles)} miles<span class="money"> ·
+    <p>${esc(l.drivers?.full_name || 'No driver')} · ${esc(l.equipment?.unit_no || 'No truck')} · ${Math.round(l.miles)} miles<span class="money" data-feature="invoicing"> ·
        Linehaul ${money(b?.linehaul)} + fuel ${money(b?.fuel_surcharge)}</span></p>
     <p style="color:var(--muted);font-size:13px;margin-top:-6px">Start: ${esc(l.origin_address || l.customers?.start_address || yard || 'not set')}${l.round_trip ? ' (round trip)' : ''} ·
       miles ${({ google: 'from Google', pcmiler: `from ${esc(l.pcm_version || 'PC*MILER')}`, hub: 'from hub odometer', adjusted: 'adjusted by office' })[l.miles_source] || 'typed in'}${l.miles_source === 'pcmiler' && l.pcm_state_miles?.length ? ` (${l.pcm_state_miles.map(x => `${esc(x.state)} ${x.miles}`).join(', ')})` : ''}${l.route_miles != null && Number(l.route_miles) !== Number(l.miles) ? ` (planned ${Math.round(l.route_miles)})` : ''}

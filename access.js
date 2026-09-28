@@ -32,16 +32,16 @@
   window.RC_TOUR_MSG = TOUR_MSG;
 
   const SCREEN_OF = {
-    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'safety.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'setup-report.html': 'users', 'settings-check.html': 'users', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
+    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'costs.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'safety.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'setup-report.html': 'users', 'settings-check.html': 'users', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
     'tolls.html': 'tolls', 'integrations.html': 'integrations', 'edi.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home', 'company.html': 'home', 'planner.html': 'dispatch', 'map.html': 'dispatch', 'dock.html': 'dock', 'texts.html': 'dispatch',
   };
   // Pages that belong to a module the carrier can switch off (82)
   const FEATURE_OF = { 'containers.html': 'containers', 'ifta.html': 'ifta', 'claims.html': 'claims', 'compliance.html': 'compliance', 'handbooks.html': 'handbooks',
-    'retention.html': 'retention', 'office-payroll.html': 'office_payroll', 'qb-export.html': 'quickbooks', 'tolls.html': 'tolls', 'profit.html': 'profit',
+    'retention.html': 'retention', 'office-payroll.html': 'office_payroll', 'qb-export.html': 'quickbooks', 'tolls.html': 'tolls', 'profit.html': 'profit', 'costs.html': 'cost_report', 'invoices.html': 'invoicing', 'rates.html': 'invoicing',
     'activity.html': 'activity_files', 'ratings.html': 'ratings', 'trip-sheet.html': 'trip_sheets', 'planner.html': 'route_planner', 'map.html': 'live_tracking', 'dock.html': 'dock_scanning', 'texts.html': 'texts', 'edi.html': 'edi' };
   const FEATURE_NAME = { containers: 'Returnable containers', ifta: 'IFTA fuel tax', claims: 'Claims & subrogation', compliance: 'Driver files & inspections', handbooks: 'Employee handbooks',
-    retention: 'Onboarding & retention', office_payroll: 'Office staff payroll', quickbooks: 'QuickBooks export', tolls: 'Tolls', profit: 'Profit reports', activity_files: 'Customer activity files',
+    retention: 'Onboarding & retention', office_payroll: 'Office staff payroll', quickbooks: 'QuickBooks export', tolls: 'Tolls', profit: 'Profit reports', cost_report: 'Cost report', invoicing: 'Invoicing & rate sheets', activity_files: 'Customer activity files',
     ratings: 'Delivery ratings', trip_sheets: 'Trip sheets', route_planner: 'Route planner', live_tracking: 'Live tracking (a RoadCoda add-on)', dock_scanning: 'Dock & load-out scanning (a RoadCoda add-on)', texts: 'Text messages (a RoadCoda add-on)' };
   const pageFile = location.pathname.split('/').pop() || 'index.html';
   const NAMES = { dispatch: 'Dispatch', loads: 'Loads', customers: 'Customers', drivers: 'Drivers', equipment: 'Equipment', rates: 'Rates',
@@ -160,7 +160,7 @@
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'],
         ['templates.html', 'Templates'], ['planner.html', 'Route planner'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
-        ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['compliance.html', 'Compliance'], ['claims.html', 'Claims'], ['handbooks.html', 'Handbooks'],
+        ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['costs.html', 'Cost report'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['compliance.html', 'Compliance'], ['claims.html', 'Claims'], ['handbooks.html', 'Handbooks'],
         ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
         ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['features.html', 'Features'], ['devices.html', 'Devices'], ['driver.html', 'Driver app']];
       const here = location.pathname.split('/').pop() || 'index.html';
@@ -169,6 +169,7 @@
         const s = SCREEN_OF[h];
         if (s && s !== 'home' && !can(s)) return;
         if (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) return;
+        if (h === 'costs.html' && !(data.features && 'cost_report' in data.features)) return;   // before 132
         const a = document.createElement('a'); a.href = h; a.textContent = t; if (h === here) a.className = 'on';
         nav.appendChild(a);
       });
