@@ -33,6 +33,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
 <script src="config.js"></script>
+<script src="driver-i18n.js"></script>
 <script src="rc-update.js" defer></script>
 <script>/* 100/101: a website tour visitor sees one sample driver's phone, read-only */
 window.RC_TOUR = (function(){try{var k=Object.keys(localStorage).filter(function(x){return /^sb-.*-auth-token$/.test(x);})[0];
@@ -181,6 +182,7 @@ var s=k&&JSON.parse(localStorage.getItem(k));return !!(s&&s.user&&s.user.is_anon
 <header>
   <div class="brand">Road<span>Coda</span></div>
   <div class="who" id="who"></div>
+  <button class="themebtn" id="langbtn" type="button" aria-label="English / Español" style="font-size:12px;font-weight:700;width:auto;padding:0 8px" onclick="window.RC_SET_LANG && RC_SET_LANG(window.RC_LANG === 'es' ? 'en' : 'es')"></button>
   <button class="themebtn" id="themebtn" type="button" aria-label="Light or dark screen"></button>
 </header>
 
@@ -530,6 +532,24 @@ const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.g
 // ---------- Lock the screen while the truck is moving ----------
 // Uses the phone's GPS speed. Above ~5 mph for a few seconds = locked.
 const STATUS = { pending: 'Pending', arrived: 'Arrived', delivered: 'Delivered' };
+// Navigate (#56): one tap opens the stop in the driver's own navigation app. Truck apps (CoPilot, Sygic
+// Truck) need the map point; the others work from the address too. The app is picked once, at the bottom
+// of the stop list, and remembered on this phone.
+const NAV_APPS = [['google', 'Google Maps'], ['apple', 'Apple Maps'], ['waze', 'Waze'], ['copilot', 'CoPilot Truck'], ['sygic', 'Sygic Truck']];
+let PTS = {};                                      // stop id → { lat, lon }, for the truck apps
+const navApp = () => { try { return localStorage.getItem('rc-nav-app') || (/iPhone|iPad|iPod/.test(navigator.userAgent) ? 'apple' : 'google'); } catch (_) { return 'google'; } };
+function navUrl(s) {
+  const p = PTS[s.id], ll = p ? `${p.lat},${p.lon}` : null, q = encodeURIComponent(s.address || s.consignee || ''), app = navApp();
+  if (app === 'copilot' && p) return `copilot://mydestination?type=LOCATION&action=GOTO&lat=${p.lat}&long=${p.lon}&name=${encodeURIComponent(s.consignee || '')}`;
+  if (app === 'sygic' && p) return `com.sygic.aura://coordinate|${p.lon}|${p.lat}|drive`;
+  if (app === 'waze') return ll ? `https://waze.com/ul?ll=${ll}&navigate=yes` : `https://waze.com/ul?q=${q}&navigate=yes`;
+  if (app === 'apple') return `https://maps.apple.com/?daddr=${ll || q}&dirflg=d`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${ll || q}&travelmode=driving`;
+}
+function navPicker() {
+  return `<div class="card meta" style="padding:10px 16px"><label style="display:flex;align-items:center;gap:8px;font-weight:600">Map app for Navigate
+    <select id="nav-app" style="height:32px;border-radius:8px">${NAV_APPS.map(([k, n]) => `<option value="${k}" ${navApp() === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>`;
+}
 const ISSUE = { damaged: 'OS&D · Damaged', short: 'OS&D · Short', over: 'OS&D · Over', refused: 'Refused', closed: 'Closed / no access', other: 'Issue reported' };
 const MOVING_MPS = 2.2;
 let me = null, lastPos = null, officePhone = '', pwDone = false;
@@ -911,6 +931,9 @@ async function loadStops() {
   if (devL) { elsewhere = loads.filter(l => l.truck_id && l.truck_id !== devL.equipment_id && l.status !== 'delivered').length;
               loads = loads.filter(l => !l.truck_id || l.truck_id === devL.equipment_id); }
   STOPMAP = Object.fromEntries((loads || []).flatMap(l => l.stops || []).map(x => [x.id, x]));   // for the signature screen (75)
+  // map points for Navigate (133); without them Navigate uses the address
+  try { const ids = Object.keys(STOPMAP); if (ids.length) { const pq = await sb.rpc('driver_stop_points', { p_stops: ids });
+    PTS = {}; (pq.data || []).forEach(x => { if (x.lat != null && x.lon != null) PTS[x.stop_id] = { lat: x.lat, lon: x.lon }; }); } } catch (_) {}
   STOPLOAD = Object.fromEntries((loads || []).flatMap(l => (l.stops || []).map(x => [x.id, l.id]))); LOADNO = Object.fromEntries((loads || []).map(l => [l.id, l.load_no]));   // documents (79)
   // Delivered loads drop off; the driver sees one open load at a time
   const all = loads;
@@ -1020,11 +1043,13 @@ async function loadStops() {
         ${s.added_by === 'office' && !done ? `<div class="meta" style="color:#8a4b08;font-weight:600">New stop added by dispatch${s.added_note ? ': ' + esc(s.added_note) : ''}</div>` : ''}
         <div class="meta">${esc(s.address || '')}<br>
           Window <span class="mono">${time(s.window_start)}–${time(s.window_end)}</span><br>${items}</div>
+        ${!done && (s.address || PTS[s.id]) ? `<div class="row" style="margin-top:6px"><a class="btn" href="${esc(navUrl(s))}" target="_blank" rel="noopener" data-nav="${s.id}" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;min-height:44px;flex:1">➤ Navigate</a></div>` : ''}
         ${done ? '' : accessBox(s)}
         <span class="badge b-${s.status}">${s.status === 'exception' ? ISSUE[s.issue_type] || 'Issue reported' : (pu && s.status === 'delivered' ? 'Picked up' : STATUS[s.status] || esc(s.status))}${s.arrived_at ? ' · arrived ' + time(s.arrived_at) : ''}${s.departed_at ? ' · left ' + time(s.departed_at) : ''}${s.odometer != null ? ` · odometer ${s.odometer} (${s.leg_miles} mi)` : ''}</span>
         ${s.status === 'exception' && s.late_reason ? `<div class="meta" style="color:var(--late);margin-top:6px">${esc(s.late_reason)}</div>` : ''}
         ${actions}</div>`;
     }
+    html += navPicker();
     html += `<div class="card meta" style="padding:12px 16px">Found freight for someone not on this load, or a stop needs to change?
       <b>Call dispatch</b>${officePhone ? ` · <a href="tel:${esc(officePhone.replace(/[^\d+]/g, ''))}">${esc(officePhone)}</a>` : ''}. Dispatch adds or removes the stop and it shows up here.</div>`;
     openHtml += html;
@@ -1072,6 +1097,8 @@ async function loadStops() {
     loadStops();
   });
   document.querySelectorAll('[data-scan]').forEach(b => b.onclick = () => openScanner(b.dataset.scan, b.dataset.label));
+  if ($('nav-app')) $('nav-app').onchange = () => { try { localStorage.setItem('rc-nav-app', $('nav-app').value); } catch (_) {}
+    document.querySelectorAll('[data-nav]').forEach(a => { const st = STOPMAP[a.dataset.nav]; if (st) a.href = navUrl(st); }); };
   document.querySelectorAll('[data-photo]').forEach(b => {
     const input = $('ph-' + b.dataset.photo);
     b.onclick = () => input.click();
@@ -1305,6 +1332,7 @@ setInterval(() => {
 function paintThemeBtn() {
   const p = RC_DRV_THEME.pref(), t = document.documentElement.getAttribute('data-theme');
   $('themebtn').textContent = p === 'auto' ? '◐' : t === 'dark' ? '☾' : '☀';
+  if ($('langbtn')) $('langbtn').textContent = window.RC_LANG === 'es' ? 'EN' : 'ES';
   $('themebtn').title = p === 'auto' ? `Screen follows the phone (now ${t}). Tap for light.` : p === 'light' ? 'Light screen. Tap for dark.' : 'Dark screen. Tap to follow the phone.';
 }
 $('themebtn').onclick = () => { RC_DRV_THEME.next(); paintThemeBtn(); };
