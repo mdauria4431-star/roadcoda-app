@@ -90,7 +90,7 @@
       <div class="card"><header><h2>Trucks available today</h2><span class="sp"></span><span class="mini" id="fleet-n"></span></header>
         <div class="pad mini" style="padding-bottom:0">Untick any truck that's down or not available. The planner decides how many of the ticked trucks it needs and which stops go on each. A tractor is paired with a free trailer, biggest first; a trailer sets the capacity.</div>
         <div id="fleet"></div>
-        <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="cost">Lowest cost to the customer</option><option value="trucks">Fewest trucks</option><option value="hours">Fewest driver hours</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="Beyond the required margin before each window closes, how much more time to aim for when it costs little. The planner gives it up where holding it would need another truck or real money; the required margin is never given up.">Aim for extra time at stops<select id="spare" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="0">None (lowest cost)</option><option value="15" selected>+15 min</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="A tractor comes back to the DC, drops its empty trailer, hooks a loaded one and runs another load — as many as the windows and the driver's hours allow"><input type="checkbox" id="multi" style="height:auto"> More than one load per tractor (drop and hook at the DC)</label><button class="btn primary" id="run">Plan the day</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
+        <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="cost">Lowest cost to the customer</option><option value="trucks">Fewest trucks</option><option value="hours">Fewest driver hours</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="Beyond the required margin before each window closes, how much more time to aim for when it costs little. The planner gives it up where holding it would need another truck or real money; the required margin is never given up.">Aim for extra time at stops<select id="spare" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="0">None (lowest cost)</option><option value="15" selected>+15 min</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="A tractor comes back to the DC, drops its empty trailer, hooks a loaded one and runs another load — as many as the windows and the driver's hours allow"><input type="checkbox" id="multi" style="height:auto"> More than one load per tractor (drop and hook at the DC)</label><label style="flex-direction:row;align-items:center;gap:6px" title="The earliest a truck may leave. Trucks still leave as late as their first window allows; an earlier time only lets a truck out early when a window needs it.">Trucks can leave from<input type="time" id="leave-at" style="height:32px;width:110px;border:1px solid var(--line);border-radius:8px;padding:0 6px"></label><span class="mini" id="leave-save"></span><button class="btn primary" id="run">Plan the day</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
       <div id="result"></div>
     </div>
 
@@ -218,6 +218,7 @@ async function loadDay() {
   if (d0 === iso(new Date())) { const h = await sb.from('driver_hos').select('driver_id, drive_left_min, shift_left_min, cycle_left_min, as_of'); (h.data || []).forEach(x => ELD[x.driver_id] = x); }
   await loadWeek(d0);
   buildFleet();
+  leaveCtl();
   draw();
 }
 // ── Each driver's hours in the 7 days before the planning day ─────────
@@ -271,8 +272,58 @@ const minsOf = (ts) => { if (!ts) return null; const d = new Date(ts); return d.
 // window that runs past midnight plans correctly; a close before the open is taken as the next day
 const dayMins = (ts) => { if (!ts) return null; const base = new Date($('day').value + 'T00:00:00').getTime(); return Math.round((new Date(ts).getTime() - base) / 6e4); };
 function winOf(s) { let ws = dayMins(s.window_start), we = dayMins(s.window_end); if (ws != null && we != null && we < ws) we += 1440; return { ws, we }; }
+// ── Orders too big for one truck ────────────────────────────────────
+// A delivery whose order is more than the biggest ticked truck or trailer holds is planned as parts:
+// the same store, address and window, each part small enough for one trailer, as even as the items
+// allow (30 pallets on 26-pallet trailers: 15 + 15). Each part goes on its own truck or a later load.
+// Applying the plan makes the extra deliveries (128_plan_split.sql); the first part keeps the stop.
+let SPLIT = new Map();                      // part id → { s, i, n, items: [{ unit_type, qty }] }
+function unitSize(t) { const u = UNITS[String(t || '').toLowerCase()]; return u ? { pallets: u.pallets, weight: u.weight_lb, cube: u.cube_ft, pieces: u.pieces } : { pallets: 0, weight: 0, cube: 0, pieces: 1 }; }
+function splitParts(s, big) {
+  const items = (s.stop_items || []).filter(i => (Number(i.qty_ordered) || 0) > 0), d = demandOf(s);
+  const ratio = Math.max(0, ...DIMS.map(([k]) => big[k] ? d[k] / big[k] : 0));
+  if (ratio <= 1 + 1e-9 || !items.length) return null;
+  const pack = (cap) => {
+    const parts = []; let cur = { items: [], load: { pallets: 0, weight: 0, cube: 0, pieces: 0 } };
+    for (const it of items) {
+      const sz = unitSize(it.unit_type); let q = Number(it.qty_ordered) || 0;
+      if (DIMS.some(([k]) => big[k] && sz[k] > big[k])) return null;                   // one unit is bigger than any truck
+      while (q > 0) {
+        const fit = Math.min(q, ...DIMS.map(([k]) => cap[k] && sz[k] ? Math.floor((cap[k] - cur.load[k]) / sz[k] + 1e-9) : q));
+        if (fit <= 0) { if (!cur.items.length) return null; parts.push(cur); cur = { items: [], load: { pallets: 0, weight: 0, cube: 0, pieces: 0 } }; continue; }
+        const same = cur.items.find(x => x.unit_type === it.unit_type);
+        if (same) same.qty += fit; else cur.items.push({ unit_type: it.unit_type, qty: fit });
+        DIMS.forEach(([k]) => { cur.load[k] += fit * sz[k]; }); q -= fit;
+      }
+    }
+    if (cur.items.length) parts.push(cur);
+    return parts;
+  };
+  const n = Math.ceil(ratio - 1e-9), even = {};
+  DIMS.forEach(([k]) => { even[k] = big[k] ? Math.min(big[k], Math.ceil(d[k] / n)) : null; });
+  let parts = pack(even);
+  if (!parts || parts.length > n) parts = pack(big);                                   // as even as the items allow, else fill each
+  return parts && parts.length > 1 ? parts : null;
+}
+function planStops(loads, fleet) {
+  SPLIT = new Map();
+  const big = {}; DIMS.forEach(([k]) => { big[k] = fleet.some(u => !(u.cap && u.cap[k])) ? null : Math.max(...fleet.flatMap(u => [u.cap[k], u.cap2 && u.cap2[k]]).map(Number).filter(x => x > 0)); });
+  return loads.flatMap(l => l.stops.filter(s => s.stop_type !== 'pickup').flatMap(s => {
+    const parts = splitParts(s, big); if (!parts) return [toStop(s)];
+    return parts.map((p, i) => { const id = `${s.id}|${i + 1}`; SPLIT.set(id, { s, i, n: parts.length, items: p.items });
+      return Object.assign(toStop(s), { id, demand: { pallets: p.load.pallets, weight: p.load.weight, cube: p.load.cube, pieces: p.load.pieces } }); });
+  }));
+}
 function toStop(s) { const p = pointOf(s), w = winOf(s); return { id: s.id, lat: p.lat, lng: p.lng, ws: w.ws, we: w.we, service: CAR.plan_stop_min, demand: demandOf(s) }; }
 const leave = () => { const [h, m] = String(CAR.plan_leave_at || '06:00').split(':').map(Number); return h * 60 + m; };
+// "Trucks can leave from" on the plan: changes this plan at once; "keep as usual" saves it on Setup too
+function leaveCtl() {
+  const el = $('leave-at'); if (!el) return;
+  el.value = String(CAR.plan_leave_at || '06:00').slice(0, 5);
+  el.onchange = () => { if (!el.value) return; CAR.plan_leave_at = el.value; if ($('s-leave')) $('s-leave').value = el.value; buildFleet(); draw();
+    $('leave-save').innerHTML = canEdit() && $('s-save') ? `<a href="#" id="leave-keep">keep ${esc(el.value)} as usual</a>` : '';
+    if ($('leave-keep')) $('leave-keep').onclick = (ev) => { ev.preventDefault(); $('s-save').click(); $('leave-save').innerHTML = '<span class="ok">saved on Setup</span>'; }; };
+}
 const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 });
 let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
 const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks',
@@ -597,12 +648,19 @@ function bindDrivers(fleet) {
   fleet.forEach(u => { if (!u.planDriver && pool.length) { const p = take(); u.planDriver = p.d.id; u.dlim = p; } });
   return { pool: have, spare: fleet.filter(u => !u.planDriver).length };
 }
+// Orders split because no one truck holds them
+function splitNote() {
+  const base = new Map(); for (const [, p] of SPLIT) { if (!base.has(p.s.id)) base.set(p.s.id, p); }
+  if (!base.size) return '';
+  return `<div class="mini" style="margin:6px 2px">Split ${base.size === 1 ? 'an order' : base.size + ' orders'} too big for one truck, each part in the same delivery window: ${[...base.values()].map(p =>
+    `${esc(p.s.consignee)} → ${p.n} deliveries (${[...SPLIT.values()].filter(x => x.s.id === p.s.id).map(x => x.items.map(i => i.qty + ' ' + i.unit_type).join(' + ')).join(' / ')})`).join('; ')}. Applying the plan adds the extra deliveries to the load.</div>`;
+}
 // Under the plan: whose hours it was planned on, who is short, and trucks that sat out for want of a driver
 function hoursNote() {
   const B = PLAN.bind; if (!B || !B.pool) return '';
   const H = CAR.plan_max_duty_h * 60, short = PLAN.fleet.filter(u => u.dlim && !u.dlim.team && u.dlim.duty < H - 1)
     .map(u => `${esc(u.dlim.d.full_name)} ${hrs(u.dlim.duty)}${u.dlim.week != null && u.dlim.week <= u.dlim.duty + 1 ? ' (week)' : ''}`);
-  return `<div class="mini" style="margin:6px 2px">Planned on each driver's own hours left today and this week (${B.pool} driver${B.pool === 1 ? '' : 's'} free; the least-worked first).${short.length ? ` Short on hours: ${short.join(', ')}.` : ''}${B.spare ? ` ${PLAN.result.unassigned.length ? '<span class="warn">' : '<span>'}${B.spare} ticked truck${B.spare === 1 ? '' : 's'} had no driver free, so ${B.spare === 1 ? 'it wasn\'t' : 'they weren\'t'} used.</span>` : ''}</div>`;
+  return `<div class="mini" style="margin:6px 2px">Planned on each driver's own hours left today and this week (${B.pool} driver${B.pool === 1 ? '' : 's'} free; the least-worked first).${short.length ? ` Short on hours: ${short.join(', ')}.` : ''}${B.spare ? ` ${PLAN.result.unassigned.some(u => /no room left/.test(u.why || '')) ? '<span class="warn">' : '<span>'}${B.spare} ticked truck${B.spare === 1 ? '' : 's'} had no driver free, so ${B.spare === 1 ? 'it wasn\'t' : 'they weren\'t'} used.</span>` : ''}</div>`;
 }
 function assignDrivers(r, fleet) {
   const busy = new Map([...DRV].map(([k, v]) => [k, v.slice()])), out = {};
@@ -671,7 +729,7 @@ $('run').onclick = async () => {
   const loads = chosen(); if (!loads.length) return fail('Tick at least one load.');
   if (missingPoints(loads).length) return fail('Some stops (or the start) have no map point yet — use "Look up missing map points" first.');
   const fleet = ticked(); if (!fleet.length) return fail('Tick at least one truck.');
-  const stops = loads.flatMap(l => l.stops.filter(s => s.stop_type !== 'pickup').map(toStop));
+  const stops = planStops(loads, fleet);
   // real drive times: remembered ones, and Google for any pair of places not asked before
   DRIVE_LEG = null; DRIVE_NOTE = '';
   if (window.RC_DRIVE && CAR.plan_truck_factor != null) {
@@ -717,15 +775,15 @@ function notPlaced(list, byStop) {
   const fix = (why) => {
     if (/no room left/.test(why) && PLAN.bind && PLAN.bind.spare) return `${PLAN.bind.spare} truck${PLAN.bind.spare === 1 ? ' is' : 's are'} free but no driver is; add a driver for the day${PLAN.multi ? '' : ', or tick "More than one load per tractor"'}`;
     if (/no room left/.test(why)) return spare > 0 ? `tick another truck (${spare} not ticked) and plan again` : 'every truck is already in use; move it to another day or add a truck';
-    if (/bigger than any truck/.test(why)) return 'the order is more than the biggest trailer holds; split it over two stops or use a bigger trailer';
-    if (/window/.test(why)) return `the window is too early or too short to reach with the ${buf}-min margin; check the window, or trucks' earliest leave time on Setup`;
+    if (/bigger than any truck/.test(why)) return 'one item on it is bigger than any truck holds, so it can\'t be split; use a bigger trailer';
+    if (/window/.test(why)) return `the window is too early or too short to reach with the ${buf}-min margin; try an earlier "Trucks can leave from" (now ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}), or check the window`;
     if (/driver's hours/.test(why)) return 'too far to do and get back within the driver\'s hours; plan it as a separate or team load';
     if (/map point/.test(why)) return 'fix the address, then "Look up missing map points"';
     if (/no trucks/.test(why)) return 'tick at least one truck';
     return '';
   };
   const room = list.filter(u => /no room left/.test(u.why)).length, other = list.length - room;
-  const head = other && !room ? `<b>Can't be planned</b> — no truck could take ${list.length === 1 ? 'this stop' : 'these stops'} within the rules, however many are ticked. ${list.length === 1 ? 'It stays' : 'They stay'} on the load ${list.length === 1 ? 'it\'s' : 'they\'re'} on now:`
+  const head = other && !room ? `<b>Can't be planned</b> — no truck could take ${list.length === 1 ? 'this stop' : 'these stops'} within the rules, whatever trucks or drivers are free. ${list.length === 1 ? 'It stays' : 'They stay'} on the load ${list.length === 1 ? 'it\'s' : 'they\'re'} on now:`
     : `<b>Not placed</b> — ${list.length === 1 ? 'it stays' : 'they stay'} on the load ${list.length === 1 ? 'it\'s' : 'they\'re'} on now. Why, and what would fix it:`;
   return `<div class="card pad" style="border-color:var(--late)">${head}<ul style="margin:6px 0 0 18px">${list.map(u => { const f = fix(u.why || '');
     return `<li><b>${esc(byStop[u.id]?.consignee)}</b> — ${esc(u.why)}${f ? `<span class="mini"> · ${esc(f)}</span>` : ''}</li>`; }).join('')}</ul></div>`;
@@ -743,6 +801,7 @@ function runsOf(rt) {
 }
 function drawResult() {
   const { loads, fleet, result: r } = PLAN, byStop = Object.fromEntries(loads.flatMap(l => l.stops.map(s => [s.id, s])));
+  for (const [id, p] of SPLIT) byStop[id] = Object.assign({}, p.s, { consignee: `${p.s.consignee} (part ${p.i + 1} of ${p.n}: ${p.items.map(x => x.qty + ' ' + x.unit_type).join(', ')})` });
   const unitOf = (key) => fleet.find(u => u.key === key);
   const used = r.routes.filter(x => x.stops.length);
   // how full the loads go out: each load by whichever limit it is closest to (pallets, weight or cube)
@@ -752,6 +811,7 @@ function drawResult() {
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
     ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
     ${hoursNote()}
+    ${splitNote()}
     ${CAR.plan_window_buffer ? `<div class="mini" style="margin:6px 2px">${PLAN.spare ? `Aiming for ${Number(CAR.plan_window_buffer) + PLAN.spare} min before each window closes where it costs little. ` : ''}Every stop is planned to arrive at least ${CAR.plan_window_buffer} min before its window closes${PLAN.result.routes.some(x => (x.times || []).some(t => t.tight)) ? ' — except the ones marked <span class="warn">tight</span>, which can\'t be reached with that much spare' : ''}.</div>` : ''}
     <div class="mini" style="margin:6px 2px">${PLAN.goal === 'cost' ? `Planned for the <b>lowest cost to the customer</b>: the fewest trucks and driver hours, the fullest trailers, then the fewest miles — priced with your figures on Setup: equipment days (tractor ${money(COST().tractor)}, straight truck ${money(COST().straight)}, trailer ${money(COST().trailer)}), drivers' on-duty hours (${money(COST().driverHr)}/h) and miles ($${COST().perMile}/mi) — every stop on time with its margin, every driver within hours. Change the figures on Setup.` : PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible (tractors first, then the fewest loads), then the fewest miles for those trucks.' : PLAN.goal === 'hours' ? 'Planned for the <b>fewest driver hours</b>: the shortest total time on duty across all drivers (a team counts both), every stop on time, within capacity and hours. It may use more trucks and drivers, each on a shorter day — for when drivers are short on hours.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}${PLAN.multi ? ` A tractor can come back to the DC, drop its trailer and hook a loaded one (${RELOAD_MIN()} min) for another load; any wait there is paid driver time, so it's in the cost. The same driver keeps the tractor all day, with an hour of driving and on-duty time kept spare.` : ''}</div>
     ${r.unassigned.length ? notPlaced(r.unassigned, byStop) : ''}
@@ -784,8 +844,18 @@ async function applyPlan() {
       stops: run.stops, etas: run.times.map(t => at(t.arrive)), depart: at(run.depart), run: g + 1 })); })
     .sort((a, b) => a.depart.localeCompare(b.depart));
   const nT = new Set(routes.map(x => x.truck_id)).size;
-  if (!confirm(`Put the stops on ${nT} truck${nT === 1 ? '' : 's'}${routes.length > nT ? ` (${routes.length} loads)` : ''} as shown?`)) return;
+  const placed = new Set(routes.flatMap(x => x.stops)), bases = [...new Set([...SPLIT].filter(([id]) => placed.has(id)).map(([, p]) => p.s.id))];
+  if (!confirm(`Put the stops on ${nT} truck${nT === 1 ? '' : 's'}${routes.length > nT ? ` (${routes.length} loads)` : ''} as shown?${bases.length ? ` ${bases.length === 1 ? 'One order is' : bases.length + ' orders are'} split into more than one delivery.` : ''}`)) return;
   $('apply').disabled = true;
+  // orders too big for one truck: make the extra deliveries first, then put each part on its truck
+  const real = new Map();
+  for (const b of bases) {
+    const parts = [...SPLIT].filter(([, p]) => p.s.id === b).sort((x, y) => x[1].i - y[1].i);
+    const { data: ids, error: se } = await sb.rpc('plan_split_stop', { p_stop: b, p_parts: parts.slice(1).map(([, p]) => p.items) });
+    if (se) { $('apply').disabled = false; return fail(/plan_split_stop|schema cache/.test(se.message) ? { message: se.message + ' — run 128_plan_split.sql in the SQL Editor.' } : se); }
+    parts.forEach(([id], i) => real.set(id, i === 0 ? b : ids[i - 1]));
+  }
+  routes.forEach(x => { x.stops = x.stops.map(id => real.get(id) || id); });
   const { data, error } = await sb.rpc('plan_apply_trucks', { p_customer: $('cust').value, p_date: $('day').value, p_pool: loads.map(l => l.id), p_routes: routes });
   if (error) { $('apply').disabled = false; return fail(/plan_apply_trucks|schema cache/.test(error.message) ? { message: error.message + ' — run 122_plan_on_trucks.sql in the SQL Editor.' } : error); }
   await loadDay();
