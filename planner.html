@@ -114,7 +114,10 @@
           <label>Truck time vs Google car time (×)<input type="number" id="s-tf" min="1" max="2" step="0.05"></label>
           <label>Arrive before a window closes by at least (min)<input type="number" id="s-buf" min="0" max="240" step="5"></label>
           <label>Drop and hook at the DC, with checking in with dispatch (min)<input type="number" id="s-rl" min="0" max="240" step="5"></label>
-          <label>Trucks leave at<input type="time" id="s-leave"></label>
+          <label>Trucks leave at (company)<input type="time" id="s-leave"></label>
+          <label title="Blank = the company's time">This customer's usual leave time<input type="time" id="s-cleave"></label>
+          <label title="How long a truck set up for more than one load may wait at a store for its window to open. Longer lets an early store ride with a truck that waits, instead of a separate trip back to the DC.">Longest wait at a store, multi-load trucks (min)<input type="number" id="s-wait" min="0" max="600" step="15"></label>
+          <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="s-multi" style="height:auto"> More than one load per tractor, by default</label>
           <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="s-ret" style="height:auto"> Back to start at the end</label>
           <button class="btn primary small" id="s-save">Save</button><span class="mini" id="s-msg"></span></div></div>
       <div class="card"><header><h2>What a day costs to run</h2><span class="sp"></span><span class="mini">"Plan for: Lowest cost" compares plans on these. Equipment and drivers are the biggest part — what a day needs is what the customer ends up paying for.</span></header>
@@ -162,12 +165,13 @@ async function start() {
   $('app').hidden = false;
   const [c, cu, eq, up] = await Promise.all([
     sb.from('carriers').select('*').maybeSingle(),
-    sb.from('customers').select('id, name, start_name, start_address, start_lat, start_lon, parent_customer_id').order('name'),
+    sb.from('customers').select('id, name, start_name, start_address, start_lat, start_lon, parent_customer_id, plan_leave_at').order('name'),
     sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces, home_customer_id').order('unit_no'),
     sb.from('unit_profiles').select('*')]);
   if (eq.error && /home_customer_id/.test(eq.error.message))   // before 129: no home account on trucks yet
     eq.data = (await sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces').order('unit_no')).data;
   ALLCUSTS = cu.data || [];
+  if (cu.error && /plan_leave_at/.test(cu.error.message)) cu.data = (await sb.from('customers').select('id, name, start_name, start_address, start_lat, start_lon, parent_customer_id').order('name')).data;
   if (c.error) { $('app').innerHTML = `<div class="card pad error">${esc(c.error.message)} — run 84_route_planning.sql in the SQL Editor.</div>`; return; }
   CAR = c.data || {}; CUSTS = (cu.data || []).filter(x => !x.parent_customer_id); EQ = eq.data || []; (up.data || []).forEach(u => UNITS[u.unit_type.toLowerCase()] = u);
   if ($('multi')) $('multi').checked = !!CAR.plan_multi_run;
@@ -175,7 +179,7 @@ async function start() {
   const q = new URLSearchParams(location.search);
   $('day').value = q.get('day') || iso(new Date()); if (q.get('customer')) $('cust').value = q.get('customer');
   TAB = q.get('tab') || 'plan';
-  $('basis').textContent = `${CAR.plan_window_buffer ? `Arriving at least ${CAR.plan_window_buffer} min before each window closes. ` : ''}Planning with Google drive times where known, otherwise ${CAR.plan_local_mph ?? CAR.plan_mph} mph under ${CAR.plan_local_miles ?? 0} mi and ${CAR.plan_mph} mph beyond × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${String(CAR.plan_leave_at || '06:00').slice(0, 5)}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
+  setBasis();
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
   $('day').onchange = $('cust').onchange = () => { PLAN = null; if (IMP) drawImp(); loadDay(); };
   if (!canEdit()) $('imp-lbl').hidden = true;
@@ -222,8 +226,10 @@ async function loadDay() {
   ELD = {};
   if (d0 === iso(new Date())) { const h = await sb.from('driver_hos').select('driver_id, drive_left_min, shift_left_min, cycle_left_min, as_of'); (h.data || []).forEach(x => ELD[x.driver_id] = x); }
   await loadWeek(d0);
+  if ($('multi')) $('multi').checked = !!CAR.plan_multi_run;   // back to the saved default for each day and customer
+  LEAVE_TODAY = null;
   buildFleet();
-  leaveCtl();
+  leaveCtl(); setBasis();
   draw();
 }
 // ── Each driver's hours in the 7 days before the planning day ─────────
@@ -322,16 +328,20 @@ function planStops(loads, fleet) {
 function toStop(s) { const p = pointOf(s), w = winOf(s); return { id: s.id, lat: p.lat, lng: p.lng, ws: w.ws, we: w.we, service: CAR.plan_stop_min, demand: demandOf(s) }; }
 // the earliest a truck may leave: the saved setting, unless changed on the plan for this day only
 let LEAVE_TODAY = null;
-const leaveTxt = () => LEAVE_TODAY || String(CAR.plan_leave_at || '06:00').slice(0, 5);
+const usualLeave = () => String((custOf() && custOf().plan_leave_at) || CAR.plan_leave_at || '06:00').slice(0, 5);   // the customer's, else the company's
+const leaveTxt = () => LEAVE_TODAY || usualLeave();
 const leave = () => { const [h, m] = leaveTxt().split(':').map(Number); return h * 60 + m; };
 // "Trucks can leave from" on the plan: changes this plan at once; "keep as usual" saves it on Setup too
+function setBasis() {
+  $('basis').textContent = `${CAR.plan_window_buffer ? `Arriving at least ${CAR.plan_window_buffer} min before each window closes. ` : ''}Planning with Google drive times where known, otherwise ${CAR.plan_local_mph ?? CAR.plan_mph} mph under ${CAR.plan_local_miles ?? 0} mi and ${CAR.plan_mph} mph beyond × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${usualLeave()}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
+}
 function leaveCtl() {
   // "Trucks can leave from" on the plan: an exception for this day's plan only. It never changes the saved
   // setting, and it goes back to the saved time whenever the day or customer is loaded again.
   const el = $('leave-at'); if (!el) return;
   LEAVE_TODAY = null; el.value = leaveTxt(); $('leave-save').textContent = '';
   el.onchange = () => { if (!el.value) return;
-    const usual = String(CAR.plan_leave_at || '06:00').slice(0, 5);
+    const usual = usualLeave();
     LEAVE_TODAY = el.value === usual ? null : el.value; buildFleet(); draw();
     $('leave-save').innerHTML = LEAVE_TODAY ? `<span class="warn">this day only</span> · usual ${esc(usual)} · <a href="#" id="leave-reset">put back</a>` : '';
     if ($('leave-reset')) $('leave-reset').onclick = (ev) => { ev.preventDefault(); el.value = usual; el.onchange(); }; };
@@ -358,10 +368,7 @@ const money = (v) => '$' + Math.round(v).toLocaleString();
 const TEAM = new Set();   // trucks running as a team today (two drivers)
 if ($('multi')) $('multi').onchange = async () => {
   PLAN = null; $('result').innerHTML = ''; buildFleet(); drawFleet();
-  if (!canEdit()) return;
-  const { error } = await sb.rpc('set_plan_reload', { p_on: MULTI(), p_min: RELOAD_MIN() });
-  if (error && /set_plan_reload|schema cache/.test(error.message)) toast('Run 125_multi_run.sql in the SQL Editor so this is remembered, and so each load keeps its departure time.', true);
-  else if (!error) CAR.plan_multi_run = MULTI();
+  // for this plan only: the default is set on Setup
 };
 const depot = () => { const c = custOf(); return c.start_lat != null ? { lat: c.start_lat, lng: c.start_lon } : null; };
 
@@ -808,7 +815,7 @@ $('run').onclick = async () => {
     const acct = (u, t) => { if (!dedicated) return t;
       const fe = ownUnit(u, A), fd = !!(u.dlim && (u.dlim.team ? ownDriver(u.dlim.a.d, A) && ownDriver(u.dlim.b.d, A) : ownDriver(u.dlim.d, A)));
       return Object.assign(t, { fixedEquip: fe, fixedDriver: fd, outside: !fe && !fd }); };
-    const trucks = crewed.map(u => acct(u, lim(u, { id: u.key, cap: u.cap, cap2: u.cap2, runs: MULTI() && u.trailer2 ? 8 : 1, reload: RELOAD_MIN(),
+    const trucks = crewed.map(u => acct(u, lim(u, { id: u.key, cap: u.cap, cap2: u.cap2, runs: MULTI() && u.trailer2 ? 8 : 1, reload: RELOAD_MIN(), maxWait: num(CAR.plan_store_wait_min, 30),
       dayCost: u.truck.unit_type === 'tractor' ? C.tractor + (u.trailer ? C.trailer : 0) : C.straight, trailer2Cost: u.trailer2 ? C.trailer : 0,
       start: Math.max(leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
       latestEnd: u.gap && u.gap.to != null ? u.gap.to : null, maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60,
@@ -1017,12 +1024,24 @@ $('ord-run').onclick = () => {
 };
 
 // ── Setup ───────────────────────────────────────────────────────────
+// The saved planner settings: only the owner or someone with Edit on Customers may change them. Everyone
+// else sees them; what they change on the plan (leave time, one load or more) is for that day only.
+const canSetup = () => !window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit');
+function lockSetup() {
+  if (canSetup()) return;
+  document.querySelectorAll('[data-pane=setup] input, [data-pane=setup] select').forEach(i => i.disabled = true);
+  document.querySelectorAll('#s-save, #c-save, [data-eqsave], [data-usave]').forEach(b => b.hidden = true);
+  if (!$('setup-lock')) $('s-msg').insertAdjacentHTML('afterend', '<div class="mini warn" id="setup-lock" style="margin-top:6px">Only the owner or someone with Edit on Customers can change these. You can still change the leave time and "more than one load per tractor" on the plan, for that day.</div>');
+}
 function drawSetup() {
   $('s-mph').value = CAR.plan_mph; $('s-road').value = CAR.plan_road_factor; $('s-stop').value = CAR.plan_stop_min; $('s-drive').value = CAR.plan_max_drive_h;
   $('s-buf').value = CAR.plan_window_buffer ?? 30; $('s-rl').value = CAR.plan_reload_min ?? 30;
   { const C = COST(); $('c-tractor').value = C.tractor; $('c-straight').value = C.straight; $('c-trailer').value = C.trailer; $('c-driver').value = C.driverHr; $('c-mile').value = C.perMile; $('c-minday').value = C.minDayH; $('c-longday').value = C.longDayH; }
   $('s-lmph').value = CAR.plan_local_mph ?? 30; $('s-lmi').value = CAR.plan_local_miles ?? 10; $('s-tf').value = CAR.plan_truck_factor ?? 1.15;
   $('s-duty').value = CAR.plan_max_duty_h; $('s-leave').value = String(CAR.plan_leave_at || '06:00').slice(0, 5); $('s-ret').checked = !!CAR.plan_return;
+  $('s-cleave').value = custOf().plan_leave_at ? String(custOf().plan_leave_at).slice(0, 5) : ''; $('s-wait').value = CAR.plan_store_wait_min ?? 30; $('s-multi').checked = !!CAR.plan_multi_run;
+  $('s-cleave').closest('label').firstChild.textContent = `${custOf().name || 'This customer'}'s usual leave time (blank = company)`;
+  lockSetup();
   const units = EQ.filter(e => e.active);
   $('caps').innerHTML = `<table class="t"><thead><tr><th>Unit</th><th>Kind</th>${DIMS.map(([, l]) => `<th>${l}</th>`).join('')}<th></th></tr></thead><tbody>${units.map(e => `<tr data-eq="${e.id}"><td><b>${esc(e.unit_no)}</b></td><td>${esc(e.unit_type)}</td>
     ${DIMS.map(([, , col]) => `<td><input type="number" min="0" data-c="${col}" value="${e[col] ?? ''}"></td>`).join('')}<td><button class="btn small" data-eqsave="${e.id}">Save</button></td></tr>`).join('')}</tbody></table>`;
@@ -1063,9 +1082,13 @@ $('s-save').onclick = async () => {
   if (bufErr) return $('s-msg').innerHTML = `<span class="error">${esc(bufErr.message)}${/set_plan_buffer|schema cache/.test(bufErr.message) ? ' — run 124_window_buffer.sql in the SQL Editor.' : ''}</span>`;
   CAR.plan_window_buffer = +$('s-buf').value || 0;
   const rl = Math.max(0, Math.round(+$('s-rl').value || 0));
-  const rlErr = (await sb.rpc('set_plan_reload', { p_on: MULTI(), p_min: rl })).error;
+  const rlErr = (await sb.rpc('set_plan_reload', { p_on: $('s-multi').checked, p_min: rl })).error;
   if (rlErr) return $('s-msg').innerHTML = `<span class="error">${esc(rlErr.message)}${/set_plan_reload|schema cache/.test(rlErr.message) ? ' — run 125_multi_run.sql in the SQL Editor.' : ''}</span>`;
-  CAR.plan_reload_min = rl;
+  CAR.plan_reload_min = rl; CAR.plan_multi_run = $('s-multi').checked;
+  const sw = Math.max(0, Math.min(600, Math.round(+$('s-wait').value || 0)));
+  const cl = $('s-cleave').value || null, ex = [(await sb.rpc('set_plan_store_wait', { p_min: sw })).error, (await sb.rpc('set_customer_leave', { p_customer: $('cust').value, p_leave: cl })).error].find(Boolean);
+  if (ex) return $('s-msg').innerHTML = `<span class="error">${esc(ex.message)}${/set_plan_store_wait|set_customer_leave|schema cache/.test(ex.message) ? ' — run 131_plan_settings_lock.sql in the SQL Editor.' : ''}</span>`;
+  CAR.plan_store_wait_min = sw; const cu = ALLCUSTS.find(x => x.id === $('cust').value); if (cu) cu.plan_leave_at = cl; const cc = CUSTS.find(x => x.id === $('cust').value); if (cc) cc.plan_leave_at = cl;
   Object.assign(CAR, { plan_mph: args.p_mph, plan_road_factor: args.p_road, plan_stop_min: args.p_stop_min, plan_max_drive_h: args.p_drive_h, plan_max_duty_h: args.p_duty_h, plan_leave_at: args.p_leave, plan_return: args.p_return });
   $('s-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
