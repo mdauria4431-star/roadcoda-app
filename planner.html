@@ -655,6 +655,25 @@ $('run').onclick = async () => {
   PLAN.drivers = assignDrivers(r, fleet);
   drawResult();
 };
+// Stops the plan leaves off, each with its reason and what would fix it. "Tick another truck" is only
+// offered when the reason is room and there is an unticked truck to tick.
+function notPlaced(list, byStop) {
+  const spare = FLEET.filter(u => !u.noTrailer && !(u.gap && u.gap.none) && OFF.has(u.key)).length, buf = Number(CAR.plan_window_buffer || 0);
+  const fix = (why) => {
+    if (/no room left/.test(why)) return spare > 0 ? `tick another truck (${spare} not ticked) and plan again` : 'every truck is already in use; move it to another day or add a truck';
+    if (/bigger than any truck/.test(why)) return 'the order is more than the biggest trailer holds; split it over two stops or use a bigger trailer';
+    if (/window/.test(why)) return `the window is too early or too short to reach with the ${buf}-min margin; check the window, or trucks' earliest leave time on Setup`;
+    if (/driver's hours/.test(why)) return 'too far to do and get back within the driver\'s hours; plan it as a separate or team load';
+    if (/map point/.test(why)) return 'fix the address, then "Look up missing map points"';
+    if (/no trucks/.test(why)) return 'tick at least one truck';
+    return '';
+  };
+  const room = list.filter(u => /no room left/.test(u.why)).length, other = list.length - room;
+  const head = other && !room ? `<b>Can't be planned</b> — no truck could take ${list.length === 1 ? 'this stop' : 'these stops'} within the rules, however many are ticked. ${list.length === 1 ? 'It stays' : 'They stay'} on the load ${list.length === 1 ? 'it\'s' : 'they\'re'} on now:`
+    : `<b>Not placed</b> — ${list.length === 1 ? 'it stays' : 'they stay'} on the load ${list.length === 1 ? 'it\'s' : 'they\'re'} on now. Why, and what would fix it:`;
+  return `<div class="card pad" style="border-color:var(--late)">${head}<ul style="margin:6px 0 0 18px">${list.map(u => { const f = fix(u.why || '');
+    return `<li><b>${esc(byStop[u.id]?.consignee)}</b> — ${esc(u.why)}${f ? `<span class="mini"> · ${esc(f)}</span>` : ''}</li>`; }).join('')}</ul></div>`;
+}
 function capRows(load, cap) {
   return DIMS.map(([k, l]) => { const c = cap[k], v = Math.round((load ? load[k] : 0) * 10) / 10, pct = c ? Math.min(100, 100 * v / c) : 0;
     return `<div class="cap"><span>${l}</span><div class="meter">${c ? `<i style="width:${pct}%" class="${pct > 95 ? 'full' : ''}"></i>` : ''}</div><span class="mini" style="text-align:right">${v}${c ? ' / ' + c : ' (no limit)'}</span></div>`; }).join('');
@@ -675,7 +694,7 @@ function drawResult() {
     ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
     ${CAR.plan_window_buffer ? `<div class="mini" style="margin:6px 2px">${PLAN.spare ? `Aiming for ${Number(CAR.plan_window_buffer) + PLAN.spare} min before each window closes where it costs little. ` : ''}Every stop is planned to arrive at least ${CAR.plan_window_buffer} min before its window closes${PLAN.result.routes.some(x => (x.times || []).some(t => t.tight)) ? ' — except the ones marked <span class="warn">tight</span>, which can\'t be reached with that much spare' : ''}.</div>` : ''}
     <div class="mini" style="margin:6px 2px">${PLAN.goal === 'cost' ? `Planned for the <b>lowest cost</b> to run the day: equipment days (tractor ${money(COST().tractor)}, straight truck ${money(COST().straight)}, trailer ${money(COST().trailer)}), drivers' on-duty hours (${money(COST().driverHr)}/h) and miles ($${COST().perMile}/mi) — every stop on time with its margin, every driver within hours. Change the figures on Setup.` : PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible (tractors first, then the fewest loads), then the fewest miles for those trucks.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}${PLAN.multi ? ` A tractor can come back to the DC, drop its trailer and hook a loaded one (${RELOAD_MIN()} min) for another load; any wait there is paid driver time, so it's in the cost. The same driver keeps the tractor all day, with an hour of driving and on-duty time kept spare.` : ''}</div>
-    ${r.unassigned.length ? `<div class="card pad" style="border-color:var(--late)"><b>Didn't fit</b> on any ticked truck — they stay on the load they're on now. Tick another truck and plan again, or move them yourself:<ul style="margin:6px 0 0 18px">${r.unassigned.map(u => `<li>${esc(byStop[u.id]?.consignee)} — ${esc(u.why)}</li>`).join('')}</ul></div>` : ''}
+    ${r.unassigned.length ? notPlaced(r.unassigned, byStop) : ''}
     <div class="routes">${used.map(rt => { const u = unitOf(rt.vehicle), overH = rt.drive > CAR.plan_max_drive_h * 60;
       return `<div class="card"><header><h2>${esc(u.name)}</h2><span class="sp"></span><span class="mini">${u.load ? 'on load ' + esc(u.load.load_no) : ''}</span></header><div class="pad">
         <div style="margin-bottom:6px">Driver: ${driverTxt(PLAN.drivers[rt.vehicle])}</div>
