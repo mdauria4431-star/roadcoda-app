@@ -124,6 +124,8 @@
           <label>Trailer, per day ($)<input type="number" id="c-trailer" min="0" step="1"></label>
           <label>Driver, per on-duty hour ($, pay + taxes and benefits)<input type="number" id="c-driver" min="0" step="0.5"></label>
           <label>Per mile ($, fuel, tires, maintenance)<input type="number" id="c-mile" min="0" step="0.01"></label>
+          <label title="A driver who goes out is paid for at least this many hours. The planner gives that driver work up to it before sending another truck out on a light trip. 0 = off.">Driver's minimum day (hours)<input type="number" id="c-minday" min="0" max="14" step="0.5"></label>
+          <label title="Past this many hours, each hour counts double when plans are compared, so work is spread to other drivers instead of one driver doing 12 hours while another does 2. A planning weight, not pay. 0 = off.">A long day starts after (hours)<input type="number" id="c-longday" min="0" max="24" step="0.5"></label>
           <button class="btn primary small" id="c-save">Save</button><span class="mini" id="c-msg"></span></div>
         <div class="pad mini" style="padding-top:0">Starting figures are typical ones — put in your own. The day costs of a truck and trailer cover payments or lease, insurance and permits; they're counted for each unit a plan uses.</div></div>
       <div class="card"><header><h2>Truck and trailer capacity</h2><span class="sp"></span><span class="mini">A tractor's load uses its trailer's capacity; a straight truck its own. Blank = no limit.</span></header><div id="caps"></div></div>
@@ -338,7 +340,7 @@ const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive:
 let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
 const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks',
   localMph: CAR.plan_local_mph != null ? Number(CAR.plan_local_mph) : null, localMiles: Number(CAR.plan_local_miles || 0), leg: DRIVE_LEG,
-  buffer: Number(CAR.plan_window_buffer || 0), costs: { driverHr: COST().driverHr, perMile: COST().perMile },
+  buffer: Number(CAR.plan_window_buffer || 0), costs: { driverHr: COST().driverHr, perMile: COST().perMile, minDayH: COST().minDayH, longDayH: COST().longDayH },
   preferSpare: $('spare') ? Number($('spare').value) : 15 });
 // "Plan for" is remembered on this computer only
 try { const g = localStorage.getItem('rc_plan_goal2'); if (g && $('goal') && [...$('goal').options].some(o => o.value === g)) $('goal').value = g; } catch (_) {}
@@ -350,7 +352,7 @@ const MULTI = () => !!($('multi') && $('multi').checked);
 const RELOAD_MIN = () => CAR.plan_reload_min != null ? Number(CAR.plan_reload_min) : 45;
 // What a day costs to run (126; typical figures until it's installed)
 const COST = () => ({ tractor: num(CAR.plan_cost_tractor_day, 150), straight: num(CAR.plan_cost_straight_day, 120), trailer: num(CAR.plan_cost_trailer_day, 30),
-  driverHr: num(CAR.plan_cost_driver_hr, 36.4), perMile: num(CAR.plan_cost_per_mile, 0.95) });
+  driverHr: num(CAR.plan_cost_driver_hr, 36.4), perMile: num(CAR.plan_cost_per_mile, 0.95), minDayH: num(CAR.plan_min_day_h, 0), longDayH: num(CAR.plan_long_day_h, 0) });
 function num(v, d) { return v != null && v !== '' && Number.isFinite(+v) ? +v : d; }
 const money = (v) => '$' + Math.round(v).toLocaleString();
 const TEAM = new Set();   // trucks running as a team today (two drivers)
@@ -1018,7 +1020,7 @@ $('ord-run').onclick = () => {
 function drawSetup() {
   $('s-mph').value = CAR.plan_mph; $('s-road').value = CAR.plan_road_factor; $('s-stop').value = CAR.plan_stop_min; $('s-drive').value = CAR.plan_max_drive_h;
   $('s-buf').value = CAR.plan_window_buffer ?? 30; $('s-rl').value = CAR.plan_reload_min ?? 30;
-  { const C = COST(); $('c-tractor').value = C.tractor; $('c-straight').value = C.straight; $('c-trailer').value = C.trailer; $('c-driver').value = C.driverHr; $('c-mile').value = C.perMile; }
+  { const C = COST(); $('c-tractor').value = C.tractor; $('c-straight').value = C.straight; $('c-trailer').value = C.trailer; $('c-driver').value = C.driverHr; $('c-mile').value = C.perMile; $('c-minday').value = C.minDayH; $('c-longday').value = C.longDayH; }
   $('s-lmph').value = CAR.plan_local_mph ?? 30; $('s-lmi').value = CAR.plan_local_miles ?? 10; $('s-tf').value = CAR.plan_truck_factor ?? 1.15;
   $('s-duty').value = CAR.plan_max_duty_h; $('s-leave').value = String(CAR.plan_leave_at || '06:00').slice(0, 5); $('s-ret').checked = !!CAR.plan_return;
   const units = EQ.filter(e => e.active);
@@ -1046,6 +1048,10 @@ $('c-save').onclick = async () => {
   const { error } = await sb.rpc('set_plan_costs', a);
   if (error) return $('c-msg').innerHTML = `<span class="error">${esc(error.message)}${/set_plan_costs|schema cache/.test(error.message) ? ' — run 126_plan_cost.sql in the SQL Editor.' : ''}</span>`;
   Object.assign(CAR, { plan_cost_tractor_day: a.p_tractor, plan_cost_straight_day: a.p_straight, plan_cost_trailer_day: a.p_trailer, plan_cost_driver_hr: a.p_driver_hr, plan_cost_per_mile: a.p_per_mile });
+  const md = Math.min(14, Math.max(0, +$('c-minday').value || 0)), ld = Math.min(24, Math.max(0, +$('c-longday').value || 0));
+  const mdErr = (await sb.rpc('set_plan_driver_day', { p_min: md, p_long: ld })).error;
+  if (mdErr) return $('c-msg').innerHTML = `<span class="error">${esc(mdErr.message)}${/set_plan_driver_day|schema cache/.test(mdErr.message) ? ' — run 130_plan_driver_day.sql in the SQL Editor.' : ''}</span>`;
+  Object.assign(CAR, { plan_min_day_h: md, plan_long_day_h: ld });
   $('c-msg').innerHTML = '<span class="ok">Saved.</span>';
 };
 $('s-save').onclick = async () => {

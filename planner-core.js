@@ -116,7 +116,7 @@
     if (hard && !isFinite(t)) return null;                // a stop with no map point can't be driven to
     const out = { miles, drive, wait, start, duty: t - start, end: t, load: loads[0], loads, late, times, reloads, dcWait, reload: reloads[0] || null,
              runMiles, runStops, stops: runStops.reduce((a, x) => a + x, 0), crew: v.drivers || 1, pref: v.pref || 0 };
-    if (COSTS) out.dollars = dayCost(out, v);
+    if (COSTS) { out.dollars = dayCost(out, v); out.pdollars = planCost(out, v); }
     return out;
   }
   // Leave as late as possible without making any stop late: waits later in the day shrink too.
@@ -144,11 +144,32 @@
   // carrier needs to run the day is what the customer ends up paying for.
   function dayCost(e, v) {
     if (!e.stops) return 0;
-    return (v.dayCost || 0) + (e.reloads.length ? (v.trailer2Cost || 0) : 0) + e.duty / 60 * (COSTS.driverHr || 0) * (v.drivers || 1) + e.miles * (COSTS.perMile || 0);
+    // a driver who goes out is paid at least the minimum day (costs.minDayH), so hours up to it cost nothing extra
+    return (v.dayCost || 0) + (e.reloads.length ? (v.trailer2Cost || 0) : 0) + paidMin(e.duty) / 60 * (COSTS.driverHr || 0) * (v.drivers || 1) + e.miles * (COSTS.perMile || 0);
+  }
+  // Dedicated accounts: the customer pays for its assigned trucks (vehicle.fixedEquip) and drivers
+  // (vehicle.fixedDriver) as a fixed charge (vehicle.outside marks a truck from outside the account), so using them costs nothing extra and leaving them idle saves
+  // nothing. What's weighed instead: the miles, and each assigned driver's day on a rising scale (the
+  // square of the hours), so the work is spread over every assigned driver with days kept even, and a
+  // truck from outside the account (full cost) is brought in only when the assigned ones can't cover it.
+  const paidMin = (m) => Math.max(m, (COSTS && COSTS.minDayH || 0) * 60);
+  function planCost(e, v) {
+    const base = e.dollars != null ? e.dollars : dayCost(e, v);
+    if (!e.stops) return 0;
+    const crewL = v.drivers || 1, over = COSTS.longDayH ? Math.max(0, e.duty / crewL - COSTS.longDayH * 60) : 0;
+    const long = over / 60 * (COSTS.driverHr || 0) * crewL;   // past a long day each hour counts double (a weight, not pay)
+    if (v.outside) return base + long + 500;              // a truck from outside a dedicated account: only when needed
+    if (!(v.fixedEquip || v.fixedDriver)) return base + long;
+    const crew = v.drivers || 1, h = e.duty / 60 / crew, rate = COSTS.driverHr || 0;
+    const equip = v.fixedEquip ? 0 : (v.dayCost || 0) + (e.reloads.length ? (v.trailer2Cost || 0) : 0);
+    // an assigned driver: a rising scale (6 h weighs as 3 h's pay, 12 h as 12 h's), less a credit for giving
+    // them work at all (an assigned driver sitting idle is the one thing to avoid)
+    const driver = v.fixedDriver ? crew * (h * h * rate / 12 - rate * 4) : paidMin(e.duty) / 60 * rate * crew;
+    return equip + driver + (v.fixedDriver ? 0 : long) + e.miles * (COSTS.perMile || 0);
   }
   const cost = (e) => {
     const lateC = e.late.reduce((a, x) => a + x.minutes, 0) * 5;
-    if (COSTS) return e.dollars + lateC * ((COSTS.perMile || 1)) + short(e) * 0.4 + (e.stops ? e.pref || 0 : 0);   // dollars (+40¢ a minute short of the wanted spare); waiting is paid through the driver's hours
+    if (COSTS) return (e.pdollars != null ? e.pdollars : e.dollars) + lateC * ((COSTS.perMile || 1)) + short(e) * 0.4 + (e.stops ? e.pref || 0 : 0);   // dollars (+40¢ a minute short of the wanted spare); waiting is paid through the driver's hours
     return e.miles + (e.wait || 0) * COST_MPH / 60 + lateC + short(e) * 0.15
       + (e.reloads || []).reduce((a, r) => a + (r.leave - r.arrive) * COST_MPH / 60 + 30, 0);
   };
@@ -316,6 +337,7 @@
       unassigned: unassigned.map(u => explain(ctx, u, vehicles)), realLegs: ctx.real, legs: ctx.legs,
       miles: routes.reduce((a, r, k) => { const e = evalRoute(ctx, r, vehicles[k], false); return a + (e ? e.miles : 0); }, 0),
       cost: COSTS ? routes.reduce((a, r, k) => { const e = settle(ctx, r, vehicles[k]); return a + (e ? e.dollars : 0); }, 0) : null,
+      pcost: COSTS ? routes.reduce((a, r, k) => { const e = settle(ctx, r, vehicles[k]); return a + (e ? e.pdollars : 0); }, 0) : null,
     };
   }
 
@@ -347,7 +369,7 @@
     const crewMin = (r) => Math.round(r.routes.filter(x => x.stops.length).reduce((a, x) => a + x.duty * (x.crew || 1), 0));
     const score = (r) => goal === 'miles' ? [r.unassigned.length, r.miles]
       : goal === 'hours' ? [r.unassigned.length, crewMin(r), trucksOf(r), r.miles]
-      : goal === 'cost' && priced ? [r.unassigned.length, Math.round(r.cost), trucksOf(r), r.miles]
+      : goal === 'cost' && priced ? [r.unassigned.length, Math.round(r.pcost != null ? r.pcost : r.cost), trucksOf(r), r.miles]
       : [r.unassigned.length, trucksOf(r), loadsOf(r), r.miles];   // fewest trucks: tractors first, then loads (trailers)
     const better = (p, q) => { for (let i = 0; i < p.length; i++) { if (p[i] < q[i] - 1e-6) return true; if (p[i] > q[i] + 1e-6) return false; } return false; };
     // on cost: empty whole trucks, the dearest first (a team, say), whenever the others — used or not —
