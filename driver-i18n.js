@@ -14,6 +14,12 @@
   document.documentElement.lang = 'es';
 
   var T = {
+    'So you stay signed in and it opens like an app: tap the button below, or the browser menu (⋮) ›': 'Para seguir con la sesión iniciada y abrirla como una app: toque el botón de abajo, o el menú del navegador (⋮) ›',
+    'So you stay signed in: tap the': 'Para seguir con la sesión iniciada: toque el botón',
+    'button (square with an arrow) at the bottom of Safari, then': '(el cuadrado con una flecha) abajo en Safari, y luego',
+    '. The icon signs in separately, so then tap': '. El ícono inicia sesión por separado, así que luego toque',
+    'below and type that code into the app.': 'abajo y escriba ese código en la app.',
+    'I added it: get app code': 'Ya lo agregué: obtener código de la app',
     "Your company's RoadCoda trial has ended, so the app is view-only. Call the office.": 'La prueba de RoadCoda de su empresa terminó, así que la app es solo de lectura. Llame a la oficina.',
     // stops and the day
     "Today's stops": 'Paradas de hoy', 'Messages': 'Mensajes', 'My pay': 'Mi pago', 'Refresh': 'Actualizar',

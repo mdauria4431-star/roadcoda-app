@@ -61,16 +61,17 @@
     <div class="progress"><i id="bar" style="width:0"></i></div>
     <div class="card" style="padding:14px 16px">
       <h2 style="margin:0 0 4px;font-size:16px">Setup templates</h2>
-      <div class="mini" style="margin-bottom:10px">Fill these in and send them to RoadCoda, or upload them on each screen. Columns marked * are required. Instructions are on the second tab of each file.</div>
+      <div class="mini" style="margin-bottom:10px" id="tpl-say">Fill these in and send them to RoadCoda, or upload them on each screen. Columns marked * are required. Instructions are on the second tab of each file.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a class="btn small" href="templates/RoadCoda-template-Customers.xlsx" download>Customers</a>
         <a class="btn small" href="templates/RoadCoda-template-Stop-locations.xlsx" download>Stop locations</a>
         <a class="btn small" href="templates/RoadCoda-template-Trucks-and-trailers.xlsx" download>Trucks &amp; trailers</a>
         <a class="btn small" href="templates/RoadCoda-template-Drivers.xlsx" download>Drivers</a>
         <a class="btn small" href="templates/RoadCoda-template-Office-staff.xlsx" download>Office staff</a>
+        <a class="btn small primary" href="guide.html" target="_blank" rel="noopener">How-to guide</a>
       </div>
     </div>
-    <div class="card" style="padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <div class="card" id="found-card" style="padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <div style="flex:1;min-width:240px"><h2 style="margin:0 0 4px;font-size:16px">What we found</h2>
       <div class="mini">Rows an upload couldn't finish, what the data shows that's worth knowing, and the setup and training hours — as one Excel file to send the customer.</div></div>
       <a class="btn small" href="setup-report.html">Open the report</a>
@@ -100,6 +101,11 @@ async function start() {
   if (data.role === 'driver') { location.href = 'driver.html'; return; }
   ME = data; $('who').textContent = `${data.full_name || ''} · ${data.carriers?.name || ''} · ${data.role}`; $('signout').hidden = false;
   await window.RC_ACCESS_READY;
+  // 135: a free trial sets itself up — upload the sheets here; RoadCoda's own setup report isn't part of it
+  if (window.RC_ACCESS && window.RC_ACCESS.plan === 'trial') {
+    $('tpl-say').innerHTML = 'Fill these in, then upload each one on its own screen — Customers, Equipment, Drivers and Users each have an upload button. The <a href="guide.html" target="_blank" rel="noopener">how-to guide</a> shows every step. Columns marked * are required. Instructions are on the second tab of each file.';
+    $('found-card').hidden = true;
+  }
   $('app').hidden = false; load();
 }
 $('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
