@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Start your free trial · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#5b3fd6">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<style>
+  :root{--brand:#5b3fd6;--ink:#1c1f24;--muted:#5b6470;--line:#dde1e7;--bg:#f4f5f8;--card:#fff;--ok:#1d7a46;--bad:#b3261e}
+  @media (prefers-color-scheme: dark){ :root{--ink:#e8edf2;--muted:#a3adb8;--line:#2b3642;--bg:#0d1117;--card:#161d26;--ok:#5fd08c;--bad:#ff8a7d;color-scheme:dark} input,select{background:#0f151c;color:var(--ink)} }
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;line-height:1.5}
+  a{color:var(--brand)}
+  .wrap{max-width:980px;margin:0 auto;padding:28px 16px 60px;display:grid;grid-template-columns:1fr 1.15fr;gap:28px;align-items:start}
+  @media (max-width:820px){ .wrap{grid-template-columns:1fr} }
+  .brand{font-family:Archivo,sans-serif;font-weight:800;font-size:22px;display:flex;align-items:center;gap:10px}
+  .brand img{width:34px;height:34px}
+  h1{font-family:Archivo,sans-serif;font-size:30px;line-height:1.15;margin:22px 0 10px}
+  .lead{color:var(--muted);margin:0 0 18px}
+  ul.ticks{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:9px}
+  ul.ticks li{padding-left:28px;position:relative}
+  ul.ticks li::before{content:'✓';position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .limits{margin-top:20px;border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card)}
+  .limits h3{margin:0 0 6px;font-size:15px}
+  .limits h3 + ul{margin-bottom:12px}
+  .limits ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:14px}
+  .limits .mini{margin:6px 0 0;font-size:13px;color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .card h2{margin:0 0 4px;font-size:20px}
+  form{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .full{grid-column:1/-1}
+  @media (max-width:520px){ form{grid-template-columns:1fr} }
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:13px}
+  label small{font-weight:400;color:var(--muted)}
+  input,select{height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-family:inherit;font-size:15px;color:var(--ink);background:var(--card);width:100%}
+  input:focus,select:focus{outline:2px solid var(--brand);outline-offset:1px}
+  .kind{display:flex;gap:10px;flex-wrap:wrap}
+  .kind label{flex:1;min-width:180px;flex-direction:row;align-items:flex-start;gap:10px;border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-weight:500;cursor:pointer}
+  .kind input{width:18px;height:18px;margin:2px 0 0;flex:none}
+  .kind label:has(input:checked){border-color:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+  .agree{flex-direction:row;align-items:flex-start;gap:10px;font-weight:400;font-size:13.5px}
+  .agree input{width:18px;height:18px;margin:2px 0 0;flex:none}
+  .terms{font-size:12.5px;color:var(--muted);background:var(--bg);border-radius:10px;padding:10px 12px;margin:0}
+  button.go{height:50px;border:0;border-radius:11px;background:var(--brand);color:#fff;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer}
+  button.go:disabled{opacity:.6;cursor:wait}
+  .msg{font-size:14px;min-height:1px}
+  .err{color:var(--bad)}
+  .big{font-size:40px;line-height:1}
+  .foot{font-size:13px;color:var(--muted);text-align:center;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section>
+    <div class="brand"><img src="favicon.svg" alt="">RoadCoda</div>
+    <h1>Try RoadCoda free for 30 days</h1>
+    <p class="lead">Dispatch, route planning, the driver app, proof of delivery, invoicing, payroll and safety — one system for dedicated and route fleets.</p>
+    <ul class="ticks">
+      <li><b>No credit card.</b> Nothing to cancel.</li>
+      <li><b>Almost everything switched on</b> — dispatch, route planner, driver app, proof of delivery, customer portal, invoicing, payroll, safety and more.</li>
+      <li><b>As many office users and drivers as you like.</b></li>
+      <li><b>Your data comes in from our ready-made sheets</b> — customers, stores, drivers and trucks.</li>
+      <li><b>A step-by-step guide with pictures</b> for every screen.</li>
+    </ul>
+    <div class="limits" id="limits">
+      <h3>What's limited in the trial</h3>
+      <ul>
+        <li><b>EDI</b> (electronic orders and invoices with large shippers) — not included.</li>
+        <li><b>Dock &amp; load-out scanning</b> at your warehouse — not included. Barcode scanning in the driver app <i>is</i> included.</li>
+        <li><b>Up to 25 trucks</b> (tractors, straight trucks, vans and pickups — trailers don't count).</li>
+        <li><b>Dispatch assistant:</b> a smaller allowance — about a quarter of what a paying company gets each month.</li>
+        <li><b>Text messages and live tracking</b> work with your own Twilio account and your own ELD connection.</li>
+      </ul>
+      <h3>When the 30 days are up</h3>
+      <ul>
+        <li>Keep RoadCoda and everything unlocks right where you left it — nothing to re-enter.</li>
+        <li>Or it turns <b>view-only for 30 days</b>: you, your drivers and your customers can sign in, look and download, but not add or change anything. After that your company and its data are removed.</li>
+      </ul>
+      <p class="mini">We open 10 new trial spots every day.</p>
+    </div>
+  </section>
+
+  <section class="card" id="form-card">
+    <h2>Start your free trial</h2>
+    <p class="lead" style="margin-bottom:16px">Takes about two minutes. Already have RoadCoda? <a href="index.html">Sign in</a>.</p>
+    <div id="closed" class="terms" hidden style="margin-bottom:14px;font-size:14px"></div>
+    <form id="f" novalidate>
+      <label class="full">Company name<input id="company" autocomplete="organization" required maxlength="120"></label>
+      <label>Your name<input id="name" autocomplete="name" required maxlength="80"></label>
+      <label>Phone<input id="phone" type="tel" autocomplete="tel" maxlength="30" placeholder="So we can help if you get stuck"></label>
+      <label>Work email<input id="email" type="email" autocomplete="email" required maxlength="160"></label>
+      <label>Password<input id="pw" type="password" autocomplete="new-password" required minlength="8" placeholder="8 or more characters"></label>
+      <label>Your time zone<select id="tz">
+        <option value="America/New_York">Eastern</option><option value="America/Chicago">Central</option>
+        <option value="America/Denver">Mountain</option><option value="America/Phoenix">Arizona</option>
+        <option value="America/Los_Angeles">Pacific</option><option value="America/Anchorage">Alaska</option>
+        <option value="Pacific/Honolulu">Hawaii</option></select></label>
+      <label>How many trucks?<input id="trucks" type="number" min="1" max="999" inputmode="numeric" placeholder="Not counting trailers"></label>
+      <div class="full kind" role="radiogroup" aria-label="What kind of company">
+        <label><input type="radio" name="kind" value="carrier" checked><span><b>Trucking company</b><br><small style="color:var(--muted)">We haul for customers and bill them</small></span></label>
+        <label><input type="radio" name="kind" value="private"><span><b>Private fleet</b><br><small style="color:var(--muted)">We deliver our own goods on our own trucks</small></span></label>
+      </div>
+      <p class="terms full">The trial is free for 30 days and for up to 25 trucks, without EDI or dock scanning (<a href="#limits">what's limited</a>). When it ends, RoadCoda is view-only for 30 more days, then your company and its data are removed unless you keep RoadCoda. Please don't enter Social Security or bank account numbers during the trial.</p>
+      <label class="agree full"><input type="checkbox" id="agree"><span>I agree to the trial terms above and the <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
+      <button class="go full" id="go" type="submit">Start my free trial</button>
+      <div class="msg full" id="msg" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+
+  <section class="card" id="check-card" hidden>
+    <div class="big">✉</div>
+    <h2 style="margin-top:10px">Check your email</h2>
+    <p>We sent a link to <b id="sent-to"></b>. Click it to confirm your email and your RoadCoda company is set up straight away.</p>
+    <p class="lead">Nothing there after a few minutes? Look in spam or junk, or <a href="#" id="resend">send it again</a>.</p>
+    <div class="msg" id="msg2" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card" id="done-card" hidden>
+    <div class="big">✓</div>
+    <h2 style="margin-top:10px" id="done-h">Setting up your company…</h2>
+    <p id="done-p" class="lead">One moment.</p>
+    <div class="msg" id="msg3" role="status" aria-live="polite"></div>
+  </section>
+</div>
+<p class="foot">Questions first? <a href="mailto:support@roadcoda.com?subject=A%2030-minute%20call%20about%20RoadCoda">Book a 30-minute call</a> · <a href="privacy.html">Privacy</a></p>
+
+<script>
+if (!window.RC_CONFIG) throw new Error('RoadCoda settings missing');
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const show = (id) => ['form-card', 'check-card', 'done-card'].forEach(k => $(k).hidden = k !== id);
+const say = (el, t, bad) => { $(el).innerHTML = bad ? `<span class="err">${esc(t)}</span>` : esc(t); };
+let LAST = null;
+
+// Guess their time zone
+try {
+  const z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if ([...$('tz').options].some(o => o.value === z)) $('tz').value = z;
+  else if (/^America\/(Detroit|Indiana|Kentucky|Toronto)/.test(z)) $('tz').value = 'America/New_York';
+  else if (/^America\/(Winnipeg|Indiana\/(Knox|Tell_City)|Menominee|North_Dakota)/.test(z)) $('tz').value = 'America/Chicago';
+  else if (/^America\/(Boise|Edmonton)/.test(z)) $('tz').value = 'America/Denver';
+} catch (_) {}
+
+async function boot() {
+  const { data: { session } } = await sb.auth.getSession();
+  // Came back from the email link (or already signed in): finish setting up
+  if (session) return finish(session);
+  // Are trials open? (asks with a blank name; "closed" is checked first)
+  const { data } = await sb.rpc('trial_check', { p_company: '', p_email: '' });
+  if (data && data.why === 'closed') {
+    $('closed').hidden = false;
+    $('closed').innerHTML = 'Free trials open soon. In the meantime, <a href="mailto:support@roadcoda.com?subject=A%2030-minute%20call%20about%20RoadCoda">book a 30-minute call</a> and we\'ll show you RoadCoda with your own routes.';
+    $('go').disabled = true;
+  }
+}
+
+$('f').onsubmit = async (e) => {
+  e.preventDefault();
+  const v = {
+    company: $('company').value.trim(), name: $('name').value.trim(), phone: $('phone').value.trim(), email: $('email').value.trim().toLowerCase(),
+    pw: $('pw').value, tz: $('tz').value, trucks: parseInt($('trucks').value, 10) || null,
+    kind: (document.querySelector('input[name=kind]:checked') || {}).value || 'carrier',
+  };
+  if (v.company.length < 2) return say('msg', 'Type your company\'s name.', true);
+  if (!v.name) return say('msg', 'Type your name.', true);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.email)) return say('msg', 'Type your email address.', true);
+  if (v.pw.length < 8) return say('msg', 'Pick a password of 8 or more characters.', true);
+  if (!$('agree').checked) return say('msg', 'Tick the box to agree to the trial terms.', true);
+  $('go').disabled = true; say('msg', 'Checking…');
+  const chk = await sb.rpc('trial_check', { p_company: v.company, p_email: v.email });
+  if (chk.error) { $('go').disabled = false; return say('msg', chk.error.message, true); }
+  if (!chk.data.ok) { $('go').disabled = chk.data.why === 'closed'; return say('msg', chk.data.message, true); }
+  const back = location.origin + location.pathname;
+  const { data, error } = await sb.auth.signUp({ email: v.email, password: v.pw, options: { emailRedirectTo: back,
+    data: { full_name: v.name, rc_trial: { company: v.company, name: v.name, phone: v.phone, tz: v.tz, kind: v.kind, trucks: v.trucks } } } });
+  $('go').disabled = false;
+  if (error) {
+    return say('msg', /already registered|already exists/i.test(error.message) ? 'That email already has a RoadCoda login. Sign in instead, or use a different email.' : error.message, true);
+  }
+  LAST = v.email;
+  if (data.session) return finish(data.session);          // email confirmation switched off: straight in
+  $('sent-to').textContent = v.email; show('check-card');
+};
+
+$('resend').onclick = async (e) => {
+  e.preventDefault(); if (!LAST) return;
+  const { error } = await sb.auth.resend({ type: 'signup', email: LAST, options: { emailRedirectTo: location.origin + location.pathname } });
+  say('msg2', error ? error.message : 'Sent again.', !!error);
+};
+
+async function finish(session) {
+  show('done-card');
+  const { data: prof } = await sb.from('profiles').select('carrier_id').eq('user_id', session.user.id).maybeSingle();
+  if (prof) { location.replace('getting-started.html'); return; }
+  const t = (session.user.user_metadata || {}).rc_trial;
+  if (!t) {
+    $('done-h').textContent = 'This login isn\'t set up for a trial';
+    $('done-p').innerHTML = 'If you meant to sign in to your company\'s RoadCoda, <a href="index.html">sign in here</a>. Otherwise email <a href="mailto:support@roadcoda.com">support@roadcoda.com</a>.';
+    return;
+  }
+  const { data, error } = await sb.rpc('trial_start', { p_company: t.company, p_name: t.name, p_phone: t.phone || null, p_time_zone: t.tz || 'America/New_York', p_kind: t.kind || 'carrier', p_trucks: t.trucks || null });
+  if (error) {
+    $('done-h').textContent = 'We couldn\'t set up your company';
+    $('done-p').innerHTML = `${esc(error.message)}<br><br>Email <a href="mailto:support@roadcoda.com?subject=Trial%20sign-up">support@roadcoda.com</a> and we'll sort it out.`;
+    return;
+  }
+  $('done-h').textContent = `${t.company} is set up`;
+  const ends = data && data.ends ? new Date(data.ends + 'T12:00:00').toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) : '';
+  $('done-p').textContent = `Your free trial runs${ends ? ' to ' + ends : ' 30 days'}. Taking you to Getting started…`;
+  setTimeout(() => location.replace('getting-started.html'), 1800);
+}
+boot();
+</script>
+</body>
+</html>

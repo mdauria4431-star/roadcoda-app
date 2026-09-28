@@ -98,6 +98,7 @@
     <button class="btn primary" id="login-btn">Sign in</button>
     <div class="error" id="login-error"></div>
     <div class="muted" style="margin-top:4px;font-size:13px">Driver? <a href="driver.html">Open the driver app</a></div>
+    <div class="muted" style="font-size:13px">New to RoadCoda? <a href="signup.html">Start a free 30-day trial</a></div>
   </section>
 
   <div id="app" hidden style="display:flex;flex-direction:column;gap:16px">
@@ -164,6 +165,8 @@ async function start() {
     // a customer login (56) belongs on the portal
     const pm = await sb.rpc('portal_me');
     if (!pm.error && pm.data) { location.replace('portal.html'); return; }
+    // 135: signed up for a free trial but the company isn't made yet (e.g. confirmed on another device)
+    if ((session.user.user_metadata || {}).rc_trial) { location.replace('signup.html'); return; }
     $('login-error').textContent = 'This login is not linked to a carrier.'; $('login-view').hidden = false; return;
   }
   if (p.role === 'driver') { location.replace('driver.html'); return; }   // drivers go straight to their app

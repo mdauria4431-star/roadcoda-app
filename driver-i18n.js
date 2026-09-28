@@ -14,6 +14,7 @@
   document.documentElement.lang = 'es';
 
   var T = {
+    "Your company's RoadCoda trial has ended, so the app is view-only. Call the office.": 'La prueba de RoadCoda de su empresa terminó, así que la app es solo de lectura. Llame a la oficina.',
     // stops and the day
     "Today's stops": 'Paradas de hoy', 'Messages': 'Mensajes', 'My pay': 'Mi pago', 'Refresh': 'Actualizar',
     'Report accident / injury': 'Reportar accidente / lesión', 'Pending': 'Pendiente', 'Arrived': 'Llegué', 'Delivered': 'Entregado',

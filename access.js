@@ -8,6 +8,7 @@
   // comes back as Postgres' "read-only transaction" error — show it as the tour's own words.
   // Wraps every client the page makes; does nothing for anyone who isn't on the tour.
   const TOUR_MSG = 'This is the RoadCoda tour — try anything you like, but nothing is saved. Talk to us to run it with your own data.';
+  const TRIAL_MSG = 'Your free trial has ended, so RoadCoda is view-only — nothing can be added or changed. Keep RoadCoda to unlock it.';
   if (window.supabase && window.supabase.createClient && !window.supabase.__rcTourWrapped) {
     const orig = window.supabase.createClient;
     const tourFetch = async (input, init) => {
@@ -17,7 +18,9 @@
         try { txt = await res.clone().text(); } catch (_) { return res; }
         if (/25006|read-only transaction|row-level security|tour/i.test(txt)) {
           let j; try { j = JSON.parse(txt); } catch (_) { j = {}; }
-          j.message = TOUR_MSG; j.error = TOUR_MSG; j.details = null; j.hint = null;
+          // 135: an ended free trial runs read-only too — say so in its own words
+          const m = window.RC_ACCESS && window.RC_ACCESS.trial_locked ? TRIAL_MSG : TOUR_MSG;
+          j.message = m; j.error = m; j.details = null; j.hint = null;
           return new Response(JSON.stringify(j), { status: res.status, statusText: res.statusText, headers: res.headers });
         }
       }

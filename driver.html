@@ -520,9 +520,23 @@ async function tourFetch(input, init) {
   }
   return res;
 }
+// 135: a company whose free trial has ended is view-only — a refused save says so
+const TRIAL_MSG = 'Your company\'s RoadCoda trial has ended, so the app is view-only. Call the office.';
+async function trialFetch(input, init) {
+  const res = await fetch(input, init);
+  if (res.status === 405) {
+    let txt = ''; try { txt = await res.clone().text(); } catch (_) { return res; }
+    if (/25006|read-only transaction/i.test(txt)) {
+      let j; try { j = JSON.parse(txt); } catch (_) { j = {}; }
+      j.message = TRIAL_MSG; j.error = TRIAL_MSG; j.details = null; j.hint = null;
+      return new Response(JSON.stringify(j), { status: res.status, statusText: res.statusText, headers: res.headers });
+    }
+  }
+  return res;
+}
 const sb = window.RC_TOUR
   ? supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY, { global: { headers: { 'x-rc-view': 'driver' }, fetch: tourFetch } })
-  : supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+  : supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY, { global: { fetch: trialFetch } });
 let TOUR_DRIVER = null;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

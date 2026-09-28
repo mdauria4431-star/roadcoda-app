@@ -390,6 +390,34 @@
     var out = header.querySelector('#signout');
     if (out) foot.appendChild(out);
     whatsNew(links['whats-new.html'], acc, here);
+    trialBar(acc);
+  }
+
+  // Free trial (135): days left, or view-only once it has ended, on every office page
+  function trialBar(acc) {
+    if (!acc || acc.plan !== 'trial' || !acc.trial_ends_at || document.getElementById('rc-trial-bar')) return;
+    var main = document.querySelector('main'); if (!main) return;
+    var ends = new Date(acc.trial_ends_at), now = new Date();
+    var fmt = function (d) { return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); };
+    var left = Math.max(0, Math.ceil((ends - now) / 864e5));
+    var keep = acc.trial_keep_url || 'mailto:support@roadcoda.com?subject=Keeping%20RoadCoda', guide = acc.trial_guide_url || 'guide.html';
+    var bar = document.createElement('div'); bar.id = 'rc-trial-bar';
+    var tone = acc.trial_locked ? 'var(--late)' : left <= 5 ? 'var(--warn)' : 'var(--accent)';
+    bar.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;margin:0 0 12px;border:1px solid ' + tone +
+      ';border-radius:10px;background:color-mix(in srgb, ' + tone + ' 10%, transparent);font-size:13.5px';
+    var lk = 'margin-left:auto;font-weight:700;padding:5px 12px;border-radius:8px;background:' + tone + ';color:#fff;text-decoration:none';
+    bar.innerHTML = acc.trial_locked
+      ? '<b>Your free trial ended ' + fmt(ends) + '.</b><span>RoadCoda is view-only until ' + fmt(new Date(acc.trial_remove_at)) +
+        ' — you can look and download, but not add or change anything.</span><a href="' + keep + '" style="' + lk + '">Keep RoadCoda →</a>'
+      : '<b>Free trial · ' + left + ' day' + (left === 1 ? '' : 's') + ' left</b><span style="color:var(--muted)">ends ' + fmt(ends) +
+        '</span><a href="#" id="rc-trial-lim" style="font-weight:600">What\'s limited</a><a href="' + guide + '" style="font-weight:600">How-to guide</a><a href="' + keep + '" style="' + lk + '">Keep RoadCoda →</a>' +
+        '<div id="rc-trial-lim-box" hidden style="flex-basis:100%;color:var(--ink-2);line-height:1.5">In the trial: <b>EDI</b> and <b>dock &amp; load-out scanning</b> aren\'t included' +
+        ' (barcode scanning in the driver app is); <b>up to ' + (acc.trial_max_trucks || 25) + ' trucks</b> (trailers don\'t count); the <b>dispatch assistant</b> has a smaller allowance than a paying company\'s.' +
+        ' Text messages and live tracking work with your own Twilio account and ELD connection. Everything else is switched on.' +
+        ' When the trial ends RoadCoda is view-only for 30 days (look and download), then the company and its data are removed unless you keep RoadCoda.</div>';
+    main.insertBefore(bar, main.firstChild);
+    var lim = document.getElementById('rc-trial-lim');
+    if (lim) lim.onclick = function (e) { e.preventDefault(); var bx = document.getElementById('rc-trial-lim-box'); bx.hidden = !bx.hidden; };
   }
 
   // What's new (#68): the count on the menu link, and on Home a one-line note until they've looked
