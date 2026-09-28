@@ -30,6 +30,10 @@
   function makeCtx(depot, stops, params) {
     const p = Object.assign({ mph: 45, roadFactor: 1.25, returnToStart: true, localMph: null, localMiles: 0 }, params || {});
     COST_MPH = Number(p.mph) || 45; COSTS = p.costs || null;
+    // on-time first: past the hard margin, a stop is wanted another params.preferSpare minutes (default 15)
+    // clear of its window's close — a small cost per minute short, so among plans that cost about the same
+    // the one with more room for traffic wins (never at the price of a truck or real money)
+    SPARE_T = (p.buffer || 0) + (p.preferSpare != null ? Number(p.preferSpare) : 15);
     // a window that closes before it opens (10 pm – 5 am) runs past midnight: the close is the next day
     stops = stops.map(x => x && x.ws != null && x.we != null && x.we < x.ws ? Object.assign({}, x, { we: x.we + 1440 }) : x);
     const hasPt = (q) => q && q.lat != null && q.lng != null && isFinite(q.lat) && isFinite(q.lng);
@@ -118,8 +122,9 @@
   // Leave as late as possible without making any stop late: waits later in the day shrink too.
   function settle(ctx, route, v) {
     const e0 = evalRoute(ctx, route, v, false); if (!e0 || !route.length || !e0.wait) return e0;
-    // a later start may not take any stop closer to its window's close than the safety margin (or than it already was)
-    const buf = ctx.p.buffer || 0, keep = e0.times.map(t => t.spare != null ? Math.min(buf, t.spare) : null);
+    // a later start may not take any stop closer to its window's close than the wanted spare (margin + 15 min),
+    // or than it already was — a shorter wait for the driver is not worth a tighter stop
+    const keep = e0.times.map(t => t.spare != null ? Math.min(SPARE_T, t.spare) : null);
     const ok = (d) => { const e = evalRoute(ctx, route, Object.assign({}, v, { start: e0.start + d }), false);
       return e && e.late.length <= e0.late.length && e.times.every((t, i) => keep[i] == null || t.spare == null || t.spare >= keep[i] - 0.01) ? e : null; };
     let lo = 0, hi = e0.wait, best = e0;
@@ -128,7 +133,8 @@
   }
   // What a route costs: its miles, plus waiting time counted like driving time (a minute waiting
   // = the miles a truck covers in a minute), plus lateness weighed heavily (re-order only)
-  let COST_MPH = 45, COSTS = null;
+  let COST_MPH = 45, COSTS = null, SPARE_T = 0;
+  const short = (e) => { let m = 0; for (const t of e.times) if (t.spare != null && t.spare < SPARE_T) m += SPARE_T - Math.max(0, t.spare); return m; };
   // What it costs to run a route for the day (params.costs, the company's figures): the truck's day and
   // its first trailer's day (vehicle.dayCost), a second trailer's day when it runs more than one load
   // (vehicle.trailer2Cost), the driver for every on-duty hour (costs.driverHr), and each mile
@@ -140,8 +146,8 @@
   }
   const cost = (e) => {
     const lateC = e.late.reduce((a, x) => a + x.minutes, 0) * 5;
-    if (COSTS) return e.dollars + lateC * ((COSTS.perMile || 1));      // dollars; waiting is paid through the driver's hours
-    return e.miles + (e.wait || 0) * COST_MPH / 60 + lateC
+    if (COSTS) return e.dollars + lateC * ((COSTS.perMile || 1)) + short(e) * 0.4;   // dollars (+40¢ a minute short of the wanted spare); waiting is paid through the driver's hours
+    return e.miles + (e.wait || 0) * COST_MPH / 60 + lateC + short(e) * 0.15
       + (e.reloads || []).reduce((a, r) => a + (r.leave - r.arrive) * COST_MPH / 60 + 30, 0);
   };
 

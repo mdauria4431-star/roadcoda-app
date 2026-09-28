@@ -90,7 +90,7 @@
       <div class="card"><header><h2>Trucks available today</h2><span class="sp"></span><span class="mini" id="fleet-n"></span></header>
         <div class="pad mini" style="padding-bottom:0">Untick any truck that's down or not available. The planner decides how many of the ticked trucks it needs and which stops go on each. A tractor is paired with a free trailer, biggest first; a trailer sets the capacity.</div>
         <div id="fleet"></div>
-        <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="cost">Lowest cost</option><option value="trucks">Fewest trucks</option><option value="miles">Fewest miles</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="A tractor comes back to the DC, drops its empty trailer, hooks a loaded one and runs another load — as many as the windows and the driver's hours allow"><input type="checkbox" id="multi" style="height:auto"> More than one load per tractor (drop and hook at the DC)</label><button class="btn primary" id="run">Plan the day</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
+        <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="cost">Lowest cost</option><option value="trucks">Fewest trucks</option><option value="miles">Fewest miles</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="Beyond the required margin before each window closes, how much more time to aim for when it costs little. The planner gives it up where holding it would need another truck or real money; the required margin is never given up.">Aim for extra time at stops<select id="spare" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="0">None (lowest cost)</option><option value="15" selected>+15 min</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="A tractor comes back to the DC, drops its empty trailer, hooks a loaded one and runs another load — as many as the windows and the driver's hours allow"><input type="checkbox" id="multi" style="height:auto"> More than one load per tractor (drop and hook at the DC)</label><button class="btn primary" id="run">Plan the day</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
       <div id="result"></div>
     </div>
 
@@ -277,10 +277,13 @@ const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive:
 let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
 const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks',
   localMph: CAR.plan_local_mph != null ? Number(CAR.plan_local_mph) : null, localMiles: Number(CAR.plan_local_miles || 0), leg: DRIVE_LEG,
-  buffer: Number(CAR.plan_window_buffer || 0), costs: { driverHr: COST().driverHr, perMile: COST().perMile } });
+  buffer: Number(CAR.plan_window_buffer || 0), costs: { driverHr: COST().driverHr, perMile: COST().perMile },
+  preferSpare: $('spare') ? Number($('spare').value) : 15 });
 // "Plan for" is remembered on this computer only
 try { const g = localStorage.getItem('rc_plan_goal2'); if (g && $('goal')) $('goal').value = g; } catch (_) {}
 if ($('goal')) $('goal').onchange = () => { try { localStorage.setItem('rc_plan_goal2', $('goal').value); } catch (_) {} };
+try { const g = localStorage.getItem('rc_plan_spare'); if (g != null && $('spare')) $('spare').value = g; } catch (_) {}
+if ($('spare')) $('spare').onchange = () => { try { localStorage.setItem('rc_plan_spare', $('spare').value); } catch (_) {} };
 // More than one load per tractor: the company's setting (125); ticking it here changes it for the company
 const MULTI = () => !!($('multi') && $('multi').checked);
 const RELOAD_MIN = () => CAR.plan_reload_min != null ? Number(CAR.plan_reload_min) : 45;
@@ -648,7 +651,7 @@ $('run').onclick = async () => {
   await new Promise(res => setTimeout(res, 30));          // let the message show before the planner takes the page
   const t0 = performance.now(); let r;
   try { r = RC_PLANNER.plan(dep, stops, trucks, params()); } finally { $('run').disabled = false; $('run-msg').textContent = ''; }
-  PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal, multi: MULTI() };
+  PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal, multi: MULTI(), spare: params().preferSpare };
   PLAN.drivers = assignDrivers(r, fleet);
   drawResult();
 };
@@ -670,7 +673,7 @@ function drawResult() {
   $('result').innerHTML = `<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ...(PLAN.multi ? [['Loads', used.reduce((a, x) => a + runsOf(x).length, 0) + '']] : []), ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ...(r.cost != null ? [['Cost to run the day', money(r.cost)]] : []), ['Stops not placed', r.unassigned.length + '']]
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
     ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
-    ${CAR.plan_window_buffer ? `<div class="mini" style="margin:6px 2px">Every stop is planned to arrive at least ${CAR.plan_window_buffer} min before its window closes${PLAN.result.routes.some(x => (x.times || []).some(t => t.tight)) ? ' — except the ones marked <span class="warn">tight</span>, which can\'t be reached with that much spare' : ''}.</div>` : ''}
+    ${CAR.plan_window_buffer ? `<div class="mini" style="margin:6px 2px">${PLAN.spare ? `Aiming for ${Number(CAR.plan_window_buffer) + PLAN.spare} min before each window closes where it costs little. ` : ''}Every stop is planned to arrive at least ${CAR.plan_window_buffer} min before its window closes${PLAN.result.routes.some(x => (x.times || []).some(t => t.tight)) ? ' — except the ones marked <span class="warn">tight</span>, which can\'t be reached with that much spare' : ''}.</div>` : ''}
     <div class="mini" style="margin:6px 2px">${PLAN.goal === 'cost' ? `Planned for the <b>lowest cost</b> to run the day: equipment days (tractor ${money(COST().tractor)}, straight truck ${money(COST().straight)}, trailer ${money(COST().trailer)}), drivers' on-duty hours (${money(COST().driverHr)}/h) and miles ($${COST().perMile}/mi) — every stop on time with its margin, every driver within hours. Change the figures on Setup.` : PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible (tractors first, then the fewest loads), then the fewest miles for those trucks.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}${PLAN.multi ? ` A tractor can come back to the DC, drop its trailer and hook a loaded one (${RELOAD_MIN()} min) for another load; any wait there is paid driver time, so it's in the cost. The same driver keeps the tractor all day, with an hour of driving and on-duty time kept spare.` : ''}</div>
     ${r.unassigned.length ? `<div class="card pad" style="border-color:var(--late)"><b>Didn't fit</b> on any ticked truck — they stay on the load they're on now. Tick another truck and plan again, or move them yourself:<ul style="margin:6px 0 0 18px">${r.unassigned.map(u => `<li>${esc(byStop[u.id]?.consignee)} — ${esc(u.why)}</li>`).join('')}</ul></div>` : ''}
     <div class="routes">${used.map(rt => { const u = unitOf(rt.vehicle), overH = rt.drive > CAR.plan_max_drive_h * 60;
