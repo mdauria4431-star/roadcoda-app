@@ -90,7 +90,7 @@
       <div class="card"><header><h2>Trucks available today</h2><span class="sp"></span><span class="mini" id="fleet-n"></span></header>
         <div class="pad mini" style="padding-bottom:0">Untick any truck that's down or not available. The planner decides how many of the ticked trucks it needs and which stops go on each. A tractor is paired with a free trailer, biggest first; a trailer sets the capacity.</div>
         <div id="fleet"></div>
-        <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="cost">Lowest cost to the customer</option><option value="trucks">Fewest trucks</option><option value="miles">Fewest miles</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="Beyond the required margin before each window closes, how much more time to aim for when it costs little. The planner gives it up where holding it would need another truck or real money; the required margin is never given up.">Aim for extra time at stops<select id="spare" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="0">None (lowest cost)</option><option value="15" selected>+15 min</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="A tractor comes back to the DC, drops its empty trailer, hooks a loaded one and runs another load — as many as the windows and the driver's hours allow"><input type="checkbox" id="multi" style="height:auto"> More than one load per tractor (drop and hook at the DC)</label><button class="btn primary" id="run">Plan the day</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
+        <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="cost">Lowest cost to the customer</option><option value="trucks">Fewest trucks</option><option value="hours">Fewest driver hours</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="Beyond the required margin before each window closes, how much more time to aim for when it costs little. The planner gives it up where holding it would need another truck or real money; the required margin is never given up.">Aim for extra time at stops<select id="spare" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="0">None (lowest cost)</option><option value="15" selected>+15 min</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="A tractor comes back to the DC, drops its empty trailer, hooks a loaded one and runs another load — as many as the windows and the driver's hours allow"><input type="checkbox" id="multi" style="height:auto"> More than one load per tractor (drop and hook at the DC)</label><button class="btn primary" id="run">Plan the day</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
       <div id="result"></div>
     </div>
 
@@ -280,7 +280,7 @@ const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_r
   buffer: Number(CAR.plan_window_buffer || 0), costs: { driverHr: COST().driverHr, perMile: COST().perMile },
   preferSpare: $('spare') ? Number($('spare').value) : 15 });
 // "Plan for" is remembered on this computer only
-try { const g = localStorage.getItem('rc_plan_goal2'); if (g && $('goal')) $('goal').value = g; } catch (_) {}
+try { const g = localStorage.getItem('rc_plan_goal2'); if (g && $('goal') && [...$('goal').options].some(o => o.value === g)) $('goal').value = g; } catch (_) {}
 if ($('goal')) $('goal').onchange = () => { try { localStorage.setItem('rc_plan_goal2', $('goal').value); } catch (_) {} };
 try { const g = localStorage.getItem('rc_plan_spare'); if (g != null && $('spare')) $('spare').value = g; } catch (_) {}
 if ($('spare')) $('spare').onchange = () => { try { localStorage.setItem('rc_plan_spare', $('spare').value); } catch (_) {} };
@@ -556,6 +556,54 @@ function driverFits(d, iv, list) {
   return { ok: true, sameShift: sh.length > 1, working: list.length > 0, prevEnd: prev.length ? Math.max(...prev.map(x => x.to)) : -1e9,
            driveLeft: H.drive - drive, dutyLeft: H.duty - span, loads: sh.filter(x => x !== iv).map(x => x.load_no).filter(Boolean), week, dot };
 }
+// ── Each driver's hours left, used while planning ─────────────────────
+// Before the plan is made, every available driver gets what they have left today: the company's daily
+// limits, less what the ELD says they've used (a plan for today), and never more than is left of their
+// 60 / 70-hour week. A driver still resting from last night's load starts 10 hours after it ended; a
+// driver already on another load today is left out. Trucks are then paired with drivers — the most hours
+// left first — so the planner builds each route around the hours of the driver who will run it, and
+// among equal plans uses the least-worked drivers first. With no drivers set up, the planner uses the
+// company's limits for every truck, as before.
+function driverPool() {
+  const H = { drive: CAR.plan_max_drive_h * 60, duty: CAR.plan_max_duty_h * 60 }, out = [];
+  DRIVERS.forEach(d => {
+    const list = DRV.get(d.id) || [];
+    if (list.some(x => !x.known || x.from >= 0 || x.to > 1440)) return;          // on a load today (or unknown times)
+    const rest = list.reduce((a, x) => Math.max(a, x.to + 600), -1e9);           // 10-hour break after last night's load
+    if (rest > 1440 - 120) return;
+    const dot = (d.hos_rule || 'company') !== 'none', e = dot ? ELD[d.id] : null;
+    let drive = H.drive, duty = H.duty, week = null, used = 0;
+    if (e) { if (e.drive_left_min != null) drive = Math.min(drive, e.drive_left_min); if (e.shift_left_min != null) duty = Math.min(duty, e.shift_left_min); }
+    const cyc = dot ? cycleOf(d) : null;
+    if (cyc) {
+      if (e && e.cycle_left_min != null) { const paper = Object.entries(PAPER[d.id] || {}).reduce((a, [k, m]) => a + (+k < cyc.days ? m : 0), 0); week = e.cycle_left_min - paper; }
+      else { used = weekUsed(d, cyc).min; week = cyc.hours * 60 - used; }
+      if (e && e.cycle_left_min != null) used = cyc.hours * 60 - week;
+      duty = Math.min(duty, week);
+    }
+    if (duty < 60 || drive < 30) return;                                        // not enough left for a route
+    out.push({ d, drive, duty, week, used, start: rest > 0 ? rest : null });
+  });
+  return out.sort((a, b) => b.duty - a.duty || a.used - b.used);
+}
+function bindDrivers(fleet) {
+  fleet.forEach(u => { u.planDriver = u.planDriver2 = null; u.dlim = null; });
+  const pool = driverPool(); if (!pool.length) return { pool, spare: fleet.length };
+  const take = (id) => { const i = id ? pool.findIndex(p => p.d.id === id) : 0; return i < 0 ? null : pool.splice(i, 1)[0]; };
+  const have = pool.length;
+  // a load that already has its driver keeps them; teams next (two each); then the rest in fleet order
+  fleet.forEach(u => { if (u.load && u.load.driver_id && !TEAM.has(u.key)) { const p = take(u.load.driver_id); if (p) { u.planDriver = p.d.id; u.dlim = p; } } });
+  fleet.filter(u => TEAM.has(u.key)).forEach(u => { if (pool.length >= 2) { const a = take(), b = take(); u.planDriver = a.d.id; u.planDriver2 = b.d.id; u.dlim = { team: true, a, b }; } });
+  fleet.forEach(u => { if (!u.planDriver && pool.length) { const p = take(); u.planDriver = p.d.id; u.dlim = p; } });
+  return { pool: have, spare: fleet.filter(u => !u.planDriver).length };
+}
+// Under the plan: whose hours it was planned on, who is short, and trucks that sat out for want of a driver
+function hoursNote() {
+  const B = PLAN.bind; if (!B || !B.pool) return '';
+  const H = CAR.plan_max_duty_h * 60, short = PLAN.fleet.filter(u => u.dlim && !u.dlim.team && u.dlim.duty < H - 1)
+    .map(u => `${esc(u.dlim.d.full_name)} ${hrs(u.dlim.duty)}${u.dlim.week != null && u.dlim.week <= u.dlim.duty + 1 ? ' (week)' : ''}`);
+  return `<div class="mini" style="margin:6px 2px">Planned on each driver's own hours left today and this week (${B.pool} driver${B.pool === 1 ? '' : 's'} free; the least-worked first).${short.length ? ` Short on hours: ${short.join(', ')}.` : ''}${B.spare ? ` ${PLAN.result.unassigned.length ? '<span class="warn">' : '<span>'}${B.spare} ticked truck${B.spare === 1 ? '' : 's'} had no driver free, so ${B.spare === 1 ? 'it wasn\'t' : 'they weren\'t'} used.</span>` : ''}</div>`;
+}
 function assignDrivers(r, fleet) {
   const busy = new Map([...DRV].map(([k, v]) => [k, v.slice()])), out = {};
   const lighter = (a, b) => ((a.c.week ? a.c.week.used : 0) - (b.c.week ? b.c.week.used : 0));   // least-worked this week first
@@ -566,9 +614,10 @@ function assignDrivers(r, fleet) {
     const pickOne = (skip) => {
       const cands = DRIVERS.filter(d => d.id !== skip).map(d => ({ d, c: driverFits(d, iv, busy.get(d.id) || []) })).filter(x => x.c.ok);
       const keep = !skip && u.load && u.load.driver_id && cands.find(x => x.d.id === u.load.driver_id);
+      const bound = cands.find(x => x.d.id === (skip ? u.planDriver2 : u.planDriver));   // the driver whose hours this route was planned on
       const working = cands.filter(x => x.c.sameShift).sort((a, b) => b.c.prevEnd - a.c.prevEnd);
       const rested = cands.filter(x => !x.c.sameShift && x.c.working).sort(lighter), fresh = cands.filter(x => !x.c.working && !used.has(x.d.id)).sort(lighter);
-      return keep || (team ? null : working[0]) || rested[0] || fresh[0] || null;
+      return keep || bound || (team ? null : working[0]) || rested[0] || fresh[0] || null;
     };
     const pick = pickOne(null), pick2 = team && pick ? pickOne(pick.d.id) : null;
     out[rt.vehicle] = pick ? { driver: pick.d, ...pick.c, team, driver2: pick2 ? pick2.d : null, c2: pick2 ? pick2.c : null,
@@ -641,7 +690,13 @@ $('run').onclick = async () => {
       : `Drive times: ${have} of ${legs} from Google (car time × ${CAR.plan_truck_factor} for a truck)${got.asked ? `, ${got.found} of them asked for just now` : ''}${have < legs ? `; the rest estimated (${CAR.plan_local_mph} mph under ${CAR.plan_local_miles} mi, ${CAR.plan_mph} mph beyond)` : ''}.${got.error ? ` Google: ${got.error}` : ''}`;
   }
   const C = COST();
-  const trucks = fleet.map(u => ({ id: u.key, cap: u.cap, cap2: u.cap2, runs: MULTI() && u.trailer2 ? 8 : 1, reload: RELOAD_MIN(),
+  // each truck planned on the hours of the driver who will run it (a truck with no driver free sits out)
+  const bind = bindDrivers(fleet), crewed = bind.pool ? fleet.filter(u => u.planDriver) : fleet;
+  const lim = (u, t) => { const L = u.dlim; if (!L) return t;
+    if (L.team) return Object.assign(t, { maxDrive: Math.min(t.maxDrive, L.a.drive + L.b.drive), maxDuty: Math.min(t.maxDuty, 2 * Math.min(L.a.duty, L.b.duty)),
+      start: Math.max(t.start, L.a.start || 0, L.b.start || 0), pref: (L.a.used + L.b.used) / 60 * 0.5 });
+    return Object.assign(t, { maxDrive: Math.min(t.maxDrive, L.drive), maxDuty: Math.min(t.maxDuty, L.duty), start: Math.max(t.start, L.start || 0), pref: L.used / 60 * 0.5 }); };
+  const trucks = crewed.map(u => lim(u, { id: u.key, cap: u.cap, cap2: u.cap2, runs: MULTI() && u.trailer2 ? 8 : 1, reload: RELOAD_MIN(),
     dayCost: u.truck.unit_type === 'tractor' ? C.tractor + (u.trailer ? C.trailer : 0) : C.straight, trailer2Cost: u.trailer2 ? C.trailer : 0,
     start: Math.max(leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
     latestEnd: u.gap && u.gap.to != null ? u.gap.to : null, maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60,
@@ -651,7 +706,7 @@ $('run').onclick = async () => {
   await new Promise(res => setTimeout(res, 30));          // let the message show before the planner takes the page
   const t0 = performance.now(); let r;
   try { r = RC_PLANNER.plan(dep, stops, trucks, params()); } finally { $('run').disabled = false; $('run-msg').textContent = ''; }
-  PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal, multi: MULTI(), spare: params().preferSpare };
+  PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal, multi: MULTI(), spare: params().preferSpare, bind };
   PLAN.drivers = assignDrivers(r, fleet);
   drawResult();
 };
@@ -660,6 +715,7 @@ $('run').onclick = async () => {
 function notPlaced(list, byStop) {
   const spare = FLEET.filter(u => !u.noTrailer && !(u.gap && u.gap.none) && OFF.has(u.key)).length, buf = Number(CAR.plan_window_buffer || 0);
   const fix = (why) => {
+    if (/no room left/.test(why) && PLAN.bind && PLAN.bind.spare) return `${PLAN.bind.spare} truck${PLAN.bind.spare === 1 ? ' is' : 's are'} free but no driver is; add a driver for the day${PLAN.multi ? '' : ', or tick "More than one load per tractor"'}`;
     if (/no room left/.test(why)) return spare > 0 ? `tick another truck (${spare} not ticked) and plan again` : 'every truck is already in use; move it to another day or add a truck';
     if (/bigger than any truck/.test(why)) return 'the order is more than the biggest trailer holds; split it over two stops or use a bigger trailer';
     if (/window/.test(why)) return `the window is too early or too short to reach with the ${buf}-min margin; check the window, or trucks' earliest leave time on Setup`;
@@ -692,11 +748,12 @@ function drawResult() {
   // how full the loads go out: each load by whichever limit it is closest to (pallets, weight or cube)
   const fills = used.flatMap(x => runsOf(x).filter(g => g.stops.length).map(g => Math.max(0, ...DIMS.map(([k]) => g.cap && g.cap[k] && g.load ? (g.load[k] || 0) / g.cap[k] : 0))));
   const fill = fills.length ? Math.round(100 * fills.reduce((a, b) => a + b, 0) / fills.length) : null;
-  $('result').innerHTML = `<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ...(PLAN.multi ? [['Loads', used.reduce((a, x) => a + runsOf(x).length, 0) + '']] : []), ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ...(fill != null ? [['Trailers filled', fill + '% average']] : []), ...(r.cost != null ? [['Cost to run the day', money(r.cost)]] : []), ['Stops not placed', r.unassigned.length + '']]
+  $('result').innerHTML = `<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ...(PLAN.multi ? [['Loads', used.reduce((a, x) => a + runsOf(x).length, 0) + '']] : []), ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ...(fill != null ? [['Trailers filled', fill + '% average']] : []), ['Driver hours', hrs(used.reduce((a, x) => a + x.duty * (x.crew || 1), 0))], ...(r.cost != null ? [['Cost to run the day', money(r.cost)]] : []), ['Stops not placed', r.unassigned.length + '']]
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
     ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
+    ${hoursNote()}
     ${CAR.plan_window_buffer ? `<div class="mini" style="margin:6px 2px">${PLAN.spare ? `Aiming for ${Number(CAR.plan_window_buffer) + PLAN.spare} min before each window closes where it costs little. ` : ''}Every stop is planned to arrive at least ${CAR.plan_window_buffer} min before its window closes${PLAN.result.routes.some(x => (x.times || []).some(t => t.tight)) ? ' — except the ones marked <span class="warn">tight</span>, which can\'t be reached with that much spare' : ''}.</div>` : ''}
-    <div class="mini" style="margin:6px 2px">${PLAN.goal === 'cost' ? `Planned for the <b>lowest cost to the customer</b>: the fewest trucks and driver hours, the fullest trailers, then the fewest miles — priced with your figures on Setup: equipment days (tractor ${money(COST().tractor)}, straight truck ${money(COST().straight)}, trailer ${money(COST().trailer)}), drivers' on-duty hours (${money(COST().driverHr)}/h) and miles ($${COST().perMile}/mi) — every stop on time with its margin, every driver within hours. Change the figures on Setup.` : PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible (tractors first, then the fewest loads), then the fewest miles for those trucks.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}${PLAN.multi ? ` A tractor can come back to the DC, drop its trailer and hook a loaded one (${RELOAD_MIN()} min) for another load; any wait there is paid driver time, so it's in the cost. The same driver keeps the tractor all day, with an hour of driving and on-duty time kept spare.` : ''}</div>
+    <div class="mini" style="margin:6px 2px">${PLAN.goal === 'cost' ? `Planned for the <b>lowest cost to the customer</b>: the fewest trucks and driver hours, the fullest trailers, then the fewest miles — priced with your figures on Setup: equipment days (tractor ${money(COST().tractor)}, straight truck ${money(COST().straight)}, trailer ${money(COST().trailer)}), drivers' on-duty hours (${money(COST().driverHr)}/h) and miles ($${COST().perMile}/mi) — every stop on time with its margin, every driver within hours. Change the figures on Setup.` : PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible (tractors first, then the fewest loads), then the fewest miles for those trucks.' : PLAN.goal === 'hours' ? 'Planned for the <b>fewest driver hours</b>: the shortest total time on duty across all drivers (a team counts both), every stop on time, within capacity and hours. It may use more trucks and drivers, each on a shorter day — for when drivers are short on hours.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}${PLAN.multi ? ` A tractor can come back to the DC, drop its trailer and hook a loaded one (${RELOAD_MIN()} min) for another load; any wait there is paid driver time, so it's in the cost. The same driver keeps the tractor all day, with an hour of driving and on-duty time kept spare.` : ''}</div>
     ${r.unassigned.length ? notPlaced(r.unassigned, byStop) : ''}
     <div class="routes">${used.map(rt => { const u = unitOf(rt.vehicle), overH = rt.drive > CAR.plan_max_drive_h * 60;
       return `<div class="card"><header><h2>${esc(u.name)}</h2><span class="sp"></span><span class="mini">${u.load ? 'on load ' + esc(u.load.load_no) : ''}</span></header><div class="pad">

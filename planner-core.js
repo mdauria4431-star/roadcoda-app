@@ -13,7 +13,7 @@
 //              maxDrive (minutes, e.g. 660 = 11 h), maxDuty (minutes, e.g. 840 = 14 h) }
 //            runs (loads it may run in the day, drop and hook at the DC between), reload (drop and hook at the DC, min), maxDc (optional cap on time at the DC),
 //            cap2 (the second trailer), drivers (2 = a team: the page gives it a team's hours), dayCost, trailer2Cost }
-//   params:  { mph, roadFactor, returnToStart, buffer (min before a window closes), goal ('cost' | 'trucks' | 'miles'),
+//   params:  { mph, roadFactor, returnToStart, buffer (min before a window closes), goal ('cost' | 'trucks' | 'hours' | 'miles'),
 //              costs: { driverHr, perMile } — with them, plans are compared on what the day costs to run }
 (function (root) {
   const DIMS = ['pallets', 'weight', 'cube', 'pieces'];
@@ -115,7 +115,7 @@
     if (v.latestEnd != null && lastReal >= 0 && t > v.latestEnd + 1e-9) return null;   // must be back for its next load
     if (hard && !isFinite(t)) return null;                // a stop with no map point can't be driven to
     const out = { miles, drive, wait, start, duty: t - start, end: t, load: loads[0], loads, late, times, reloads, dcWait, reload: reloads[0] || null,
-             runMiles, runStops, stops: runStops.reduce((a, x) => a + x, 0) };
+             runMiles, runStops, stops: runStops.reduce((a, x) => a + x, 0), crew: v.drivers || 1, pref: v.pref || 0 };
     if (COSTS) out.dollars = dayCost(out, v);
     return out;
   }
@@ -134,6 +134,8 @@
   // What a route costs: its miles, plus waiting time counted like driving time (a minute waiting
   // = the miles a truck covers in a minute), plus lateness weighed heavily (re-order only)
   let COST_MPH = 45, COSTS = null, SPARE_T = 0;
+  // fewest driver hours: every driver's on-duty minutes (a team counts both), a sliver of cost as the tie-break
+  const hoursObj = (e) => e.stops ? e.duty * (e.crew || 1) + cost(e) * 0.001 : 0;
   const short = (e) => { let m = 0; for (const t of e.times) if (t.spare != null && t.spare < SPARE_T) m += SPARE_T - Math.max(0, t.spare); return m; };
   // What it costs to run a route for the day (params.costs, the company's figures): the truck's day and
   // its first trailer's day (vehicle.dayCost), a second trailer's day when it runs more than one load
@@ -146,7 +148,7 @@
   }
   const cost = (e) => {
     const lateC = e.late.reduce((a, x) => a + x.minutes, 0) * 5;
-    if (COSTS) return e.dollars + lateC * ((COSTS.perMile || 1)) + short(e) * 0.4;   // dollars (+40¢ a minute short of the wanted spare); waiting is paid through the driver's hours
+    if (COSTS) return e.dollars + lateC * ((COSTS.perMile || 1)) + short(e) * 0.4 + (e.stops ? e.pref || 0 : 0);   // dollars (+40¢ a minute short of the wanted spare); waiting is paid through the driver's hours
     return e.miles + (e.wait || 0) * COST_MPH / 60 + lateC + short(e) * 0.15
       + (e.reloads || []).reduce((a, r) => a + (r.leave - r.arrive) * COST_MPH / 60 + 30, 0);
   };
@@ -228,20 +230,23 @@
     const n = ctx.stops.length; if (!n || late()) return { routes, un: unIdx };
     let seedN = 1234567; const rnd = () => { seedN = (seedN * 1103515245 + 12345) & 0x7fffffff; return seedN / 0x7fffffff; };
     // what is being cut: dollars (or the unpriced route cost) — or, on fewest miles, the miles themselves
-    const obj = (e) => goal === 'miles' ? e.miles + cost(e) * 0.02 : cost(e);   // (a sliver of cost: no extra truck to save a mile or two)
+    const obj = (e) => goal === 'miles' ? e.miles + cost(e) * 0.02 : goal === 'hours' ? hoursObj(e) : cost(e);   // (a sliver of cost: no extra truck to save a mile or two)
     const rc = (r, k) => { if (!realCount(r)) return 0; const e = evalRoute(ctx, r, vehicles[k], true); return e ? obj(e) : Infinity; };
+    // on driver hours a plan is judged on its settled times (a truck leaves as late as its stops allow, so
+    // waiting that can be slept off at home isn't counted); stops are still slotted in on the quick figure
+    const judge = goal === 'hours' ? (r, k) => { if (!realCount(r)) return 0; if (!evalRoute(ctx, r, vehicles[k], true)) return Infinity; const e = settle(ctx, r, vehicles[k]); return e ? hoursObj(e) : Infinity; } : rc;
     const sig = vehicles.map(v => JSON.stringify(Object.assign({}, v, { id: null })));   // idle trucks alike in every setting
     // loads on a route: one, plus one per DC marker with a stop on each side of it
     const loadsOn = (r) => { let n = 0, run = 0; for (const i of r) { if (i === RELOAD) { if (run) { n++; run = 0; } } else run++; } return n + (run ? 1 : 0); };
     const measure = (rs, cs, un) => ({ miss: un.length, trucks: goal === 'trucks' ? rs.filter(r => realCount(r)).length * 1000 + rs.reduce((a, r) => a + loadsOn(r), 0) : 0, c: cs.reduce((a, b) => a + b, 0) });
     const lt = (a, b) => a.miss < b.miss || (a.miss === b.miss && (a.trucks < b.trucks || (a.trucks === b.trucks && a.c < b.c - 1e-6)));
-    let cur = routes.map(r => r.slice()), cc = cur.map(rc), cu = unIdx.slice(), cm = measure(cur, cc, cu);
+    let cur = routes.map(r => r.slice()), cc = cur.map(judge), cq = cur.map(rc), cu = unIdx.slice(), cm = measure(cur, cc, cu);
     let best = cur.map(r => r.slice()), bu = cu.slice(), bm = cm;
     const maxIt = 60 * n + 2000, patience = Math.max(400, (ctx.p.patience || 8) * n);
     const near = (a) => ctx.stops.map((_, j) => j).sort((x, y) => ctx.miles(a + 1, x + 1) - ctx.miles(a + 1, y + 1));
     const nearCache = new Map(), nearOf = (a) => nearCache.get(a) || (nearCache.set(a, near(a)), nearCache.get(a));
     for (let it = 0, stale = 0; it < maxIt && stale < patience && !late() && Date.now() < until; it++, stale++) {
-      const trial = cur.map(r => r.slice()), tc = cc.slice(), pool = cu.slice(), out = new Set();
+      const trial = cur.map(r => r.slice()), tc = cc.slice(), tq = cq.slice(), pool = cu.slice(), out = new Set(), changed = new Set();
       const where = new Map(); trial.forEach((r, k) => r.forEach(i => { if (i >= 0) where.set(i, k); }));
       const placed = [...where.keys()]; if (!placed.length && !pool.length) break;
       const q = 1 + Math.floor(rnd() * Math.min(40, Math.max(3, Math.ceil(n * 0.15))));
@@ -258,7 +263,7 @@
       }
       const touched = new Set([...out].map(i => where.get(i)));
       let bad = false;
-      for (const k of touched) { trial[k] = trial[k].filter(i => !out.has(i)); tc[k] = rc(trial[k], k); if (tc[k] === Infinity) bad = true; }
+      for (const k of touched) { trial[k] = trial[k].filter(i => !out.has(i)); tq[k] = rc(trial[k], k); if (tq[k] === Infinity) bad = true; changed.add(k); }
       if (bad) continue;
       // put them back, in one of a few orders, each at its cheapest legal place
       const back = [...pool, ...out], ord = rnd();
@@ -269,7 +274,7 @@
       for (const si of back) {
         let b = null; const triedEmpty = new Set();
         for (let k = 0; k < trial.length; k++) {
-          if (tc[k] === Infinity) continue;
+          if (tq[k] === Infinity) continue;
           const empty = !realCount(trial[k]);
           if (empty) { if (triedEmpty.has(sig[k])) continue; triedEmpty.add(sig[k]); }
           const open = empty && goal === 'trucks' ? 1e6 : 0;
@@ -277,20 +282,21 @@
             if (rnd() < 0.01) continue;                   // skip a spot now and then: keeps the search moving
             const cand = trial[k].slice(0, pos).concat([si], trial[k].slice(pos));
             const e = evalRoute(ctx, cand, vehicles[k], true); if (!e) continue;
-            const c = obj(e), add = c - tc[k] + open;
+            const c = obj(e), add = c - tq[k] + open;
             if (!b || add < b.add) b = { k, cand, c, add };
           }
         }
-        if (b) { trial[b.k] = b.cand; tc[b.k] = b.c; } else left.push(si);
+        if (b) { trial[b.k] = b.cand; tq[b.k] = b.c; changed.add(b.k); } else left.push(si);
       }
+      for (const k of changed) tc[k] = judge === rc ? tq[k] : judge(trial[k], k);
       const tm = measure(trial, tc, left);
       const T = accept * Math.max(0, 1 - it / maxIt);   // by count, not the clock: same day, same plan (unless the time limit cuts it)
       const ok = tm.miss < bm.miss || (tm.miss === bm.miss && (tm.trucks < bm.trucks || (tm.trucks === bm.trucks && tm.c <= bm.c * (1 + T))));
       if (!ok) continue;
-      cur = trial; cc = tc; cu = left; cm = tm;
+      cur = trial; cc = tc; cq = tq; cu = left; cm = tm;
       if (lt(tm, bm)) { best = trial.map(r => r.slice()); bu = left.slice(); bm = tm; stale = 0; }
     }
-    if (goal !== 'miles') improveUsed(ctx, best, vehicles);   // tidy the trucks in use; never re-opens an emptied one
+    if (goal === 'cost' || goal === 'trucks') improveUsed(ctx, best, vehicles);   // tidy the trucks in use; never re-opens an emptied one
     return { routes: best, un: bu };
   }
 
@@ -302,7 +308,7 @@
           if (r[x] === RELOAD) { if (tm && !tm.skip && tm.arrive != null) { runs.push([]); rt.push([]); } return; }
           runs[runs.length - 1].push(ctx.stops[r[x]].id); rt[rt.length - 1].push(tm); });
         return { vehicle: vehicles[k].id, _seq: r.slice(), stops: r.filter(i => i >= 0).map(i => ctx.stops[i].id), runs, runTimes: rt, reloads: e ? e.reloads : [],
-                 miles: e ? e.miles : 0, drive: e ? e.drive : 0, duty: e ? e.duty : 0, end: e ? e.end : null,
+                 miles: e ? e.miles : 0, drive: e ? e.drive : 0, duty: e ? e.duty : 0, crew: vehicles[k].drivers || 1, end: e ? e.end : null,
                  start: e ? e.start : null, wait: e ? e.wait : 0, loads: e ? e.loads : [], cost: e && COSTS ? e.dollars : null,
                  costParts: e && COSTS && e.stops ? { equipment: (vehicles[k].dayCost || 0) + (e.reloads.length ? (vehicles[k].trailer2Cost || 0) : 0), driver: e.duty / 60 * (COSTS.driverHr || 0) * (vehicles[k].drivers || 1), miles: e.miles * (COSTS.perMile || 0) } : null,
                  runMiles: e ? e.runMiles.filter((m, g) => e.runStops[g]) : [], cap2: vehicles[k].cap2 || vehicles[k].cap || {},
@@ -335,10 +341,12 @@
     // 'cost': the lowest cost to run the day (equipment, drivers' hours, miles), every stop on time with
     // its margin and every driver within hours; among equal costs the fewest trucks. Both ways of
     // building a plan are tried, at 1, 2, 3 … loads per tractor.
-    const one = (vs) => goal === 'cost' || goal === 'miles' ? [planMiles(depot, stops, vs, params), planFewestTrucks(depot, stops, vs, params)]
+    const one = (vs) => goal === 'cost' || goal === 'miles' || goal === 'hours' ? [planMiles(depot, stops, vs, params), planFewestTrucks(depot, stops, vs, params)]
       : [planFewestTrucks(depot, stops, vs, params)];
     const loadsOf = (r) => r.routes.filter(x => x.stops.length).reduce((a, x) => a + x.runs.length, 0), trucksOf = (r) => r.routes.filter(x => x.stops.length).length;
+    const crewMin = (r) => Math.round(r.routes.filter(x => x.stops.length).reduce((a, x) => a + x.duty * (x.crew || 1), 0));
     const score = (r) => goal === 'miles' ? [r.unassigned.length, r.miles]
+      : goal === 'hours' ? [r.unassigned.length, crewMin(r), trucksOf(r), r.miles]
       : goal === 'cost' && priced ? [r.unassigned.length, Math.round(r.cost), trucksOf(r), r.miles]
       : [r.unassigned.length, trucksOf(r), loadsOf(r), r.miles];   // fewest trucks: tractors first, then loads (trailers)
     const better = (p, q) => { for (let i = 0; i < p.length; i++) { if (p[i] < q[i] - 1e-6) return true; if (p[i] > q[i] + 1e-6) return false; } return false; };
@@ -347,7 +355,8 @@
     const polish = (r, vs) => {
       if (!priced) return r;          // on every goal: a truck is only emptied when the day gets cheaper
       const ctx = makeCtx(depot, stops, params), routes = r.routes.map(x => x._seq.slice());
-      const total = (rs) => rs.reduce((a, x, k) => { const e = evalRoute(ctx, x, vs[k], true); return a + (e ? cost(e) : 1e12); }, 0);
+      const total = (rs) => rs.reduce((a, x, k) => { const e = evalRoute(ctx, x, vs[k], true);
+        return a + (!e ? 1e12 : goal === 'hours' ? hoursObj(settle(ctx, x, vs[k]) || e) : cost(e)); }, 0);
       let cur = total(routes);
       for (let guard = 0; guard < vs.length; guard++) {
         const used = routes.map((x, k) => k).filter(k => realCount(routes[k]))
@@ -378,7 +387,7 @@
       const rs = one(vs).map(r => Object.assign(polish(r, vs), { vs }));
       // teams cost two drivers: on cost, also plan without them (a team is kept only where it pays or is needed)
       const solo = vs.filter(v => !(v.drivers > 1));
-      if (goal === 'cost' && priced && solo.length && solo.length < vs.length) rs.push(...one(solo).map(r => Object.assign(polish(r, solo), { vs: solo })));
+      if ((goal === 'cost' || goal === 'hours') && priced && solo.length && solo.length < vs.length) rs.push(...one(solo).map(r => Object.assign(polish(r, solo), { vs: solo })));
       for (const r of rs) { const sc = score(r); if (!best || better(sc, bestS)) { best = r; bestS = sc; best.loadsPerTractor = cap; bestVs = r.vs || vs; } }
       if (cap > 1 && !rs.some(r => r.routes.some(x => x.runs.length === cap))) break;   // no tractor used the extra load: more won't change it
       if (late()) break;
