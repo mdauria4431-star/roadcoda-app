@@ -144,7 +144,7 @@ const hhmm = (m0) => { if (m0 == null) return ''; const m = ((Math.round(m0) % 1
 const hrs = (m) => (m / 60).toFixed(1) + ' h';
 const DIMS = [['pallets', 'Pallets', 'cap_pallets'], ['weight', 'Weight lb', 'cap_weight_lb'], ['cube', 'Cube ft³', 'cap_cube_ft'], ['pieces', 'Pieces', 'cap_pieces']];
 const canEdit = () => !window.RC_ACCESS || window.RC_ACCESS.can('dispatch', 'edit');
-let TAB = 'plan', CAR = {}, CUSTS = [], EQ = [], UNITS = {}, LOADS = [], PLAN = null, tt = null, BUSY = new Map(), FLEET = [], OFF = new Set(), DRV = new Map(), DRIVERS = [], ELD = {}, DRIVERS_WHY = '';
+let ALLCUSTS = [], TAB = 'plan', CAR = {}, CUSTS = [], EQ = [], UNITS = {}, LOADS = [], PLAN = null, tt = null, BUSY = new Map(), FLEET = [], OFF = new Set(), DRV = new Map(), DRIVERS = [], ELD = {}, DRIVERS_WHY = '';
 function toast(h, err) { const t = $('toast'); t.className = 'toast' + (err ? ' err' : ''); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, err ? 9000 : 6000); }
 const fail = (e) => toast(esc(e.message || e), true);
 
@@ -161,8 +161,11 @@ async function start() {
   const [c, cu, eq, up] = await Promise.all([
     sb.from('carriers').select('*').maybeSingle(),
     sb.from('customers').select('id, name, start_name, start_address, start_lat, start_lon, parent_customer_id').order('name'),
-    sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces').order('unit_no'),
+    sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces, home_customer_id').order('unit_no'),
     sb.from('unit_profiles').select('*')]);
+  if (eq.error && /home_customer_id/.test(eq.error.message))   // before 129: no home account on trucks yet
+    eq.data = (await sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces').order('unit_no')).data;
+  ALLCUSTS = cu.data || [];
   if (c.error) { $('app').innerHTML = `<div class="card pad error">${esc(c.error.message)} — run 84_route_planning.sql in the SQL Editor.</div>`; return; }
   CAR = c.data || {}; CUSTS = (cu.data || []).filter(x => !x.parent_customer_id); EQ = eq.data || []; (up.data || []).forEach(u => UNITS[u.unit_type.toLowerCase()] = u);
   if ($('multi')) $('multi').checked = !!CAR.plan_multi_run;
@@ -208,7 +211,7 @@ async function loadDay() {
     [l.truck_id, l.trailer_id].filter(Boolean).forEach(id => { if (!BUSY.has(id)) BUSY.set(id, []); BUSY.get(id).push(iv); });
     if (l.driver_id) { if (!DRV.has(l.driver_id)) DRV.set(l.driver_id, []); DRV.get(l.driver_id).push(iv); } });
   // drivers who can take a route, and their ELD hours when the plan is for today
-  let dq = await sb.from('drivers').select('id, full_name, driver_type, is_guest, hos_rule').eq('active', true).order('full_name');
+  let dq = await sb.from('drivers').select('id, full_name, driver_type, is_guest, hos_rule, home_customer_id').eq('active', true).order('full_name');
   if (dq.error && /hos_rule/.test(dq.error.message)) dq = await sb.from('drivers').select('id, full_name, driver_type, is_guest').eq('active', true).order('full_name');   // before 109
   DRIVERS = (dq.data || []).filter(x => !x.is_guest && x.driver_type !== 'yard');
   DRIVERS_WHY = dq.error ? 'the drivers list could not be read: ' + dq.error.message
@@ -622,6 +625,13 @@ function driverFits(d, iv, list) {
 // left first — so the planner builds each route around the hours of the driver who will run it, and
 // among equal plans uses the least-worked drivers first. With no drivers set up, the planner uses the
 // company's limits for every truck, as before.
+// ── Dedicated accounts ──────────────────────────────────────────────
+// Trucks, trailers (129) and drivers whose home account is this customer (or one of its locations) are
+// the account's own: the customer pays for them as a fixed charge. The planner uses them first, evens out
+// the assigned drivers' days, and brings in anything else only when they can't cover the work.
+const acctIds = () => { const c = $('cust').value; return new Set([c, ...ALLCUSTS.filter(x => x.parent_customer_id === c).map(x => x.id)]); };
+const ownUnit = (u, A) => !!((u.truck && A.has(u.truck.home_customer_id)) || (u.trailer && A.has(u.trailer.home_customer_id)));
+const ownDriver = (d, A) => !!(d && A.has(d.home_customer_id));
 function driverPool() {
   const H = { drive: CAR.plan_max_drive_h * 60, duty: CAR.plan_max_duty_h * 60 }, out = [];
   DRIVERS.forEach(d => {
@@ -642,7 +652,10 @@ function driverPool() {
     if (duty < 60 || drive < 30) return;                                        // not enough left for a route
     out.push({ d, drive, duty, week, used, start: rest > 0 ? rest : null });
   });
-  return out.sort((a, b) => b.duty - a.duty || a.used - b.used);
+  // the account's own drivers with a full day left first, then everyone else by hours left (so a driver short
+  // on hours doesn't tie up one of the account's trucks), then the least worked
+  const A = acctIds(), full = (p) => ownDriver(p.d, A) && p.duty >= Math.min(600, CAR.plan_max_duty_h * 60 - 60);
+  return out.sort((a, b) => full(b) - full(a) || b.duty - a.duty || ownDriver(b.d, A) - ownDriver(a.d, A) || a.used - b.used);
 }
 function bindDrivers(fleet) {
   fleet.forEach(u => { u.planDriver = u.planDriver2 = null; u.dlim = null; });
@@ -652,8 +665,34 @@ function bindDrivers(fleet) {
   // a load that already has its driver keeps them; teams next (two each); then the rest in fleet order
   fleet.forEach(u => { if (u.load && u.load.driver_id && !TEAM.has(u.key)) { const p = take(u.load.driver_id); if (p) { u.planDriver = p.d.id; u.dlim = p; } } });
   fleet.filter(u => TEAM.has(u.key)).forEach(u => { if (pool.length >= 2) { const a = take(), b = take(); u.planDriver = a.d.id; u.planDriver2 = b.d.id; u.dlim = { team: true, a, b }; } });
-  fleet.forEach(u => { if (!u.planDriver && pool.length) { const p = take(); u.planDriver = p.d.id; u.dlim = p; } });
+  const A = acctIds();   // the account's own trucks get drivers first
+  fleet.slice().sort((a, b) => ownUnit(b, A) - ownUnit(a, A)).forEach(u => { if (!u.planDriver && pool.length) { const p = take(); u.planDriver = p.d.id; u.dlim = p; } });
   return { pool: have, spare: fleet.filter(u => !u.planDriver).length };
+}
+// The first thing the dispatcher sees on a dedicated account: does the account's own fleet cover the day,
+// or are rentals needed — and proof that every truck, every driver's hours and extra loads were tried first
+function rentalBanner() {
+  const R = PLAN.rental; if (!R) return '';
+  const multi = R.multiOn ? ' <b>"More than one load per tractor" was turned on</b> so the account\'s own tractors could run extra loads.' : '';
+  if (R.none) return `<div class="card pad" style="border-color:var(--ok,#2e9e5b);margin-bottom:10px"><b class="ok">No rentals needed.</b> The account's own ${R.own} truck${R.own === 1 ? '' : 's'} carry every stop on time.${multi}</div>`;
+  const n = R.used.length, name = (id) => (PLAN.fleet.find(u => u.key === id) || {}).name || '';
+  return `<div class="card pad" style="border:2px solid var(--late);margin-bottom:10px"><div style="font-size:16px"><b>Rentals needed: ${n} truck${n === 1 ? '' : 's'}.</b></div>
+    <div style="margin-top:4px;line-height:1.5">The account's own trucks can't carry every stop (at best ${R.left} ${R.left === 1 ? 'is' : 'are'} left over), even with every one of them used, every free driver's hours used${R.multiTried ? ', and more than one load per tractor tried' : ''}.${multi}
+    This plan puts those stops on ${n === 1 ? 'a truck' : n + ' trucks'} from outside the account: <b>${esc(R.used.map(name).join(', '))}</b> (marked RENTAL below).<br>
+    <b>What to do:</b> arrange ${n === 1 ? 'a rental' : n + ' rentals'} (or use these spare trucks), then apply the plan.${R.multiTried && !PLAN.multi ? ' (More than one load per tractor was tried too — it didn\'t help with this day\'s windows.)' : ''}</div></div>`;
+}
+// Dedicated account: who's the account's own, how evenly they work, and any outside truck used
+function acctNote() {
+  if (!PLAN.dedicated) return '';
+  const F = PLAN.flags, used = new Set(PLAN.result.routes.filter(x => x.stops.length).map(x => x.vehicle));
+  const all = Object.values(F), nT = all.filter(t => t.fixedEquip).length, nD = all.filter(t => t.fixedDriver).length;
+  const out = all.filter(t => t.outside && used.has(t.id)), name = (id) => (PLAN.fleet.find(u => u.key === id) || {}).name || '';
+  const days = PLAN.result.routes.filter(x => x.stops.length && F[x.vehicle].fixedDriver).map(x => x.duty / (x.crew || 1));
+  const idle = all.filter(t => (t.fixedEquip || t.fixedDriver) && !used.has(t.id)).map(t => name(t.id));
+  const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  return `<div class="mini" style="margin:6px 2px"><b>Dedicated account:</b> ${n(nT, 'truck')} and ${n(nD, 'driver')} of this customer's own were free today. The customer already pays for them as a fixed charge, so the plan gives them the work first and keeps the drivers' days as even as the stops allow${days.length ? ` (${hrs(Math.min(...days))} to ${hrs(Math.max(...days))})` : ''}.`
+    + (out.length ? ` <span class="warn">${n(out.length, 'truck')} from outside the account ${out.length === 1 ? 'was' : 'were'} needed (${esc(out.map(t => name(t.id)).join(', '))}): the account's own couldn't carry every stop on time.${PLAN.multi ? '' : ' Tick "More than one load per tractor" so the account\'s own trucks can run a second load instead.'}</span>` : ' No trucks from outside the account were needed.')
+    + (idle.length ? ` Not used: ${esc(idle.join(', '))} — there wasn't enough work to give ${idle.length === 1 ? 'it' : 'them'} a route.` : '') + `</div>`;
 }
 // Orders split because no one truck holds them
 function splitNote() {
@@ -754,24 +793,61 @@ $('run').onclick = async () => {
     DRIVE_NOTE = error ? 'Drive times estimated (run 123_drive_times.sql for Google drive times).'
       : `Drive times: ${have} of ${legs} from Google (car time × ${CAR.plan_truck_factor} for a truck)${got.asked ? `, ${got.found} of them asked for just now` : ''}${have < legs ? `; the rest estimated (${CAR.plan_local_mph} mph under ${CAR.plan_local_miles} mi, ${CAR.plan_mph} mph beyond)` : ''}.${got.error ? ` Google: ${got.error}` : ''}`;
   }
-  const C = COST();
-  // each truck planned on the hours of the driver who will run it (a truck with no driver free sits out)
-  const bind = bindDrivers(fleet), crewed = bind.pool ? fleet.filter(u => u.planDriver) : fleet;
-  const lim = (u, t) => { const L = u.dlim; if (!L) return t;
-    if (L.team) return Object.assign(t, { maxDrive: Math.min(t.maxDrive, L.a.drive + L.b.drive), maxDuty: Math.min(t.maxDuty, 2 * Math.min(L.a.duty, L.b.duty)),
-      start: Math.max(t.start, L.a.start || 0, L.b.start || 0), pref: (L.a.used + L.b.used) / 60 * 0.5 });
-    return Object.assign(t, { maxDrive: Math.min(t.maxDrive, L.drive), maxDuty: Math.min(t.maxDuty, L.duty), start: Math.max(t.start, L.start || 0), pref: L.used / 60 * 0.5 }); };
-  const trucks = crewed.map(u => lim(u, { id: u.key, cap: u.cap, cap2: u.cap2, runs: MULTI() && u.trailer2 ? 8 : 1, reload: RELOAD_MIN(),
-    dayCost: u.truck.unit_type === 'tractor' ? C.tractor + (u.trailer ? C.trailer : 0) : C.straight, trailer2Cost: u.trailer2 ? C.trailer : 0,
-    start: Math.max(leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
-    latestEnd: u.gap && u.gap.to != null ? u.gap.to : null, maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60,
-    // a team: two drivers taking turns, so the truck can drive twice as long in a day (each driver's own 11 / 14 hours are theirs to split)
-    ...(TEAM.has(u.key) ? { drivers: 2, maxDrive: 2 * CAR.plan_max_drive_h * 60, maxDuty: 24 * 60 } : {}) })), dep = depot();
-  $('run').disabled = true; $('run-msg').textContent = stops.length > 60 ? 'Planning… a big day can take up to 15 seconds.' : 'Planning…';
-  await new Promise(res => setTimeout(res, 30));          // let the message show before the planner takes the page
-  const t0 = performance.now(); let r;
-  try { r = RC_PLANNER.plan(dep, stops, trucks, params()); } finally { $('run').disabled = false; $('run-msg').textContent = ''; }
-  PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal, multi: MULTI(), spare: params().preferSpare, bind };
+  // Trucks for the planner: each on the hours of the driver who will run it (a truck with no driver free
+  // sits out), flagged as the account's own or not when the customer is a dedicated account.
+  const A = acctIds();
+  const build = (list) => {
+    const C = COST(), bind = bindDrivers(list), crewed = bind.pool ? list.filter(u => u.planDriver) : list;
+    const lim = (u, t) => { const L = u.dlim; if (!L) return t;
+      if (L.team) return Object.assign(t, { maxDrive: Math.min(t.maxDrive, L.a.drive + L.b.drive), maxDuty: Math.min(t.maxDuty, 2 * Math.min(L.a.duty, L.b.duty)),
+        start: Math.max(t.start, L.a.start || 0, L.b.start || 0), pref: (L.a.used + L.b.used) / 60 * 0.5 });
+      return Object.assign(t, { maxDrive: Math.min(t.maxDrive, L.drive), maxDuty: Math.min(t.maxDuty, L.duty), start: Math.max(t.start, L.start || 0), pref: L.used / 60 * 0.5 }); };
+    const dedicated = crewed.some(u => ownUnit(u, A) || (u.dlim && !u.dlim.team && ownDriver(u.dlim.d, A)));
+    const acct = (u, t) => { if (!dedicated) return t;
+      const fe = ownUnit(u, A), fd = !!(u.dlim && (u.dlim.team ? ownDriver(u.dlim.a.d, A) && ownDriver(u.dlim.b.d, A) : ownDriver(u.dlim.d, A)));
+      return Object.assign(t, { fixedEquip: fe, fixedDriver: fd, outside: !fe && !fd }); };
+    const trucks = crewed.map(u => acct(u, lim(u, { id: u.key, cap: u.cap, cap2: u.cap2, runs: MULTI() && u.trailer2 ? 8 : 1, reload: RELOAD_MIN(),
+      dayCost: u.truck.unit_type === 'tractor' ? C.tractor + (u.trailer ? C.trailer : 0) : C.straight, trailer2Cost: u.trailer2 ? C.trailer : 0,
+      start: Math.max(leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
+      latestEnd: u.gap && u.gap.to != null ? u.gap.to : null, maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60,
+      // a team: two drivers taking turns, so the truck can drive twice as long in a day (each driver's own 11 / 14 hours are theirs to split)
+      ...(TEAM.has(u.key) ? { drivers: 2, maxDrive: 2 * CAR.plan_max_drive_h * 60, maxDuty: 24 * 60 } : {}) })));
+    return { list, bind, dedicated, trucks };
+  };
+  const dep = depot(), roomShort = (r) => r.unassigned.some(u => /no room left/.test(u.why || ''));
+  const run = async (b, limitMs) => { await new Promise(res => setTimeout(res, 30));    // let the message show before the planner takes the page
+    return RC_PLANNER.plan(dep, stops, b.trucks, Object.assign(params(), limitMs ? { timeLimitMs: limitMs } : {})); };
+  $('run').disabled = true; const msg = (t) => { $('run-msg').textContent = t; };
+  const t0 = performance.now(); let b, r, rental = null;
+  try {
+    // A dedicated account: plan on the account's own trucks first — every truck, every driver's hours, and
+    // more than one load per tractor — and bring in trucks from outside the account (rentals) only for the
+    // stops the account's fleet truly can't carry. The dispatcher is told what was tried and what's needed.
+    const own = fleet.filter(u => ownUnit(u, A)), others = fleet.filter(u => !ownUnit(u, A));
+    if (own.length && others.length) {
+      msg('Planning on the account\'s own trucks…');
+      b = build(own); r = await run(b);
+      let multiOn = false, multiTried = MULTI();
+      if (roomShort(r) && !MULTI() && own.some(u => u.truck.unit_type === 'tractor')) {
+        msg('Trying more than one load per tractor on the account\'s own trucks…');
+        $('multi').checked = true; multiOn = true; multiTried = true; buildFleet();
+        const f2 = ticked(), own2 = f2.filter(u => ownUnit(u, A)), b2 = build(own2), r2 = await run(b2);
+        if (!roomShort(r2) || r2.unassigned.length < r.unassigned.length) { b = b2; r = r2; fleet.splice(0, fleet.length, ...f2); }
+        else { $('multi').checked = false; multiOn = false; buildFleet(); }
+      }
+      if (roomShort(r)) {
+        const ownR = r, ownB = b;
+        msg('The account\'s own trucks can\'t carry every stop — adding trucks from outside the account…');
+        const fAll = ticked(); b = build(fAll); r = await run(b);
+        const used = r.routes.filter(x => x.stops.length && b.trucks.find(t => t.id === x.vehicle && !t.fixedEquip)).map(x => x.vehicle);
+        rental = used.length ? { tried: ownB.trucks.length, left: ownR.unassigned.filter(u => /no room left/.test(u.why || '')).length, used, multiOn, multiTried }
+                             : { none: true, multiOn, own: ownB.trucks.length };
+        fleet.splice(0, fleet.length, ...fAll);
+      } else rental = { none: true, multiOn, own: b.trucks.length };
+    } else { msg(stops.length > 60 ? 'Planning… a big day can take up to 15 seconds.' : 'Planning…'); b = build(fleet); r = await run(b); }
+  } finally { $('run').disabled = false; msg(''); }
+  PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal, multi: MULTI(), spare: params().preferSpare,
+           bind: b.bind, dedicated: b.dedicated, flags: Object.fromEntries(b.trucks.map(t => [t.id, t])), rental };
   PLAN.drivers = assignDrivers(r, fleet);
   drawResult();
 };
@@ -828,16 +904,17 @@ function drawResult() {
   // how full the loads go out: each load by whichever limit it is closest to (pallets, weight or cube)
   const fills = used.flatMap(x => runsOf(x).filter(g => g.stops.length).map(g => Math.max(0, ...DIMS.map(([k]) => g.cap && g.cap[k] && g.load ? (g.load[k] || 0) / g.cap[k] : 0))));
   const fill = fills.length ? Math.round(100 * fills.reduce((a, b) => a + b, 0) / fills.length) : null;
-  $('result').innerHTML = `<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ...(PLAN.multi ? [['Loads', used.reduce((a, x) => a + runsOf(x).length, 0) + '']] : []), ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ...(fill != null ? [['Trailers filled', fill + '% average']] : []), ['Driver hours', hrs(used.reduce((a, x) => a + x.duty * (x.crew || 1), 0))], ...(r.cost != null ? [['Cost to run the day', money(r.cost)]] : []), ['Stops not placed', r.unassigned.length + '']]
+  $('result').innerHTML = `${rentalBanner()}<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ...(PLAN.multi ? [['Loads', used.reduce((a, x) => a + runsOf(x).length, 0) + '']] : []), ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ...(fill != null ? [['Trailers filled', fill + '% average']] : []), ['Driver hours', hrs(used.reduce((a, x) => a + x.duty * (x.crew || 1), 0))], ...(r.cost != null ? [['Cost to run the day', money(r.cost)]] : []), ['Stops not placed', r.unassigned.length + '']]
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
     ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
+    ${acctNote()}
     ${hoursNote()}
     ${splitNote()}
     ${CAR.plan_window_buffer ? `<div class="mini" style="margin:6px 2px">${PLAN.spare ? `Aiming for ${Number(CAR.plan_window_buffer) + PLAN.spare} min before each window closes where it costs little. ` : ''}Every stop is planned to arrive at least ${CAR.plan_window_buffer} min before its window closes${PLAN.result.routes.some(x => (x.times || []).some(t => t.tight)) ? ' — except the ones marked <span class="warn">tight</span>, which can\'t be reached with that much spare' : ''}.</div>` : ''}
     <div class="mini" style="margin:6px 2px">${PLAN.goal === 'cost' ? `Planned for the <b>lowest cost to the customer</b>: the fewest trucks and driver hours, the fullest trailers, then the fewest miles — priced with your figures on Setup: equipment days (tractor ${money(COST().tractor)}, straight truck ${money(COST().straight)}, trailer ${money(COST().trailer)}), drivers' on-duty hours (${money(COST().driverHr)}/h) and miles ($${COST().perMile}/mi) — every stop on time with its margin, every driver within hours. Change the figures on Setup.` : PLAN.goal === 'trucks' ? 'Planned for the <b>fewest trucks</b>: every stop on time, within capacity and hours, on as few of the ticked trucks as possible (tractors first, then the fewest loads), then the fewest miles for those trucks.' : PLAN.goal === 'hours' ? 'Planned for the <b>fewest driver hours</b>: the shortest total time on duty across all drivers (a team counts both), every stop on time, within capacity and hours. It may use more trucks and drivers, each on a shorter day — for when drivers are short on hours.' : 'Planned for the <b>fewest miles</b>: every stop on time, within capacity and hours.'}${PLAN.multi ? ` A tractor can come back to the DC, drop its trailer and hook a loaded one (${RELOAD_MIN()} min) for another load; any wait there is paid driver time, so it's in the cost. The same driver keeps the tractor all day, with an hour of driving and on-duty time kept spare.` : ''}</div>
     ${r.unassigned.length ? notPlaced(r.unassigned, byStop) : ''}
     <div class="routes">${used.map(rt => { const u = unitOf(rt.vehicle), overH = rt.drive > CAR.plan_max_drive_h * 60;
-      return `<div class="card"><header><h2>${esc(u.name)}</h2><span class="sp"></span><span class="mini">${u.load ? 'on load ' + esc(u.load.load_no) : ''}</span></header><div class="pad">
+      return `<div class="card"${PLAN.rental && PLAN.flags[rt.vehicle] && !PLAN.flags[rt.vehicle].fixedEquip ? ' style="border-color:var(--warn,#d98a00)"' : ''}><header><h2>${esc(u.name)}</h2>${PLAN.rental && PLAN.flags[rt.vehicle] && !PLAN.flags[rt.vehicle].fixedEquip ? ' <span class="warn" style="margin-left:6px;font-weight:600">RENTAL / outside the account</span>' : ''}<span class="sp"></span><span class="mini">${u.load ? 'on load ' + esc(u.load.load_no) : ''}</span></header><div class="pad">
         <div style="margin-bottom:6px">Driver: ${driverTxt(PLAN.drivers[rt.vehicle])}</div>
         ${runsOf(rt).length > 1 ? '' : capRows(rt.load, rt.cap)}
         ${rt.costParts ? `<div class="mini" style="margin-top:6px"><b>${money(rt.cost)}</b> to run: equipment ${money(rt.costParts.equipment)} · driver${TEAM.has(rt.vehicle) ? 's (team)' : ''} ${money(rt.costParts.driver)} · miles ${money(rt.costParts.miles)}</div>` : ''}
