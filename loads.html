@@ -632,7 +632,9 @@ async function loadEtas(l, stops) {
     out.note = `ETAs need map points for ${c.start_lat == null ? "the start" : ''}${c.start_lat == null && missing ? ' and ' : ''}${missing ? missing + ' stop' + (missing === 1 ? '' : 's') : ''}. The Route planner looks them up ("Look up missing map points").`;
     return out;
   }
-  const mins = (t) => { if (!t) return null; const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
+  // minutes from midnight of the load's day (a window running past midnight closes the next day)
+  const base0 = new Date(l.service_date + 'T00:00:00').getTime();
+  const mins = (t) => { if (!t) return null; return Math.round((new Date(t).getTime() - base0) / 6e4); };
   const clock = (m) => new Date(2000, 0, 1, 0, Math.round(m)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   let [h, m] = String(P.plan_leave_at || '06:00').split(':').map(Number);
   const dep = { lat: c.start_lat, lng: c.start_lon };
@@ -640,7 +642,7 @@ async function loadEtas(l, stops) {
   const pl = (await sb.from('loads').select('plan_depart_at, plan_run').eq('id', l.id).maybeSingle()).data || {};
   if (pl.plan_depart_at) { const d = new Date(pl.plan_depart_at); h = d.getHours(); m = d.getMinutes(); }
   const runTxt = pl.plan_run > 1 ? `Load ${pl.plan_run} of the day for ${esc(l.equipment?.unit_no || 'its tractor')}, after a drop and hook at the DC. ` : '';
-  const pts = stops.map(s => ({ id: s.id, lat: s.delivery_locations.lat, lng: s.delivery_locations.lon, ws: mins(s.window_start), we: mins(s.window_end), service: P.plan_stop_min }));
+  const pts = stops.map(s => ({ id: s.id, lat: s.delivery_locations.lat, lng: s.delivery_locations.lon, ws: mins(s.window_start), we: (w => w != null && mins(s.window_start) != null && w < mins(s.window_start) ? w + 1440 : w)(mins(s.window_end)), service: P.plan_stop_min }));
   // real drive times for each leg of this load: remembered ones, and Google for any leg not asked before
   let leg = null, drive = '';
   if (window.RC_DRIVE && P.plan_truck_factor != null) {
