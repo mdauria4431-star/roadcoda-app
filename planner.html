@@ -315,14 +315,21 @@ function planStops(loads, fleet) {
   }));
 }
 function toStop(s) { const p = pointOf(s), w = winOf(s); return { id: s.id, lat: p.lat, lng: p.lng, ws: w.ws, we: w.we, service: CAR.plan_stop_min, demand: demandOf(s) }; }
-const leave = () => { const [h, m] = String(CAR.plan_leave_at || '06:00').split(':').map(Number); return h * 60 + m; };
+// the earliest a truck may leave: the saved setting, unless changed on the plan for this day only
+let LEAVE_TODAY = null;
+const leaveTxt = () => LEAVE_TODAY || String(CAR.plan_leave_at || '06:00').slice(0, 5);
+const leave = () => { const [h, m] = leaveTxt().split(':').map(Number); return h * 60 + m; };
 // "Trucks can leave from" on the plan: changes this plan at once; "keep as usual" saves it on Setup too
 function leaveCtl() {
+  // "Trucks can leave from" on the plan: an exception for this day's plan only. It never changes the saved
+  // setting, and it goes back to the saved time whenever the day or customer is loaded again.
   const el = $('leave-at'); if (!el) return;
-  el.value = String(CAR.plan_leave_at || '06:00').slice(0, 5);
-  el.onchange = () => { if (!el.value) return; CAR.plan_leave_at = el.value; if ($('s-leave')) $('s-leave').value = el.value; buildFleet(); draw();
-    $('leave-save').innerHTML = canEdit() && $('s-save') ? `<a href="#" id="leave-keep">keep ${esc(el.value)} as usual</a>` : '';
-    if ($('leave-keep')) $('leave-keep').onclick = (ev) => { ev.preventDefault(); $('s-save').click(); $('leave-save').innerHTML = '<span class="ok">saved on Setup</span>'; }; };
+  LEAVE_TODAY = null; el.value = leaveTxt(); $('leave-save').textContent = '';
+  el.onchange = () => { if (!el.value) return;
+    const usual = String(CAR.plan_leave_at || '06:00').slice(0, 5);
+    LEAVE_TODAY = el.value === usual ? null : el.value; buildFleet(); draw();
+    $('leave-save').innerHTML = LEAVE_TODAY ? `<span class="warn">this day only</span> · usual ${esc(usual)} · <a href="#" id="leave-reset">put back</a>` : '';
+    if ($('leave-reset')) $('leave-reset').onclick = (ev) => { ev.preventDefault(); el.value = usual; el.onchange(); }; };
 }
 const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 });
 let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
