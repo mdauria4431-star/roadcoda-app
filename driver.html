@@ -144,6 +144,17 @@ var s=k&&JSON.parse(localStorage.getItem(k));return !!(s&&s.user&&s.user.is_anon
   .party{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px}
   .shots{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .shots label.btn{justify-content:center;min-height:52px;cursor:pointer}
+  .dvi{border-top:1px solid var(--line);padding:10px 0}
+  .dvi .lbl{font-weight:600;font-size:16px}
+  .dvi .lbl small{font-weight:400;opacity:.75;margin-left:6px}
+  .dvi .yn{display:flex;gap:8px;margin-top:8px}
+  .dvi .yn button{flex:1;min-height:48px;font-size:16px}
+  .dvi .yn button.on-ok{background:#1b7f4b;color:#fff;border-color:#1b7f4b}
+  .dvi .yn button.on-bad{background:#c62828;color:#fff;border-color:#c62828}
+  .dvi .yn button.on-na{background:#666;color:#fff;border-color:#666}
+  .dvi .more{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+  .dvunit{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .dvunit h2{flex:1;margin:0;font-size:18px}
   canvas.sig{width:100%;height:170px;border:2px dashed var(--line);border-radius:10px;background:#fff;touch-action:none}
 
   /* ── Dark (night driving). Same layout; only colors change. ── */
@@ -400,6 +411,22 @@ var s=k&&JSON.parse(localStorage.getItem(k));return !!(s&&s.user&&s.user.is_anon
     <div id="dc-msg" class="meta"></div>
     <div id="dc-list" class="card" style="padding:10px 12px"></div>
     <button class="btn" id="dc-back" style="min-height:44px">Back</button>
+  </section>
+  <!-- 139: pre-trip / post-trip inspection (DVIR) -->
+  <section id="ip-view" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1 id="ip-h">Pre-trip inspection</h1>
+    <div class="meta" id="ip-units" style="font-size:16px"></div>
+    <div id="ip-review"></div>
+    <div id="ip-open"></div>
+    <label>Odometer (optional)<input id="ip-odo" type="number" inputmode="decimal" step="0.1" min="0" placeholder="e.g. 120450"></label>
+    <div id="ip-list"></div>
+    <label>Remarks (optional)<textarea id="ip-remarks" rows="2" maxlength="1000" placeholder="Anything else the shop should know"></textarea></label>
+    <label>Your name<input id="ip-name" autocomplete="name"></label>
+    <div><b>Sign here</b> <button class="btn" id="ip-clear" style="min-height:34px;margin-left:8px">Clear</button><canvas class="sig" id="ip-sig"></canvas></div>
+    <div class="meta" id="ip-cert" style="font-size:14px"></div>
+    <div id="ip-msg" class="meta" style="color:var(--late);font-weight:600"></div>
+    <button class="btn primary" id="ip-ok" style="min-height:56px;font-size:18px">Send inspection</button>
+    <button class="btn" id="ip-back" style="min-height:44px">Back</button>
   </section>
   <section id="sg-view" hidden style="display:flex;flex-direction:column;gap:12px">
     <h1>Receiver signature</h1>
@@ -934,7 +961,7 @@ async function loadStops() {
   try { localStorage.setItem('rc-driver-device', '1'); } catch (_) {}   // 95: this phone belongs on the driver app
   if (!window.__smsLoaded) { window.__smsLoaded = true; smsLoad(); }
   let { data: loads, error } = await sb.from('loads')
-    .select('id, load_no, status, truck_id, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
+    .select('id, load_no, status, truck_id, trailer_id, trailer2_id, hub_required, ask_odometer, hub_start, hub_end, stops(id, seq, stop_type, added_by, added_note, needs_review, consignee, address, window_start, window_end, status, arrived_at, departed_at, late_reason, issue_type, odometer, leg_miles, stop_items(id, unit_type, qty_ordered, qty_delivered), scans(id, barcode, photo_path, scanned_at))')
     .eq('service_date', todayISO()).neq('status', 'cancelled').eq(TOUR_DRIVER ? 'driver_id' : 'service_date', TOUR_DRIVER ? TOUR_DRIVER.driver_id : todayISO()).order('load_no');
   if (error) { $('stops').innerHTML = `<div class="card error">${esc(error.message)}</div>`; return; }
   // 101: on the tour nothing can be saved, so the "odometer first" step would hide every stop button
@@ -952,8 +979,11 @@ async function loadStops() {
   // Delivered loads drop off; the driver sees one open load at a time
   const all = loads;
   loads = loads.filter(l => l.status !== 'delivered');
+  // 139: inspections for the trucks I'm driving today
+  await dvLoad(all, devL);
   if (!loads.length) {
-    $('stops').innerHTML = `<div class="card">${all.length ? `All done for today: ${all.length} load${all.length === 1 ? '' : 's'} delivered.` : devL ? `No loads for you on truck ${esc(devL.unit_no)} today.` : 'No stops assigned to you today.'} Tap Refresh if dispatch just sent you a load.${elsewhere ? `<br><b>You have ${elsewhere} load${elsewhere === 1 ? '' : 's'} on another truck today.</b> Call dispatch if you're in the wrong truck.` : ''}</div>`;
+    $('stops').innerHTML = dvCard(all, true) + `<div class="card">${all.length ? `All done for today: ${all.length} load${all.length === 1 ? '' : 's'} delivered.` : devL ? `No loads for you on truck ${esc(devL.unit_no)} today.` : 'No stops assigned to you today.'} Tap Refresh if dispatch just sent you a load.${elsewhere ? `<br><b>You have ${elsewhere} load${elsewhere === 1 ? '' : 's'} on another truck today.</b> Call dispatch if you're in the wrong truck.` : ''}</div>`;
+    dvWire();
     return;
   }
   if (!loads.some(l => l.id === curLoad)) curLoad = loads[0].id;
@@ -1012,7 +1042,9 @@ async function loadStops() {
       let actions = '';
       if (!done && s.id === nextId) {
         actions = s.status === 'pending'
-          ? (l.ask_odometer && l.hub_start == null
+          ? (dvNeedPre(l)
+              ? `<div class="meta" style="margin-top:10px;color:var(--late)">Do the pre-trip inspection above first.</div>`
+            : l.ask_odometer && l.hub_start == null
               ? `<div class="meta" style="margin-top:10px;color:var(--late)">Enter the starting odometer above first.</div>`
               : l.hub_required
                 ? `<div class="row" style="align-items:end"><label for="so-${s.id}" style="flex:1 1 160px">Odometer at this stop
@@ -1085,7 +1117,7 @@ async function loadStops() {
       }
     } catch (_) { /* never stops the driver from seeing their stops */ }
   }
-  const html = dockCard + picker + openHtml;
+  const html = dvCard(loads, false) + dockCard + picker + openHtml;
   // keep open instructions open across the 60-second refresh
   const wasOpen = new Set([...document.querySelectorAll('details.instr[open]')].map(d => d.dataset.stop));
   $('stops').innerHTML = html;
@@ -1101,6 +1133,7 @@ async function loadStops() {
   });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => act(b));
   document.querySelectorAll('[data-docs]').forEach(b => b.onclick = () => openDocs(b.dataset.docs));
+  dvWire();
   document.querySelectorAll('[data-hub]').forEach(b => b.onclick = async () => {
     const v = parseFloat($('hub-' + b.dataset.hub).value);
     if (isNaN(v)) { alert('Enter the odometer reading.'); return; }
@@ -1369,7 +1402,7 @@ const YN = [
 const SHOTS = [['scene', 'The scene'], ['our_vehicle', 'Our truck damage'], ['other_vehicle', 'Other vehicle'], ['plate', 'Their plate'],
   ['insurance_card', 'Their insurance card'], ['license', 'Their license'], ['cargo', 'Cargo'], ['police', 'Police / report card'], ['injury', 'Injury'], ['other', 'Anything else']];
 let INC = null, INCF = {}, incTimer = null;
-function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view', 'hb-view', 'sg-view', 'dc-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
+function incShow(view) { ['app', 'pay-view', 'msg-view', 'inc-view', 'wit-view', 'ci-view', 'hb-view', 'sg-view', 'dc-view', 'ip-view'].forEach(id => $(id).hidden = id !== view); window.scrollTo(0, 0); }
 async function openIncident(existing) {
   incShow('inc-view');
   $('inc-call').href = officePhone ? 'tel:' + officePhone.replace(/[^\d+]/g, '') : '#';
@@ -1556,6 +1589,177 @@ $('dc-file').onchange = async () => {
   }
   $('dc-msg').textContent = ok ? `${ok} photo${ok > 1 ? 's' : ''} saved.` : '';
   drawDocs();
+};
+
+// ---------- 139: pre-trip / post-trip inspections (DVIR) ----------
+// The company's checklist for the truck and its trailers: OK or Defect on each item, a note and photos for
+// a defect, "unsafe to drive", then the driver signs. A pre-trip first shows repairs made since the last
+// report for the driver to review (FMCSA §396.13). Dispatch sees defects straight away.
+let DV = null, DVF = null, dvDrawn = false;
+const dvUnits = (l) => [l.truck_id, l.trailer_id, l.trailer2_id].filter(Boolean);
+async function dvLoad(all, devL) {
+  DV = null;
+  if (TOUR_DRIVER) return;
+  const ids = [...new Set([...(all || []).flatMap(dvUnits), devL && devL.equipment_id].filter(Boolean))];
+  try { const { data, error } = await sb.rpc('driver_dvir_day', { p_units: ids }); if (!error && data) DV = data; } catch (_) {}   // before 139: no inspections
+}
+const dvDone = (kind, truck) => !!(DV && (DV.done || []).find(d => d.kind === kind && d.truck_id === truck));
+const dvUnit = (id) => (DV && DV.units || []).find(u => u.id === id) || {};
+const dvName = (ids) => ids.map(id => dvUnit(id).unit_no).filter(Boolean).join(' + ');
+function dvNeedPre(l) {
+  return !!(DV && DV.on && DV.pretrip_first && l.truck_id && !dvDone('pre', l.truck_id) && !(l.stops || []).some(s => s.arrived_at));
+}
+function dvWarn(ids) {
+  let h = '';
+  ids.forEach(id => { const u = dvUnit(id); if (u.down) h += `<div class="card" style="border:2px solid #c62828"><b>${u.unit_type === 'trailer' ? 'Trailer' : 'Truck'} ${esc(u.unit_no)} is down for repair.</b><div style="margin-top:4px">${esc(u.down_reason || '')}</div><div style="margin-top:4px">Don't drive it. Call dispatch${officePhone ? ` · <a href="tel:${esc(officePhone.replace(/[^\d+]/g, ''))}">${esc(officePhone)}</a>` : ''}.</div></div>`; });
+  const open = (DV.defects || []).filter(d => d.status === 'open' && ids.includes(d.unit_id) && !dvUnit(d.unit_id).down);
+  if (open.length) h += `<div class="card" style="border:2px solid #e0a100"><b>Open defects on your equipment</b>${open.map(d => `<div style="margin-top:4px">${esc(d.unit_no)} · ${esc(d.label)}${d.note ? ' — ' + esc(d.note) : ''} <span class="meta">(reported ${new Date(d.reported).toLocaleDateString()})</span></div>`).join('')}<div class="meta" style="margin-top:4px">The shop knows. Check them on your inspection.</div></div>`;
+  return h;
+}
+function dvCard(loads, allDone) {
+  if (!DV || !DV.on) return '';
+  let h = '';
+  if (!allDone) {
+    const l = loads[0]; if (!l || !l.truck_id) return '';
+    const ids = dvUnits(l);
+    h += dvWarn(ids);
+    const pre = (DV.done || []).find(d => d.kind === 'pre' && d.truck_id === l.truck_id);
+    if (pre) h += `<div class="meta" style="padding:0 4px">✓ Pre-trip done ${time(pre.at)} · ${esc(dvName(ids))}${pre.defects ? ` · ${pre.defects} defect${pre.defects === 1 ? '' : 's'} reported` : ''}</div>`;
+    else {
+      const rev = (DV.defects || []).filter(d => d.status !== 'open' && ids.includes(d.unit_id)).length;
+      h += `<div class="card" style="border:2px solid var(--accent)"><b style="font-size:18px">Pre-trip inspection</b>
+        <div class="meta" style="font-size:15px;margin:4px 0 10px">${esc(dvName(ids))}${rev ? ` · the shop fixed ${rev} item${rev === 1 ? '' : 's'} since the last report — you'll review ${rev === 1 ? 'it' : 'them'} first` : ''}</div>
+        <button class="btn primary" data-dv="pre" data-units="${ids.join(',')}" data-load="${l.id}" style="width:100%;min-height:52px;font-size:18px">Start pre-trip</button></div>`;
+    }
+    return h;
+  }
+  // Day done: a post-trip for each truck I drove today
+  const byTruck = {};
+  (loads || []).forEach(l => { if (!l.truck_id) return; const b = byTruck[l.truck_id] = byTruck[l.truck_id] || { ids: new Set([l.truck_id]), load: l.id }; dvUnits(l).forEach(x => b.ids.add(x)); });
+  Object.entries(byTruck).forEach(([truck, b]) => {
+    const ids = [truck, ...[...b.ids].filter(x => x !== truck)];
+    const post = (DV.done || []).find(d => d.kind === 'post' && d.truck_id === truck);
+    if (post) { h += `<div class="meta" style="padding:0 4px">✓ Post-trip done ${time(post.at)} · ${esc(dvName(ids))}</div>`; return; }
+    h += DV.posttrip_ask
+      ? `<div class="card" style="border:2px solid var(--accent)"><b style="font-size:18px">Post-trip inspection</b>
+          <div class="meta" style="font-size:15px;margin:4px 0 10px">${esc(dvName(ids))} · the end-of-day report on your equipment</div>
+          <button class="btn primary" data-dv="post" data-units="${ids.join(',')}" data-load="${b.load}" style="width:100%;min-height:52px;font-size:18px">Start post-trip</button></div>`
+      : `<button class="btn" data-dv="post" data-units="${ids.join(',')}" data-load="${b.load}" style="min-height:44px">Post-trip inspection · ${esc(dvName(ids))}</button>`;
+  });
+  return h;
+}
+function dvWire() { document.querySelectorAll('[data-dv]').forEach(b => b.onclick = () => openDvir(b.dataset.dv, b.dataset.units.split(','), b.dataset.load)); }
+
+const dvKey = (u, it) => u.unit_id + '|' + it.k;
+const dvTypeName = (t) => t === 'trailer' ? 'Trailer' : t === 'tractor' ? 'Tractor' : 'Truck';
+async function openDvir(kind, ids, loadId) {
+  const { data, error } = await sb.rpc('dvir_checklist', { p_truck: ids[0], p_trailer: ids[1] || null, p_trailer2: ids[2] || null, p_kind: kind });
+  if (error) { alert(error.message); return; }
+  const id = (crypto.randomUUID && crypto.randomUUID()) || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+  const review = kind === 'pre' ? (DV.defects || []).filter(d => d.status !== 'open' && ids.includes(d.unit_id)) : [];
+  DVF = { id, kind, ids, load: loadId, list: data || [], ans: {}, review, started: new Date().toISOString() };
+  $('ip-h').textContent = kind === 'pre' ? 'Pre-trip inspection' : 'Post-trip inspection';
+  $('ip-units').textContent = (data || []).map(u => `${dvTypeName(u.unit_type)} ${u.unit_no}`).join(' · ');
+  $('ip-review').innerHTML = review.length ? `<div class="card" style="border:2px solid var(--accent)"><b>Since the last report</b>
+      ${review.map(d => `<div style="margin-top:6px"><b>${esc(d.unit_no)} · ${esc(d.label)}</b>${d.note ? ' — ' + esc(d.note) : ''}<div class="meta">${d.status === 'repaired' ? 'Repaired' : 'No repair needed'}${d.resolve_note ? ': ' + esc(d.resolve_note) : ''} · ${esc(d.resolved_name || '')}${d.resolved_at ? ', ' + new Date(d.resolved_at).toLocaleDateString() : ''}</div></div>`).join('')}
+      <label style="display:flex;flex-direction:row;align-items:center;gap:10px;margin-top:10px;font-size:16px"><input type="checkbox" id="ip-rev" style="width:24px;height:24px"> I've reviewed these repairs</label></div>` : '';
+  const open = kind === 'pre' ? (DV.defects || []).filter(d => d.status === 'open' && ids.includes(d.unit_id)) : [];
+  $('ip-open').innerHTML = open.length ? `<div class="card" style="border:2px solid #e0a100"><b>Still open from earlier</b>${open.map(d => `<div style="margin-top:4px">${esc(d.unit_no)} · ${esc(d.label)}${d.note ? ' — ' + esc(d.note) : ''}</div>`).join('')}</div>` : '';
+  $('ip-odo').value = ''; $('ip-remarks').value = ''; $('ip-msg').textContent = ''; $('ip-name').value = (me && me.full_name) || '';
+  $('ip-cert').textContent = kind === 'pre'
+    ? `By signing I confirm I checked this equipment and reported anything that isn't in safe working order${review.length ? ', and that I reviewed the repairs above' : ''}.`
+    : 'By signing I certify this report on the equipment I drove today is true and complete.';
+  $('ip-ok').disabled = false;
+  dvDraw(); incShow('ip-view'); setTimeout(dvPad, 50);
+}
+function dvItem(u, it) {
+  const k = dvKey(u, it), a = DVF.ans[k] || {}, req = it.required !== false;
+  const needPhoto = it.photo === 'always' ? a.ok != null && a.ok !== 'na' : it.photo === 'defect' && a.ok === false;
+  const more = a.ok === false || (it.photo === 'always' && a.ok === true);
+  return `<div class="dvi" data-k="${esc(k)}">
+    <div class="lbl">${esc(it.label)}<small>${req ? '' : 'optional'}${it.photo === 'always' ? (req ? '' : ' · ') + 'photo' : ''}</small></div>
+    <div class="yn"><button type="button" class="btn ${a.ok === true ? 'on-ok' : ''}" data-dvset="ok">OK</button>
+      <button type="button" class="btn ${a.ok === false ? 'on-bad' : ''}" data-dvset="bad">Defect</button>
+      ${req ? '' : `<button type="button" class="btn ${a.ok === 'na' ? 'on-na' : ''}" data-dvset="na">N/A</button>`}</div>
+    ${more ? `<div class="more">
+      ${a.ok === false ? `<textarea rows="2" maxlength="500" data-dvnote placeholder="What's wrong? e.g. left marker light out">${esc(a.note || '')}</textarea>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:10px;font-size:16px;font-weight:600;color:#c62828"><input type="checkbox" data-dvunsafe ${a.unsafe ? 'checked' : ''} style="width:24px;height:24px"> Unsafe to drive</label>` : ''}
+      <div style="display:flex;align-items:center;gap:10px"><label class="btn" style="min-height:44px;display:inline-flex;flex-direction:row;align-items:center;justify-content:center">${needPhoto && !(a.photos || []).length ? 'Take photo (needed)' : 'Add photo'}<input type="file" accept="image/*" capture="environment" data-dvphoto hidden></label>
+        <span class="meta" data-dvph>${(a.photos || []).length ? `${a.photos.length} photo${a.photos.length === 1 ? '' : 's'}` : ''}</span></div></div>` : ''}
+  </div>`;
+}
+function dvDraw() {
+  $('ip-list').innerHTML = DVF.list.map(u => `<div class="card" style="padding:10px 14px">
+    <div class="dvunit"><h2>${dvTypeName(u.unit_type)} ${esc(u.unit_no)}</h2><button type="button" class="btn" data-dvall="${u.unit_id}" style="min-height:44px">All OK</button></div>
+    ${u.items.length ? u.items.map(it => dvItem(u, it)).join('') : '<div class="meta">Nothing on the checklist for this unit.</div>'}</div>`).join('');
+  const find = (el) => { const k = el.closest('[data-k]').dataset.k; const [uid, ik] = k.split('|'); const u = DVF.list.find(x => x.unit_id === uid); return { k, u, it: u.items.find(i => i.k === ik) }; };
+  const redraw = (el) => { const { u, it } = find(el); const row = el.closest('[data-k]'); row.outerHTML = dvItem(u, it); $('ip-msg').textContent = ''; dvBind(); };
+  window.__dvRedraw = redraw;
+  dvBind();
+  document.querySelectorAll('[data-dvall]').forEach(b => b.onclick = () => {
+    const u = DVF.list.find(x => x.unit_id === b.dataset.dvall);
+    u.items.forEach(it => { const k = dvKey(u, it); if (!DVF.ans[k] || DVF.ans[k].ok == null) DVF.ans[k] = Object.assign(DVF.ans[k] || {}, { ok: true }); });
+    dvDraw();
+  });
+  function dvBind() {
+    document.querySelectorAll('#ip-list [data-dvset]').forEach(b => b.onclick = () => {
+      const { k } = find(b); const a = DVF.ans[k] = DVF.ans[k] || {};
+      a.ok = b.dataset.dvset === 'ok' ? true : b.dataset.dvset === 'bad' ? false : 'na';
+      if (a.ok !== false) a.unsafe = false;
+      redraw(b);
+    });
+    document.querySelectorAll('#ip-list [data-dvnote]').forEach(t => t.oninput = () => { const { k } = find(t); DVF.ans[k].note = t.value; });
+    document.querySelectorAll('#ip-list [data-dvunsafe]').forEach(c => c.onchange = () => { const { k } = find(c); DVF.ans[k].unsafe = c.checked; });
+    document.querySelectorAll('#ip-list [data-dvphoto]').forEach(inp => inp.onchange = async () => {
+      const f = inp.files[0]; if (!f) return;
+      const { k } = find(inp), a = DVF.ans[k], sp = inp.closest('.more').querySelector('[data-dvph]');
+      sp.textContent = 'Uploading…';
+      try {
+        const blob = await shrink(f);
+        const path = `${me.carrier_id}/dvir/${DVF.id}/${Date.now()}.jpg`;
+        const up = await sb.storage.from('scan-photos').upload(path, blob, { contentType: 'image/jpeg' });
+        if (up.error) throw up.error;
+        (a.photos = a.photos || []).push(path);
+      } catch (e) { alert('Photo not saved: ' + (e.message || e)); }
+      redraw(inp);
+    });
+  }
+}
+function dvPad() {
+  const c = $('ip-sig'), r = c.getBoundingClientRect(); c.width = r.width * 2 || 600; c.height = r.height * 2 || 340;
+  const g = c.getContext && c.getContext('2d'); if (!g) return; g.lineWidth = 5; g.lineCap = 'round'; g.strokeStyle = '#111'; g.clearRect(0, 0, c.width, c.height); dvDrawn = false;
+  let down = false; const at = (e) => { const b = c.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [(t.clientX - b.left) * c.width / b.width, (t.clientY - b.top) * c.height / b.height]; };
+  c.onpointerdown = (e) => { down = true; const [x, y] = at(e); g.beginPath(); g.moveTo(x, y); };
+  c.onpointermove = (e) => { if (!down) return; const [x, y] = at(e); g.lineTo(x, y); g.stroke(); dvDrawn = true; };
+  c.onpointerup = c.onpointerleave = () => { down = false; };
+}
+$('ip-clear').onclick = dvPad;
+$('ip-back').onclick = () => { if (Object.keys(DVF ? DVF.ans : {}).length && !confirm('Leave the inspection? What you checked is not sent.')) return; incShow('app'); };
+$('ip-ok').onclick = async () => {
+  const say = (m) => { $('ip-msg').textContent = m; $('ip-msg').scrollIntoView({ block: 'center' }); };
+  const answers = [];
+  for (const u of DVF.list) for (const it of u.items) {
+    const a = DVF.ans[dvKey(u, it)] || {}, req = it.required !== false, ph = (a.photos || []).length;
+    if ((a.ok == null) && req) return say(`Check "${it.label}" on ${u.unit_no} first.`);
+    if (a.ok === false && !ph && !(a.note || '').trim()) return say(`Say what's wrong with "${it.label}" on ${u.unit_no}.`);
+    if (!ph && (it.photo === 'always' && (a.ok === true || a.ok === false) || it.photo === 'defect' && a.ok === false)) return say(`Take a photo for "${it.label}" on ${u.unit_no}.`);
+    answers.push({ unit_id: u.unit_id, k: it.k, ok: a.ok === 'na' || a.ok == null ? null : a.ok, note: a.note || null, photos: a.photos || [], unsafe: !!a.unsafe });
+  }
+  if (DVF.review.length && !($('ip-rev') && $('ip-rev').checked)) return say('Tick that you reviewed the repairs.');
+  if (!$('ip-name').value.trim()) return say('Type your name.');
+  if (!dvDrawn) return say('Sign with your finger in the box.');
+  const bad = answers.filter(a => a.ok === false), unsafe = bad.some(a => a.unsafe);
+  if (unsafe && !confirm('You marked something unsafe to drive. The truck goes down for repair and dispatch is told. Send?')) return;
+  $('ip-ok').disabled = true; $('ip-msg').textContent = '';
+  const { error } = await sb.rpc('driver_dvir_submit', { p: {
+    id: DVF.id, kind: DVF.kind, load_id: DVF.load || null, truck_id: DVF.ids[0], trailer_id: DVF.ids[1] || null, trailer2_id: DVF.ids[2] || null,
+    odometer: $('ip-odo').value || null, lat: lastPos ? lastPos.latitude : null, lon: lastPos ? lastPos.longitude : null, started_at: DVF.started,
+    remarks: $('ip-remarks').value.trim() || null, name: $('ip-name').value.trim(), signature: $('ip-sig').toDataURL('image/png'),
+    reviewed: DVF.review.map(d => d.id), answers } });
+  if (error) { $('ip-ok').disabled = false; return say(error.message); }
+  DVF = null;
+  if (bad.length) alert(unsafe ? 'Sent. Dispatch has been told the truck is unsafe to drive — call them before you go anywhere.' : 'Sent. Dispatch and the shop can see the defects.');
+  incShow('app'); loadStops();
 };
 
 // ---------- Receiver signature before "Delivered" (74) ----------

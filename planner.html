@@ -90,7 +90,7 @@
         <div id="imp-box"></div>
         <div id="pool"></div></div>
       <div class="card"><header><h2>Trucks available today</h2><span class="sp"></span><span class="mini" id="fleet-n"></span></header>
-        <div class="pad mini" style="padding-bottom:0">Untick any truck that's down or not available. The planner decides how many of the ticked trucks it needs and which stops go on each. A tractor is paired with a free trailer, biggest first; a trailer sets the capacity.</div>
+        <div class="pad mini" style="padding-bottom:0">Untick any truck that's not available (units marked down for repair are left off). The planner decides how many of the ticked trucks it needs and which stops go on each. A tractor is paired with a free trailer, biggest first; a trailer sets the capacity.</div>
         <div id="fleet"></div>
         <div class="pad row"><label style="flex-direction:row;align-items:center;gap:6px">Plan for<select id="goal" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="cost">Lowest cost to the customer</option><option value="trucks">Fewest trucks</option><option value="hours">Fewest driver hours</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="Beyond the required margin before each window closes, how much more time to aim for when it costs little. The planner gives it up where holding it would need another truck or real money; the required margin is never given up.">Aim for extra time at stops<select id="spare" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px"><option value="0">None (lowest cost)</option><option value="15" selected>+15 min</option></select></label><label style="flex-direction:row;align-items:center;gap:6px" title="A tractor comes back to the DC, drops its empty trailer, hooks a loaded one and runs another load — as many as the windows and the driver's hours allow"><input type="checkbox" id="multi" style="height:auto"> More than one load per tractor (drop and hook at the DC)</label><label style="flex-direction:row;align-items:center;gap:6px" title="The earliest a truck may leave. Trucks still leave as late as their first window allows; an earlier time only lets a truck out early when a window needs it.">Trucks can leave from<input type="time" id="leave-at" style="height:32px;width:110px;border:1px solid var(--line);border-radius:8px;padding:0 6px"></label><span class="mini" id="leave-save"></span><button class="btn primary" id="run">Plan the day</button><button class="btn" id="geo" hidden>Look up missing map points</button><span class="mini" id="run-msg"></span></div></div>
       <div id="result"></div>
@@ -168,8 +168,10 @@ async function start() {
   const [c, cu, eq, up] = await Promise.all([
     sb.from('carriers').select('*').maybeSingle(),
     sb.from('customers').select('id, name, start_name, start_address, start_lat, start_lon, parent_customer_id, plan_leave_at').order('name'),
-    sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces, home_customer_id').order('unit_no'),
+    sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces, home_customer_id, down_since, down_reason').order('unit_no'),
     sb.from('unit_profiles').select('*')]);
+  if (eq.error && /down_since/.test(eq.error.message))   // before 113
+    eq.data = (await sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces, home_customer_id').order('unit_no')).data, eq.error = null;
   if (eq.error && /home_customer_id/.test(eq.error.message))   // before 129: no home account on trucks yet
     eq.data = (await sb.from('equipment').select('id, unit_no, unit_type, active, cap_pallets, cap_weight_lb, cap_cube_ft, cap_pieces').order('unit_no')).data;
   ALLCUSTS = cu.data || [];
@@ -519,7 +521,7 @@ function freeGap(ids) {
   return best;
 }
 function buildFleet() {
-  const free = (e) => e.active;
+  const free = (e) => e.active && !e.down_since;   // a unit down for repair (a breakdown, or an unsafe defect on a DVIR, 139) isn't offered
   const units = [], usedTr = new Set(), usedEq = new Set();
   // a truck already on one of these loads keeps its trailer
   LOADS.forEach(l => { const t = EQ.find(e => e.id === l.truck_id); if (!t || usedEq.has(t.id)) return;

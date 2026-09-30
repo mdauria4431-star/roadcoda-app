@@ -116,6 +116,7 @@
         <label>Make<input id="f-make" autocomplete="off"></label>
         <label>Model<input id="f-model" autocomplete="off"></label>
         <label>Home terminal<select id="f-home_terminal_id"><option value="">–</option></select></label>
+        <label title="The customer this unit is dedicated to. On a dedicated account the customer pays for it as a fixed charge, so the route planner uses it first.">Home account<select id="f-home_customer_id"><option value="">None (floater)</option></select></label>
         <label class="span2">VIN<input id="f-vin" autocomplete="off" class="mono" maxlength="17"></label>
         <label>Plate<input id="f-plate" autocomplete="off"></label>
         <label>Plate state<input id="f-plate_state" maxlength="2" autocomplete="off" placeholder="NJ"></label>
@@ -223,10 +224,11 @@ const TYPES = { tractor: 'Tractor', straight_truck: 'Straight truck', van: 'Van'
 const FIELDS = ['unit_no', 'unit_type', 'body_type', 'ownership', 'year', 'make', 'model', 'home_terminal_id', 'vin', 'plate', 'plate_state', 'length_ft', 'max_weight_lbs',
                 'in_service_date', 'out_of_service_date', 'toll_tag', 'axles', 'toll_class', 'registration_expires', 'inspection_due',
                 'pm_every_days', 'pm_every_miles', 'last_pm_date', 'last_pm_miles', 'odometer_miles', 'odometer_at', 'notes'];
+const HAS_HOME = () => units.some(u => 'home_customer_id' in u);   // after 129_truck_home_account.sql
 const NUMS = ['year', 'length_ft', 'max_weight_lbs', 'axles', 'pm_every_days', 'pm_every_miles', 'last_pm_miles', 'odometer_miles'];
 const MANAGERS = ['owner', 'dispatcher', 'safety'];
 const SOON_DAYS = 30, PM_SOON_DAYS = 14, PM_SOON_MILES = 1000;
-let me = null, units = [], cur = null, terminals = [], devices = [], eldOdo = {}, drvOdo = {}, drivers = [];
+let me = null, units = [], cur = null, terminals = [], customers = [], devices = [], eldOdo = {}, drvOdo = {}, drivers = [];
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -293,12 +295,14 @@ function pmDue(u) {
 }
 
 // ---------- List ----------
+let openDef = {};
 async function load() {
   const { data, error } = await sb.from('equipment').select('*').order('unit_no');
   if (error) { $('list').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}${/column/.test(error.message) ? ' · Run 36_equipment.sql in the Supabase SQL Editor first.' : ''}</td></tr>`; return; }
   units = data || [];
-  const [T, D, P, DR, LO] = await Promise.all([
+  const [T, C, D, P, DR, LO] = await Promise.all([
     sb.from('terminals').select('id, name, active').order('name'),
+    sb.from('customers').select('id, name').order('name'),
     sb.from('truck_devices').select('id, equipment_id, label, paired_at, pair_expires_at, active, failed_attempts, locked_at, current_driver_id, current_since, last_seen_at').eq('active', true),
     sb.from('truck_positions').select('equipment_id, odometer_miles, located_at'),
     sb.from('drivers').select('id, full_name'),
@@ -313,6 +317,12 @@ async function load() {
   const keep = $('f-home_terminal_id').value;
   $('f-home_terminal_id').innerHTML = '<option value="">–</option>' + terminals.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   $('f-home_terminal_id').value = keep;
+  // 139: open DVIR defects per unit (nothing before 139 is installed)
+  openDef = {}; try { const od = await sb.from('inspection_defects').select('equipment_id, unsafe').eq('status', 'open');
+    (od.data || []).forEach(x => { const o = openDef[x.equipment_id] = openDef[x.equipment_id] || { n: 0, unsafe: 0 }; o.n++; if (x.unsafe) o.unsafe++; }); } catch (_) {}
+  customers = C.data || []; const keepC = $('f-home_customer_id').value;
+  $('f-home_customer_id').innerHTML = '<option value="">None (floater)</option>' + customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('f-home_customer_id').value = keepC;
   render();
 }
 function render() {
@@ -330,7 +340,7 @@ function render() {
       : dv.some(x => x.locked_at) ? '<span class="pill p-bad">Locked</span>'
       : cd ? `<span class="pill p-ok">${esc(drivers.find(d => d.id === cd.current_driver_id)?.full_name || 'In use')}</span>` : '<span class="pill p-none">Paired</span>';
     return `<tr data-id="${u.id}" class="${cur && cur.id === u.id ? 'sel' : ''}">
-      <td><b>${esc(u.unit_no)}</b>${!u.active ? ' <span class="pill p-none">Retired</span>' : ''}${u.active && u.down_since ? ` <span class="pill p-bad" title="${esc(u.down_reason || '')}">Down for repair</span>` : ''}<div class="hint" style="margin:0">${esc([TYPES[u.unit_type], u.year, u.make, u.model].filter(Boolean).join(' · '))}</div></td>
+      <td><b>${esc(u.unit_no)}</b>${!u.active ? ' <span class="pill p-none">Retired</span>' : ''}${u.active && u.down_since ? ` <span class="pill p-bad" title="${esc(u.down_reason || '')}">Down for repair</span>` : ''}${openDef[u.id] ? ` <a class="pill ${openDef[u.id].unsafe ? 'p-bad' : 'p-warn'}" href="inspections.html?unit=${u.id}" title="Open defects from drivers' inspections">${openDef[u.id].n} defect${openDef[u.id].n === 1 ? '' : 's'}</a>` : ''}<div class="hint" style="margin:0">${esc([TYPES[u.unit_type], u.year, u.make, u.model].filter(Boolean).join(' · '))}</div></td>
       <td>${esc([u.plate, u.plate_state].filter(Boolean).join(' '))}</td>
       <td class="mono">${u.vin ? '…' + esc(u.vin.slice(-6)) : ''}</td>
       <td class="mono">${esc([u.toll_tag, u.toll_class && 'class ' + u.toll_class].filter(Boolean).join(' · '))}</td>
@@ -360,6 +370,8 @@ async function safetyLine(kind, rec) {
 function edit(u, quiet) {
   cur = u;
   FIELDS.forEach(f => { $('f-' + f).value = u && u[f] != null ? u[f] : ''; });
+  $('f-home_customer_id').value = u && u.home_customer_id ? u.home_customer_id : '';
+  $('f-home_customer_id').closest('label').hidden = !HAS_HOME();
   $('f-height_low').checked = !!(u && u.height_low); $('f-dual_rear').checked = !u || u.dual_rear !== false;
   paintTf(u);
   if (!u) $('f-unit_type').value = 'tractor';
@@ -381,6 +393,10 @@ function edit(u, quiet) {
     u.down_since = new Date().toISOString(); u.down_reason = why.trim() || 'Down for repair'; edit(u, true); render();
   };
   safetyLine('unit', u);
+  // 139: inspections and defects for this unit
+  let dl = document.getElementById('ed-dvir');
+  if (!dl) { dl = document.createElement('span'); dl.id = 'ed-dvir'; dl.className = 'mini'; dl.style.marginLeft = '10px'; $('ed-status').after(dl); }
+  dl.innerHTML = u ? `<a href="inspections.html?unit=${u.id}">Inspections${openDef[u.id] ? `: <b>${openDef[u.id].n} open defect${openDef[u.id].n === 1 ? '' : 's'}</b>` : ''} →</a>` : '';
   $('oos-wrap').hidden = !(u && !u.active);
   $('active-btn').hidden = !u; $('active-btn').textContent = u && !u.active ? 'Put back in service' : 'Retire';
   $('active-btn').classList.toggle('danger', !!(u && u.active));
@@ -448,6 +464,7 @@ function pmStatus() {
 function readForm() {
   const v = {};
   FIELDS.forEach(f => { const x = $('f-' + f).value.trim(); v[f] = x === '' ? null : NUMS.includes(f) ? Number(x) : x; });
+  if (HAS_HOME()) v.home_customer_id = $('f-home_customer_id').value || null;
   if (cur && cur.active) delete v.out_of_service_date;
   if ('height_low' in (cur || { height_low: 1 })) { v.height_low = $('f-height_low').checked; v.dual_rear = $('f-dual_rear').checked; }
   return v;

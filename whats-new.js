@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-09-30-dvir', date: '2026-09-30', title: 'Pre-trip and post-trip inspections in the driver app',
+    body: 'Drivers now do their vehicle inspections on the phone: OK or Defect on each item, a photo and note for a defect, and a signature. A defect shows on Dispatch and Equipment right away; one marked "unsafe to drive" takes the truck out of service (and off the Route planner) until someone certifies the repair on Safety › Inspections. The next driver reviews that repair on their pre-trip. Edit the checklist, or add one for reefers or liftgate trucks, on the same page. Let your drivers know.',
+    link: 'inspections.html', linkText: 'Open Inspections', screen: ['equipment', 'safety', 'dispatch'] },
   { id: '2026-09-30-fsc-peg', date: '2026-09-30', title: 'Contract fuel surcharges: peg and percent',
     body: 'For customers whose contract sets the fuel surcharge as a percent over a peg price (DOE − peg − discount, ÷ peg, × peg ÷ MPG × miles), pick "Peg and percent (contract)" on the Rates page. Every load in the customer\'s billing week gets the same percent, from the DOE week they ask for (current, 1 or 2 weeks before). If DOE is late because of a Monday holiday, the invoice uses the latest price and the difference is added to the next invoice as a true-up line with the math shown.',
     link: 'rates.html', linkText: 'Open Rates', screen: ['rates', 'money'] },

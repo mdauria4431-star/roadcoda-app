@@ -35,7 +35,7 @@
   window.RC_TOUR_MSG = TOUR_MSG;
 
   const SCREEN_OF = {
-    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'costs.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'safety.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'setup-report.html': 'users', 'settings-check.html': 'users', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'loads.html': 'loads', 'customers.html': 'customers',
+    'index.html': 'home', '': 'home', 'dispatch.html': 'dispatch', 'trip.html': 'dispatch', 'templates.html': 'dispatch', 'payroll.html': 'payroll', 'activity.html': 'invoices', 'profit.html': 'money', 'costs.html': 'money', 'messages.html': 'dispatch', 'incidents.html': 'safety', 'safety.html': 'safety', 'customer-logins.html': 'customers', 'ratings.html': 'dispatch', 'retention.html': 'safety', 'getting-started.html': 'home', 'setup-report.html': 'users', 'settings-check.html': 'users', 'containers.html': 'containers', 'office-payroll.html': 'office_payroll', 'handbooks.html': 'safety', 'trip-sheet.html': 'dispatch', 'ifta.html': 'ifta', 'qb-export.html': 'invoices', 'compliance.html': 'safety', 'claims.html': 'safety', 'inspections.html': 'home', 'loads.html': 'loads', 'customers.html': 'customers',
     'drivers.html': 'drivers', 'equipment.html': 'equipment', 'rates.html': 'rates', 'invoices.html': 'invoices',
     'tolls.html': 'tolls', 'integrations.html': 'integrations', 'edi.html': 'integrations', 'users.html': 'users', 'features.html': 'home', 'devices.html': 'home', 'company.html': 'home', 'planner.html': 'dispatch', 'map.html': 'dispatch', 'dock.html': 'dock', 'texts.html': 'dispatch',
   };
@@ -163,7 +163,7 @@
       // if this user can open it (the sidebar then groups them).
       const FULL = [['index.html', 'Home'], ['dispatch.html', 'Dispatch'], ['messages.html', 'Messages'], ['ratings.html', 'Ratings'], ['scorecard.html', 'Scorecard'],
         ['templates.html', 'Templates'], ['planner.html', 'Route planner'], ['loads.html', 'Loads'], ['containers.html', 'Containers'], ['invoices.html', 'Invoices'], ['activity.html', 'Activity file'],
-        ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['costs.html', 'Cost report'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['compliance.html', 'Compliance'], ['claims.html', 'Claims'], ['handbooks.html', 'Handbooks'],
+        ['payroll.html', 'Payroll'], ['office-payroll.html', 'Office payroll'], ['profit.html', 'Profit'], ['costs.html', 'Cost report'], ['tolls.html', 'Tolls'], ['ifta.html', 'IFTA'], ['qb-export.html', 'QuickBooks'], ['incidents.html', 'Incidents'], ['retention.html', 'Retention'], ['compliance.html', 'Compliance'], ['inspections.html', 'Inspections'], ['claims.html', 'Claims'], ['handbooks.html', 'Handbooks'],
         ['getting-started.html', 'Getting started'], ['customers.html', 'Customers'], ['customer-logins.html', 'Customer logins'], ['drivers.html', 'Drivers'],
         ['equipment.html', 'Equipment'], ['rates.html', 'Rates'], ['integrations.html', 'Integrations'], ['features.html', 'Features'], ['devices.html', 'Devices'], ['driver.html', 'Driver app']];
       const here = location.pathname.split('/').pop() || 'index.html';
@@ -174,6 +174,7 @@
         if (FEATURE_OF[h] && !data.feature(FEATURE_OF[h])) return;
         if (h === 'costs.html' && !(data.features && 'cost_report' in data.features)) return;   // before 132
         if (h === 'scorecard.html' && !(can('customers') || can('dispatch'))) return;           // 134
+        if (h === 'inspections.html' && !(can('equipment') || can('safety') || can('dispatch'))) return;   // 139
         const a = document.createElement('a'); a.href = h; a.textContent = t; if (h === here) a.className = 'on';
         nav.appendChild(a);
       });

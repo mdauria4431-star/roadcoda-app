@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspections · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select,textarea{border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  input,select{height:32px}
+  textarea{padding:7px 9px}
+  input[type=checkbox]{height:auto}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .dim{color:var(--muted)}
+  .error{color:var(--late)}
+  .ok{color:var(--ok, #2fa36b)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .tabs button{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);font-weight:600}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;
+    padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  .t tr.click{cursor:pointer}
+  .t tr.click:hover{background:var(--row-hover)}
+  .pill{display:inline-block;border-radius:999px;white-space:nowrap}
+  .note{padding:10px 16px;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+  .pad{padding:12px 16px}
+  .cert{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:6px}
+  .cert input{width:auto}
+  .rep h2{font-size:18px;margin:0 0 4px}
+  .rep .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px 16px;margin:10px 0}
+  .rep .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600}
+  .rep img.sig{max-width:280px;height:90px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:6px}
+  .rep .photos img{height:110px;border-radius:6px;margin:4px 6px 0 0;border:1px solid var(--line)}
+  .bad{color:var(--late);font-weight:600}
+  .items td:first-child{width:36%}
+  .ed input[type=text]{width:100%}
+  .ed td{padding:4px 6px}
+  @media print{ header, .noprint, aside, nav, .tabs, .bar{display:none!important} main{padding:0!important} body{background:#fff;color:#000} .card{border:none} }
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="dispatch.html">Dispatch</a><a href="equipment.html">Equipment</a><a class="on" href="inspections.html">Inspections</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <h1>Inspections <span class="mini" id="title-unit"></span></h1>
+    <div class="tabs noprint" id="tabs">
+      <button data-t="defects" class="on">Open defects</button>
+      <button data-t="reports">Reports</button>
+      <button data-t="setup">Checklists &amp; settings</button>
+    </div>
+
+    <!-- Open defects: the shop certifies each one -->
+    <div data-pane="defects">
+      <div class="card">
+        <header><h2>Open defects</h2><span class="sp"></span><span class="mini">From drivers' pre-trip and post-trip inspections. Unsafe ones keep the unit down for repair until certified.</span></header>
+        <div id="defects"><div class="empty">Loading…</div></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <header><h2>Certified in the last 30 days</h2></header>
+        <div id="fixed"><div class="empty">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- Reports -->
+    <div data-pane="reports" hidden>
+      <div id="missing"></div>
+      <div class="bar noprint" style="margin:10px 0">
+        <label>From<input id="from" type="date"></label>
+        <label>To<input id="to" type="date"></label>
+        <label>Unit<select id="f-unit"><option value="">All units</option></select></label>
+        <label>Driver<select id="f-drv"><option value="">All drivers</option></select></label>
+        <label>Kind<select id="f-kind"><option value="">Pre and post</option><option value="pre">Pre-trip</option><option value="post">Post-trip</option></select></label>
+        <label style="flex-direction:row;align-items:center;gap:6px;height:32px"><input type="checkbox" id="f-def"> Defects only</label>
+        <button class="btn small" id="csv">Download (CSV)</button>
+      </div>
+      <div class="card"><div class="wrap" id="reports"><div class="empty">Loading…</div></div></div>
+      <div class="card pad rep" id="report" hidden style="margin-top:12px"></div>
+    </div>
+
+    <!-- Checklists & settings -->
+    <div data-pane="setup" hidden>
+      <div class="card pad" id="settings"></div>
+      <div id="tpls" style="display:flex;flex-direction:column;gap:12px;margin-top:12px"></div>
+      <div class="noprint" style="margin-top:10px"><button class="btn" id="tpl-add">+ Add a checklist for certain units</button></div>
+    </div>
+  </section>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const dt = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' }) : '';
+const KIND = { pre: 'Pre-trip', post: 'Post-trip' };
+const TYPES = { tractor: 'Tractor', straight_truck: 'Straight truck', trailer: 'Trailer', van: 'Van', pickup: 'Pickup' };
+const Q = new URLSearchParams(location.search);
+let ME = null, CAN_EDIT = false, UNITS = [], DRIVERS = [], TAB = Q.get('tab') || 'defects', REPORTS = [], CAR = {};
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(*)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  ME = data; CAR = data.carriers || {};
+  $('who').textContent = `${data.full_name || session.user.email} · ${CAR.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  const A = window.RC_ACCESS;
+  if (A && A.can && !(A.can('equipment') || A.can('safety') || A.can('dispatch'))) {
+    document.querySelector('main').insertAdjacentHTML('beforeend', '<div class="card empty">Inspections need Equipment, Safety or Dispatch in your access. Ask the owner to add it (Users).</div>'); return;
+  }
+  CAN_EDIT = !A || !A.can || A.can('equipment', 'edit') || A.can('safety', 'edit');
+  $('app').hidden = false;
+  const [u, d] = await Promise.all([sb.from('equipment').select('id, unit_no, unit_type, body_type, active').order('unit_no'), sb.from('drivers').select('id, full_name').order('full_name')]);
+  UNITS = u.data || []; DRIVERS = d.data || [];
+  $('f-unit').innerHTML += UNITS.map(x => `<option value="${x.id}">${esc(x.unit_no)}</option>`).join('');
+  $('f-drv').innerHTML += DRIVERS.map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('');
+  if (Q.get('unit')) { $('f-unit').value = Q.get('unit'); const un = UNITS.find(x => x.id === Q.get('unit')); $('title-unit').textContent = un ? '· unit ' + un.unit_no : ''; }
+  const t = new Date(); $('to').value = iso(t); t.setDate(t.getDate() - 13); $('from').value = iso(t);
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.t; draw(); });
+  ['from', 'to', 'f-unit', 'f-drv', 'f-kind', 'f-def'].forEach(id => $(id).onchange = loadReports);
+  draw();
+  if (Q.get('report')) openReport(Q.get('report'));
+}
+function draw() {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === TAB));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== TAB);
+  if (TAB === 'defects') loadDefects();
+  if (TAB === 'reports') loadReports();
+  if (TAB === 'setup') loadSetup();
+}
+
+// ---------- Open defects ----------
+async function loadDefects() {
+  const unit = Q.get('unit');
+  let q = sb.from('inspection_defects').select('*, inspections(kind, driver_name, submitted_at, units_text)').eq('status', 'open').order('created_at');
+  if (unit) q = q.eq('equipment_id', unit);
+  const since = new Date(); since.setDate(since.getDate() - 30);
+  let q2 = sb.from('inspection_defects').select('*, inspections(kind, driver_name, submitted_at)').neq('status', 'open').gte('resolved_at', since.toISOString()).order('resolved_at', { ascending: false });
+  if (unit) q2 = q2.eq('equipment_id', unit);
+  const [o, f] = await Promise.all([q, q2]);
+  if (o.error) { $('defects').innerHTML = `<div class="empty error">${esc(o.error.message)}${/inspection/.test(o.error.message) ? ' — run 139_dvir.sql first.' : ''}</div>`; return; }
+  $('defects').innerHTML = (o.data || []).length ? `<div class="wrap"><table class="t"><thead><tr><th>Unit</th><th>Item</th><th>What the driver said</th><th>Reported</th><th></th></tr></thead><tbody>
+    ${o.data.map(x => `<tr><td><b>${esc(x.unit_no)}</b>${x.unsafe ? ' <span class="pill p-bad">Unsafe to drive</span>' : ''}</td><td>${esc(x.item_label)}</td>
+      <td>${esc(x.note || '')}${x.photos.length ? ` <a href="#" data-rep="${x.inspection_id}">${x.photos.length} photo${x.photos.length === 1 ? '' : 's'}</a>` : ''}</td>
+      <td>${dt(x.created_at)}<div class="mini">${esc(KIND[x.inspections?.kind] || '')} · ${esc(x.inspections?.driver_name || '')} · <a href="#" data-rep="${x.inspection_id}">report</a></div></td>
+      <td style="min-width:320px">${CAN_EDIT ? `<div class="cert" data-cert="${x.id}">
+        <label>Certified by<input data-f="name" value="${esc(ME.full_name || '')}" style="width:150px"></label>
+        <label>What was done<input data-f="note" placeholder="e.g. replaced bulb" style="width:170px"></label>
+        <label>Cost $<input data-f="cost" type="number" step="0.01" min="0" style="width:80px"></label>
+        <label>Vendor<input data-f="vendor" style="width:120px"></label>
+        <button class="btn primary small" data-st="repaired">Repaired</button><button class="btn small" data-st="no_repair_needed">No repair needed</button>
+        <span class="mini" data-msg></span></div>` : '<span class="mini">Needs Edit on Equipment or Safety to certify.</span>'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="note">Certifying is the carrier's signed statement that the defect was repaired, or that it doesn't need repair, before the unit runs again (FMCSA §396.11). The next driver reviews and signs for it on their pre-trip (§396.13).</div>`
+    : '<div class="empty">No open defects. 👍</div>';
+  $('fixed').innerHTML = (f.data || []).length ? `<div class="wrap"><table class="t"><thead><tr><th>Unit</th><th>Item</th><th>Certified</th><th>By</th><th>What was done</th><th>Cost</th><th>Driver reviewed</th><th></th></tr></thead><tbody>
+    ${f.data.map(x => `<tr><td>${esc(x.unit_no)}</td><td>${esc(x.item_label)}${x.note ? `<div class="mini">${esc(x.note)}</div>` : ''}</td><td>${x.status === 'repaired' ? 'Repaired' : 'No repair needed'}<div class="mini">${dt(x.resolved_at)}</div></td>
+      <td>${esc(x.resolved_name || '')}</td><td>${esc(x.resolve_note || '')}${x.vendor ? `<div class="mini">${esc(x.vendor)}</div>` : ''}</td><td>${x.repair_cost != null ? '$' + Number(x.repair_cost).toFixed(2) : ''}</td>
+      <td>${x.acked_at ? `${esc(x.acked_name || '')}<div class="mini">${dt(x.acked_at)}</div>` : '<span class="dim">not yet</span>'}</td>
+      <td>${CAN_EDIT && !x.acked_at ? `<button class="btn small" data-undo="${x.id}">Undo</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty">Nothing certified in the last 30 days.</div>';
+  document.querySelectorAll('[data-cert] [data-st]').forEach(b => b.onclick = async () => {
+    const box = b.closest('[data-cert]'), v = (k) => box.querySelector(`[data-f="${k}"]`).value.trim();
+    b.disabled = true;
+    const { error } = await sb.rpc('dvir_resolve', { p_defect: box.dataset.cert, p_status: b.dataset.st, p_name: v('name'), p_note: v('note') || null,
+      p_cost: v('cost') ? Number(v('cost')) : null, p_vendor: v('vendor') || null });
+    if (error) { b.disabled = false; box.querySelector('[data-msg]').innerHTML = `<span class="error">${esc(error.message)}</span>`; return; }
+    loadDefects();
+  });
+  document.querySelectorAll('[data-undo]').forEach(b => b.onclick = async () => {
+    if (!confirm('Put this defect back to open?')) return;
+    const { error } = await sb.rpc('dvir_resolve', { p_defect: b.dataset.undo, p_status: 'open', p_name: null });
+    if (error) { alert(error.message); return; } loadDefects();
+  });
+  document.querySelectorAll('[data-rep]').forEach(a => a.onclick = (e) => { e.preventDefault(); TAB = 'reports'; draw(); openReport(a.dataset.rep); });
+}
+
+// ---------- Reports ----------
+async function loadReports() {
+  const from = new Date($('from').value + 'T00:00:00'), to = new Date($('to').value + 'T00:00:00'); to.setDate(to.getDate() + 1);
+  let q = sb.from('inspections').select('id, kind, driver_id, driver_name, truck_id, trailer_id, trailer2_id, units_text, submitted_at, defects, unsafe, odometer, load_id, loads(load_no)')
+    .gte('submitted_at', from.toISOString()).lt('submitted_at', to.toISOString()).order('submitted_at', { ascending: false }).limit(1000);
+  const unit = $('f-unit').value;
+  if (unit) q = q.or(`truck_id.eq.${unit},trailer_id.eq.${unit},trailer2_id.eq.${unit}`);
+  if ($('f-drv').value) q = q.eq('driver_id', $('f-drv').value);
+  if ($('f-kind').value) q = q.eq('kind', $('f-kind').value);
+  if ($('f-def').checked) q = q.gt('defects', 0);
+  const [r, m] = await Promise.all([q, sb.rpc('dvir_missing', {})]);
+  if (r.error) { $('reports').innerHTML = `<div class="empty error">${esc(r.error.message)}</div>`; return; }
+  REPORTS = r.data || [];
+  const miss = m.data || [];
+  $('missing').innerHTML = miss.length ? `<div class="card pad" style="border-color:var(--warn)"><b>Missing today</b>${miss.map(x => `<div class="mini" style="font-size:13px;margin-top:4px">${x.kind === 'pre' ? '<b>No pre-trip</b>' : '<b>No post-trip</b>'} · ${esc(x.unit_no)} · ${esc(x.driver_name || '')} · load ${esc(x.load_no || '')}</div>`).join('')}
+    <div class="mini" style="margin-top:6px">Pre-trip: a load has started with no pre-trip on its truck. Post-trip: all of the driver's loads on that truck are delivered and there's no post-trip yet.</div></div>` : '';
+  $('reports').innerHTML = REPORTS.length ? `<table class="t"><thead><tr><th>When</th><th>Kind</th><th>Units</th><th>Driver</th><th>Load</th><th>Odometer</th><th>Result</th></tr></thead><tbody>
+    ${REPORTS.map(x => `<tr class="click" data-open="${x.id}"><td>${dt(x.submitted_at)}</td><td>${KIND[x.kind]}</td><td><b>${esc(x.units_text || '')}</b></td><td>${esc(x.driver_name || '')}</td>
+      <td>${esc(x.loads?.load_no || '')}</td><td>${x.odometer ?? ''}</td>
+      <td>${x.defects ? `<span class="pill ${x.unsafe ? 'p-bad' : 'p-warn'}">${x.defects} defect${x.defects === 1 ? '' : 's'}${x.unsafe ? ' · unsafe' : ''}</span>` : '<span class="pill p-ok">No defects</span>'}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">No inspections in these dates.</div>';
+  document.querySelectorAll('[data-open]').forEach(tr => tr.onclick = () => openReport(tr.dataset.open));
+}
+async function signed(paths) {
+  if (!paths.length) return {};
+  const { data } = await sb.storage.from('scan-photos').createSignedUrls(paths, 3600);
+  return Object.fromEntries((data || []).filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]));
+}
+async function openReport(id) {
+  const [r, d] = await Promise.all([sb.from('inspections').select('*, loads(load_no)').eq('id', id).single(), sb.from('inspection_defects').select('*').eq('inspection_id', id).order('created_at')]);
+  if (r.error) { alert(r.error.message); return; }
+  const x = r.data, defs = d.data || [], ans = x.answers || [];
+  const urls = await signed(ans.flatMap(a => a.photos || []));
+  const units = [...new Set(ans.map(a => a.unit_no))];
+  const byDef = Object.fromEntries(defs.map(y => [y.equipment_id + '|' + y.item_key, y]));
+  const unitRow = (id) => { const u = UNITS.find(v => v.id === id); return u ? `${TYPES[u.unit_type] || ''} ${u.unit_no}` : ''; };
+  $('report').hidden = false;
+  $('report').innerHTML = `<div style="display:flex;gap:10px;align-items:start"><div style="flex:1"><h2>${KIND[x.kind]} inspection${x.kind === 'post' ? ' — Driver Vehicle Inspection Report' : ''}</h2>
+      <div class="mini">${esc(CAR.name || '')}${CAR.usdot ? ' · USDOT ' + esc(CAR.usdot) : ''}</div></div>
+      <button class="btn small noprint" onclick="window.print()">Print / PDF</button><button class="btn small noprint" id="rep-close">Close</button></div>
+    <div class="grid">
+      <div><div class="k">Date and time</div>${dt(x.submitted_at)}</div>
+      <div><div class="k">Driver</div>${esc(x.driver_name || '')}</div>
+      <div><div class="k">Units</div>${[x.truck_id, x.trailer_id, x.trailer2_id].filter(Boolean).map(unitRow).join('<br>') || esc(x.units_text || '')}</div>
+      <div><div class="k">Odometer</div>${x.odometer ?? '—'}</div>
+      <div><div class="k">Load</div>${esc(x.loads?.load_no || '—')}</div>
+      <div><div class="k">Location</div>${x.lat != null ? `<a href="https://maps.google.com/?q=${x.lat},${x.lon}" target="_blank" rel="noopener">${Number(x.lat).toFixed(4)}, ${Number(x.lon).toFixed(4)}</a>` : '—'}</div>
+    </div>
+    ${units.map(un => `<h3 style="margin:14px 0 4px;font-size:14px">${esc(un)}</h3><table class="t items"><tbody>
+      ${ans.filter(a => a.unit_no === un).map(a => { const df = byDef[a.unit_id + '|' + a.k];
+        return `<tr><td>${esc(a.label)}</td><td>${a.ok === true ? '<span class="ok">OK</span>' : a.ok === false ? `<span class="bad">DEFECT${a.unsafe ? ' · unsafe to drive' : ''}</span>` : '<span class="dim">n/a</span>'}
+          ${a.note ? `<div>${esc(a.note)}</div>` : ''}${(a.photos || []).length ? `<div class="photos">${a.photos.map(p => urls[p] ? `<a href="${urls[p]}" target="_blank" rel="noopener"><img src="${urls[p]}" alt="photo"></a>` : '').join('')}</div>` : ''}
+          ${df ? `<div class="mini" style="margin-top:4px">${df.status === 'open' ? '<b class="bad">Open</b>' : `${df.status === 'repaired' ? 'Repaired' : 'No repair needed'} — certified by ${esc(df.resolved_name || '')} ${dt(df.resolved_at)}${df.resolve_note ? ': ' + esc(df.resolve_note) : ''}`}${df.acked_at ? ` · reviewed by ${esc(df.acked_name || '')} ${dt(df.acked_at)}` : ''}</div>` : ''}</td></tr>`; }).join('')}</tbody></table>`).join('')}
+    ${x.remarks ? `<div style="margin-top:10px"><div class="k">Remarks</div>${esc(x.remarks)}</div>` : ''}
+    ${(x.reviewed || []).length ? `<div class="mini" style="margin-top:10px">The driver reviewed ${x.reviewed.length} repair${x.reviewed.length === 1 ? '' : 's'} from the last report before signing (§396.13).</div>` : ''}
+    <div style="margin-top:12px"><div class="k">Driver's signature</div>${x.signature ? `<img class="sig" src="${esc(x.signature)}" alt="signature">` : '—'}<div class="mini">${esc(x.driver_name || '')} · ${dt(x.submitted_at)}</div></div>
+    <div class="mini" style="margin-top:8px">${x.kind === 'pre' ? 'The driver confirmed the equipment was checked and anything not in safe working order was reported.' : 'The driver certified this report is true and complete.'} Keep reports, repair certifications and driver reviews at least 3 months (§396.11); RoadCoda keeps them all.</div>`;
+  $('rep-close').onclick = () => { $('report').hidden = true; };
+  $('report').scrollIntoView({ behavior: 'smooth' });
+}
+$('csv').onclick = () => {
+  const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+  const lines = [['Date', 'Kind', 'Units', 'Driver', 'Load', 'Odometer', 'Defects', 'Unsafe'].join(',')];
+  REPORTS.forEach(x => lines.push([q(dt(x.submitted_at)), KIND[x.kind], q(x.units_text), q(x.driver_name), q(x.loads?.load_no), x.odometer ?? '', x.defects, x.unsafe ? 'yes' : ''].join(',')));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `inspections-${$('from').value}-to-${$('to').value}.csv`; a.click();
+};
+
+// ---------- Checklists & settings ----------
+let TPLS = [];
+async function loadSetup() {
+  const { data: car } = await sb.from('carriers').select('dvir_in_app, dvir_pretrip_first, dvir_posttrip_ask').eq('id', ME.carriers.id).maybeSingle();
+  const c = car || {};
+  $('settings').innerHTML = `<b>Settings</b>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:8px;font-weight:500"><input type="checkbox" id="s-on" ${c.dvir_in_app !== false ? 'checked' : ''} ${CAN_EDIT ? '' : 'disabled'}> Drivers do their inspections in the RoadCoda driver app <span class="mini">(untick if they use their ELD's DVIR, e.g. Samsara or Motive)</span></label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:6px;font-weight:500"><input type="checkbox" id="s-pre" ${c.dvir_pretrip_first !== false ? 'checked' : ''} ${CAN_EDIT ? '' : 'disabled'}> Pre-trip before the first stop <span class="mini">(the Arrived button waits until it's done)</span></label>
+    <label style="flex-direction:row;align-items:center;gap:6px;margin-top:6px;font-weight:500"><input type="checkbox" id="s-post" ${c.dvir_posttrip_ask !== false ? 'checked' : ''} ${CAN_EDIT ? '' : 'disabled'}> Ask for the post-trip when the day's loads are delivered</label>
+    <span class="mini" id="s-msg"></span>`;
+  if (CAN_EDIT) ['s-on', 's-pre', 's-post'].forEach(id => $(id).onchange = async () => {
+    const { error } = await sb.rpc('dvir_settings', { p_in_app: $('s-on').checked, p_pretrip_first: $('s-pre').checked, p_posttrip_ask: $('s-post').checked });
+    $('s-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved.</span>';
+  });
+  const { data, error } = await sb.from('inspection_templates').select('*').order('is_global', { ascending: false }).order('name');
+  if (error) { $('tpls').innerHTML = `<div class="card empty error">${esc(error.message)}</div>`; return; }
+  TPLS = data || [];
+  drawTpls();
+}
+const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'item';
+function drawTpls() {
+  const bodies = [...new Set(UNITS.map(u => (u.body_type || '').trim()).filter(Boolean).map(b => b.toLowerCase()))];
+  $('tpls').innerHTML = TPLS.map((t, ti) => `<div class="card ed" data-ti="${ti}">
+    <header><h2>${t.is_global ? 'Company checklist' : 'Extra checklist'}</h2>${t.is_global ? '<span class="mini">every unit: the Truck part for trucks and tractors, the Trailer part for trailers</span>' : ''}<span class="sp"></span>
+      ${!t.is_global ? `<label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" data-tf="active" ${t.active ? 'checked' : ''}> In use</label>` : ''}</header>
+    <div class="pad">
+      ${t.is_global ? '' : `<div class="bar" style="margin-bottom:8px"><label>Name<input data-tf="name" value="${esc(t.name)}"></label>
+        <label>For these unit types <span class="mini">(none ticked = any)</span><span style="display:flex;gap:10px;font-weight:500">${Object.entries(TYPES).map(([k, v]) => `<span><input type="checkbox" data-ut="${k}" ${(t.unit_types || []).includes(k) ? 'checked' : ''}> ${v}</span>`).join('')}</span></label>
+        <label>And these bodies <span class="mini">(comma between; blank = any)</span><input data-tf="bodies" list="bodies" value="${esc((t.body_types || []).join(', '))}" placeholder="e.g. reefer"></label></div>`}
+      <table class="t"><thead><tr><th>Item</th>${t.is_global ? '<th>Part</th>' : ''}<th>When</th><th>Required</th><th>Photo</th><th></th></tr></thead><tbody>
+      ${(t.items || []).map((it, ii) => `<tr data-ii="${ii}"><td><input type="text" data-if="label" value="${esc(it.label)}"></td>
+        ${t.is_global ? `<td><select data-if="part"><option value="truck" ${it.part !== 'trailer' ? 'selected' : ''}>Truck</option><option value="trailer" ${it.part === 'trailer' ? 'selected' : ''}>Trailer</option></select></td>` : ''}
+        <td><select data-if="when"><option value="both" ${(it.when || 'both') === 'both' ? 'selected' : ''}>Pre and post</option><option value="pre" ${it.when === 'pre' ? 'selected' : ''}>Pre-trip</option><option value="post" ${it.when === 'post' ? 'selected' : ''}>Post-trip</option></select></td>
+        <td><input type="checkbox" data-if="required" ${it.required !== false ? 'checked' : ''}></td>
+        <td><select data-if="photo"><option value="defect" ${(it.photo || 'defect') === 'defect' ? 'selected' : ''}>When there's a defect</option><option value="always" ${it.photo === 'always' ? 'selected' : ''}>Always</option><option value="no" ${it.photo === 'no' ? 'selected' : ''}>Not needed</option></select></td>
+        <td style="white-space:nowrap"><button class="btn small" data-mv="-1" title="Move up">↑</button> <button class="btn small" data-mv="1" title="Move down">↓</button> <button class="btn small" data-del title="Remove">✕</button></td></tr>`).join('')}
+      </tbody></table>
+      ${CAN_EDIT ? `<div class="bar" style="margin-top:8px"><button class="btn small" data-addit>+ Add item</button><span class="sp"></span>
+        ${t.is_global ? `<button class="btn small" data-reset>Restore the standard list</button>` : `<button class="btn small" data-deltpl>Delete this checklist</button>`}
+        <button class="btn primary small" data-save>Save</button><span class="mini" data-msg></span></div>` : ''}
+    </div></div>`).join('') + `<datalist id="bodies">${bodies.map(b => `<option value="${esc(b)}">`).join('')}</datalist>`;
+  $('tpl-add').hidden = !CAN_EDIT;
+  document.querySelectorAll('#tpls [data-ti]').forEach(card => {
+    const t = TPLS[+card.dataset.ti];
+    const read = () => {   // what's on screen back into t
+      card.querySelectorAll('tr[data-ii]').forEach(tr => { const it = t.items[+tr.dataset.ii];
+        tr.querySelectorAll('[data-if]').forEach(el => { it[el.dataset.if] = el.type === 'checkbox' ? el.checked : el.value; }); });
+      if (!t.is_global) {
+        t.name = card.querySelector('[data-tf="name"]').value.trim() || 'Checklist';
+        t.active = card.querySelector('[data-tf="active"]').checked;
+        const ut = [...card.querySelectorAll('[data-ut]:checked')].map(x => x.dataset.ut); t.unit_types = ut.length ? ut : null;
+        const bd = card.querySelector('[data-tf="bodies"]').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean); t.body_types = bd.length ? bd : null;
+      }
+    };
+    card.querySelectorAll('[data-mv]').forEach(b => b.onclick = () => { read(); const i = +b.closest('tr').dataset.ii, j = i + +b.dataset.mv; if (j < 0 || j >= t.items.length) return; [t.items[i], t.items[j]] = [t.items[j], t.items[i]]; drawTpls(); });
+    card.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { read(); t.items.splice(+b.closest('tr').dataset.ii, 1); drawTpls(); });
+    const add = card.querySelector('[data-addit]'); if (add) add.onclick = () => { read(); t.items.push({ k: '', label: '', part: 'truck', when: 'both', required: true, photo: 'defect' }); drawTpls(); };
+    const reset = card.querySelector('[data-reset]'); if (reset) reset.onclick = async () => {
+      if (!confirm('Put the company checklist back to the standard FMCSA list? Your own items on it are removed.')) return;
+      const { data, error } = await sb.rpc('dvir_default_items'); if (error) { alert(error.message); return; } t.items = data; drawTpls(); };
+    const del = card.querySelector('[data-deltpl]'); if (del) del.onclick = async () => {
+      if (!confirm(`Delete the "${t.name}" checklist? Reports already sent keep their items.`)) return;
+      if (t.id) { const { error } = await sb.from('inspection_templates').delete().eq('id', t.id); if (error) { alert(error.message); return; } }
+      TPLS.splice(+card.dataset.ti, 1); drawTpls(); };
+    const save = card.querySelector('[data-save]'); if (save) save.onclick = async () => {
+      read();
+      const msg = card.querySelector('[data-msg]');
+      if (t.items.some(it => !String(it.label || '').trim())) { msg.innerHTML = '<span class="error">Every item needs a name.</span>'; return; }
+      const used = new Set();
+      t.items.forEach(it => { it.label = it.label.trim(); if (!it.k) { let k = slug(it.label), n = 2; while (used.has(k) || t.items.some(o => o !== it && o.k === k)) k = slug(it.label) + '_' + n++; it.k = k; } used.add(it.k); });
+      const row = { name: t.is_global ? 'Company checklist' : t.name, is_global: t.is_global, unit_types: t.unit_types || null, body_types: t.body_types || null, items: t.items, active: t.is_global ? true : t.active };
+      const r = t.id ? await sb.from('inspection_templates').update(row).eq('id', t.id).select().single() : await sb.from('inspection_templates').insert(row).select().single();
+      if (r.error) { msg.innerHTML = `<span class="error">${esc(r.error.message)}</span>`; return; }
+      Object.assign(t, r.data); msg.innerHTML = '<span class="ok">Saved. Drivers get it on their next inspection.</span>';
+    };
+    if (!CAN_EDIT) card.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
+  });
+}
+$('tpl-add').onclick = () => { TPLS.push({ name: 'New checklist', is_global: false, unit_types: null, body_types: null, active: true, items: [{ k: '', label: '', part: 'truck', when: 'both', required: true, photo: 'defect' }] }); drawTpls(); };
+
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value, password: $('password').value }); if (error) $('login-error').textContent = error.message; else location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+start();
+</script>
+</body>
+</html>
