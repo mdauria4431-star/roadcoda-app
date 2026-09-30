@@ -235,6 +235,8 @@
             <label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="dl-notify" style="height:auto"> <b>Send delivery notifications</b></label>
             <span class="hint" style="margin:0">Which:</span>
             <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="on_the_way" style="height:auto"> On the way</label>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500" id="dl-arr-wrap"><input type="checkbox" class="dl-ev" value="arriving" style="height:auto"> Arriving soon
+              <select id="dl-arrive" style="width:auto;height:28px" title="How long before the planned arrival"><option value="">company setting</option><option value="30">30 min before</option><option value="60">1 hour before</option><option value="90">1½ hours before</option></select></label>
             <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="late" style="height:auto"> Running late</label>
             <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="delivered" style="height:auto"> Delivered</label>
             <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-weight:500"><input type="checkbox" class="dl-ev" value="issue" style="height:auto"> Delivery issue</label>
@@ -678,6 +680,8 @@ async function editDl(id) {
   $('dl-ws').value = (d.window_start || '').slice(0, 5); $('dl-we').value = (d.window_end || '').slice(0, 5); $('dl-notes').value = d.notes || ''; $('dl-active').checked = d.active;
   ACC.forEach(([id, k]) => $(id).value = d[k] || '');
   document.querySelectorAll('.dl-ev').forEach(c => c.checked = (d.notify_events || ['delivered', 'issue']).includes(c.value));
+  $('dl-arrive').value = d.notify_arrive_min ? String(d.notify_arrive_min) : '';
+  $('dl-arr-wrap').hidden = !('notify_arrive_min' in d);   // before 140
   $('dl-title').textContent = 'Edit ' + d.name; $('dl-edit').open = true; $('dl-msg').innerHTML = '';
   $('dl-edit').scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Recent stops at this location
@@ -713,12 +717,12 @@ function drawGeo(d) {
   if ($('geo-clear')) $('geo-clear').onclick = async () => { const { error } = await sb.rpc('set_location_coords', { p_location: d.id, p_lat: null, p_lon: null, p_radius: $('geo-r').value === '' ? null : +$('geo-r').value }); if (error) return flash(error.message); after('Back to learning from scans'); };
   if ($('geo-learn')) $('geo-learn').onclick = async () => { const { data, error } = await sb.rpc('learn_location_coords', { p_location: d.id }); if (error) return flash(error.message); after(data ? 'Point learned from scans' : 'Not enough scans with GPS here yet (needs 3 close together)'); };
 }
-const EVS = { on_the_way: 'On the way', late: 'Late', delivered: 'Delivered', issue: 'Issue' };
+const EVS = { on_the_way: 'On the way', arriving: 'Arriving soon', late: 'Late', delivered: 'Delivered', issue: 'Issue' };
 const ACC = [['dl-instr', 'delivery_instructions'], ['dl-door', 'door_code'], ['dl-gate', 'gate_code'], ['dl-oname', 'other_code_name'],
              ['dl-ocode', 'other_code'], ['dl-ahname', 'after_hours_contact'], ['dl-ahphone', 'after_hours_phone']];
 function clearDl() {
   dlEditing = null; ['dl-name', 'dl-code', 'dl-route', 'dl-sort', 'dl-contact', 'dl-phone', 'dl-email', 'dl-nemail', 'dl-addr', 'dl-ws', 'dl-we', 'dl-notes', ...ACC.map(a => a[0])].forEach(id => $(id).value = '');
-  $('dl-notify').checked = false; $('dl-kind').value = 'delivery';
+  $('dl-notify').checked = false; $('dl-kind').value = 'delivery'; $('dl-arrive').value = '';
   document.querySelectorAll('.dl-ev').forEach(c => c.checked = ['delivered', 'issue'].includes(c.value));
   $('dl-active').checked = true; $('dl-title').textContent = 'Add a stop customer'; $('dl-used').hidden = true; $('dl-geo').hidden = true;
 }
@@ -773,6 +777,7 @@ $('dl-save').onclick = async () => {
   }
   ACC.forEach(([id, k]) => row[k] = $(id).value.trim() || null);
   row.notify_events = [...document.querySelectorAll('.dl-ev')].filter(c => c.checked).map(c => c.value);
+  if (!$('dl-arr-wrap').hidden) row.notify_arrive_min = $('dl-arrive').value ? parseInt($('dl-arrive').value, 10) : null;   // 140
   if (row.notify && !row.notify_events.length) { $('dl-msg').innerHTML = '<span class="error">Pick at least one notice, or untick Send delivery notifications.</span>'; return; }
   if (row.other_code && !row.other_code_name) { $('dl-msg').innerHTML = '<span class="error">Give the other code a name (Alarm, Lock box…) so the driver knows what it opens.</span>'; return; }
   if (row.notify && !row.email && !row.notify_email) { $('dl-msg').innerHTML = '<span class="error">Add an email to send notifications to.</span>'; return; }

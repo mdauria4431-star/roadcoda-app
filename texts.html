@@ -91,7 +91,7 @@ const tm = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'n
 const dt = (t) => t ? new Date(t).toLocaleDateString() : '';
 const phone = (p) => { const m = String(p || '').match(/^\+1(\d{3})(\d{3})(\d{4})$/); return m ? `(${m[1]}) ${m[2]}-${m[3]}` : (p || ''); };
 const KIND = { store_notice: 'Store notice', driver_load: 'New load', driver_change: 'Load changed', driver_message: 'Dispatch message', reply: 'Reply', system: 'System' };
-const EV = { on_the_way: 'On the way', late: 'Running late', delivered: 'Delivered', issue: 'Issue' };
+const EV = { on_the_way: 'On the way', arriving: 'Arriving soon', late: 'Running late', delivered: 'Delivered', issue: 'Issue' };
 const ST = { queued: ['Waiting', ''], sending: ['Sending', ''], sent: ['Sent', 'ok'], delivered: ['Delivered', 'ok'], failed: ['Failed', 'red'], undelivered: ['Not delivered', 'red'],
   blocked: ['Opted out', 'amber'], over_allowance: ['Over allowance', 'red'], skipped: ['Not sent', ''], received: ['Received', ''] };
 let DATA = null, FLT = 'all';

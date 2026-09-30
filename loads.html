@@ -607,7 +607,7 @@ function accessLine(d) {
   return bits.length ? `<details class="acc-d"><summary>Instructions, codes &amp; after-hours contact</summary><div class="hint">${bits.join('<br>')}</div></details>` : '';
 }
 // Customer emails for this load: what went out, and a mute switch
-const NOTICE = { on_the_way: 'On the way', late: 'Running late', delivered: 'Delivered', issue: 'Delivery issue' };
+const NOTICE = { on_the_way: 'On the way', arriving: 'Arriving soon', late: 'Running late', delivered: 'Delivered', issue: 'Delivery issue' };
 function noticeSection(l) {
   const rows = (l.notification_queue || []).sort((a, b) => a.created_at.localeCompare(b.created_at));
   const seqOf = Object.fromEntries((l.stops || []).map(s => [s.id, s.seq]));

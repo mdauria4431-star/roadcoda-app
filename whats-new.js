@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-09-30-arriving', date: '2026-09-30', title: 'New customer notice: arriving soon',
+    body: 'Stores can now get an "arriving in about an hour" email (or 30 minutes, or an hour and a half) before the driver\'s planned arrival, on top of "On the way". Tick "Arriving soon" on a stop customer (Customers) and pick how long before; the company default is on Rates › Customer notifications. It isn\'t sent if the driver is already there or a "Running late" notice went out.',
+    link: 'customers.html', linkText: 'Open Customers', screen: ['customers'] },
   { id: '2026-09-30-dvir', date: '2026-09-30', title: 'Pre-trip and post-trip inspections in the driver app',
     body: 'Drivers now do their vehicle inspections on the phone: OK or Defect on each item, a photo and note for a defect, and a signature. A defect shows on Dispatch and Equipment right away; one marked "unsafe to drive" takes the truck out of service (and off the Route planner) until someone certifies the repair on Safety › Inspections. The next driver reviews that repair on their pre-trip. Edit the checklist, or add one for reefers or liftgate trucks, on the same page. Let your drivers know.',
     link: 'inspections.html', linkText: 'Open Inspections', screen: ['equipment', 'safety', 'dispatch'] },
