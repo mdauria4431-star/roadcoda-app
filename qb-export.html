@@ -75,6 +75,12 @@
     </div>
     <div class="mini" id="howto"></div>
 
+    <!-- 142: live QuickBooks Online sync -->
+    <div class="card" id="qbo-card" hidden>
+      <header><h2>QuickBooks Online — live sync</h2><span class="sp"></span><span class="mini" id="qbo-when"></span></header>
+      <div class="pad" id="qbo-body"></div>
+    </div>
+
     <div class="three">
       <div class="card"><header><h2>Invoices</h2><span class="sp"></span><span class="mini">approved, dated in the range</span></header>
         <div class="pad"><div class="big" id="inv-n">–</div><div class="mini" id="inv-s"></div><ul class="warns" id="inv-w"></ul>
@@ -147,14 +153,73 @@ async function start() {
   $('ed').value = S.edition;
   const now = new Date(); $('from').value = iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)); $('to').value = iso(new Date(now.getFullYear(), now.getMonth(), 0));
   ['ed', 'from', 'to', 'again'].forEach(id => $(id).onchange = async () => {
-    if (id === 'ed') { S.edition = $('ed').value; if (can('invoices', 'edit')) await sb.from('qb_settings').upsert({ ...S, edition: S.edition }, { onConflict: 'carrier_id' }); }   // remembered
+    if (id === 'ed') { S.edition = $('ed').value; if (can('invoices', 'edit')) await sb.from('qb_settings').upsert({ ...S, edition: S.edition }, { onConflict: 'carrier_id' }); qboDraw(); }   // remembered
     load(); });
   $('preset').onchange = () => { const p = $('preset').value, d = new Date(); if (!p) return;
     if (p === 'lm') { $('from').value = iso(new Date(d.getFullYear(), d.getMonth() - 1, 1)); $('to').value = iso(new Date(d.getFullYear(), d.getMonth(), 0)); }
     if (p === 'tm') { $('from').value = iso(new Date(d.getFullYear(), d.getMonth(), 1)); $('to').value = iso(d); }
     if (p === 'lw') { const e = new Date(d); e.setDate(d.getDate() - d.getDay() - 1); const b = new Date(e); b.setDate(e.getDate() - 6); $('from').value = iso(b); $('to').value = iso(e); }
     $('preset').value = ''; load(); };
-  drawSetup(); load();
+  drawSetup(); load(); qboDraw();
+}
+
+// ---------- 142: live QuickBooks Online sync ----------
+async function qboCall(action) {
+  const { data, error } = await sb.functions.invoke('qbo', { body: { action } });
+  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (data && data.error && action !== 'sync') throw new Error(data.error);
+  return data;
+}
+async function qboDraw(note) {
+  const card = $('qbo-card');
+  if (S.edition !== 'online') { card.hidden = true; return; }
+  const { data: q, error } = await sb.rpc('qbo_status');
+  if (error) { card.hidden = true; return; }   // before 142
+  card.hidden = false;
+  const flag = new URLSearchParams(location.search).get('qbo');
+  const FLAG = { connected: '<span class="ok">Connected. The first sync runs now.</span>', cancelled: 'QuickBooks wasn\'t connected (cancelled).',
+    expired: '<span class="error">That took too long. Click Connect to QuickBooks again.</span>', failed: '<span class="error">QuickBooks didn\'t accept the connection. Try again.</span>' };
+  const top = note || (flag && FLAG[flag]) || '';
+  const ed = can('invoices', 'edit');
+  const r = q.last_result || {};
+  $('qbo-when').textContent = q.connected && q.last_sync_at ? 'Last sync ' + new Date(q.last_sync_at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  $('qbo-body').innerHTML = !q.connected
+    ? `${top ? `<div style="margin-bottom:8px">${top}</div>` : ''}
+       <div>Connect your QuickBooks Online company and RoadCoda keeps it up to date by itself, every hour: customers, invoices (each line on the item set below), and payments —
+       the ones you record here go to QuickBooks, and ones recorded in QuickBooks against RoadCoda's invoices come back to Receivables. No more files to download and import.</div>
+       ${ed ? `<button class="btn" id="qbo-connect" style="margin-top:10px;background:#2CA01C;border-color:#2CA01C;color:#fff">Connect to QuickBooks</button>` : '<div class="mini" style="margin-top:8px">Someone with Edit on Invoices can connect it.</div>'}`
+    : `${top ? `<div style="margin-bottom:8px">${top}</div>` : ''}
+       ${q.reconnect ? `<div class="error" style="margin-bottom:8px"><b>Reconnect QuickBooks.</b> ${esc(q.last_error || 'The connection is about to run out.')} ${ed ? '<button class="btn small" id="qbo-connect">Reconnect</button>' : ''}</div>` : ''}
+       <div>Connected to <b>${esc(q.company || 'your QuickBooks company')}</b>${q.env === 'sandbox' ? ' <span class="mini">(Intuit\'s test company)</span>' : ''} since ${new Date(q.connected_at).toLocaleDateString()}.
+         ${q.syncing ? ' <b>Syncing now…</b>' : ''}</div>
+       <div class="mini" style="margin-top:4px">Last sync: ${r.invoices_added || 0} invoice${r.invoices_added === 1 ? '' : 's'} added, ${r.invoices_updated || 0} updated,
+         ${r.payments_sent || 0} payment${r.payments_sent === 1 ? '' : 's'} sent, ${r.payments_received || 0} received from QuickBooks${r.errors ? `, <span class="error">${r.errors} problem${r.errors === 1 ? '' : 's'}</span>` : ''}.
+         Waiting: ${q.waiting.invoices} invoice${q.waiting.invoices === 1 ? '' : 's'}, ${q.waiting.payments} payment${q.waiting.payments === 1 ? '' : 's'}.</div>
+       ${ed ? `<div class="row" style="margin-top:10px;align-items:end;gap:10px;flex-wrap:wrap">
+         <button class="btn primary" id="qbo-sync">Sync now</button>
+         <label>Send invoices dated on or after<input type="date" id="qbo-from" value="${esc(q.sync_from)}"></label>
+         <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500"><input type="checkbox" id="qbo-in" ${q.payments_in ? 'checked' : ''} style="height:auto"> Bring in payments recorded in QuickBooks</label>
+         <button class="btn small" id="qbo-save">Save</button><span class="sp"></span><button class="btn small" id="qbo-off">Disconnect</button></div>
+         <div class="mini" style="margin-top:6px">Record each payment in one place — RoadCoda or QuickBooks — not both. Write-offs aren't synced: record them in QuickBooks too.
+           What the sync sends is marked exported, so the download buttons below won't send it again.</div>` : ''}
+       ${(q.errors || []).length ? `<details style="margin-top:10px" ${r.errors ? 'open' : ''}><summary>Problems (last 30 days)</summary><ul class="warns">${q.errors.map(e =>
+         `<li><b>${esc(e.label || e.kind)}</b> — ${esc(e.message)} <span class="mini">${new Date(e.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></li>`).join('')}</ul>
+         <div class="mini">Fix it here or in QuickBooks (for example add the missing account), then Sync now.</div></details>` : ''}`;
+  if ($('qbo-connect')) $('qbo-connect').onclick = async () => { try { const d = await qboCall('connect'); location.href = d.url; } catch (e) { qboDraw(`<span class="error">${esc(e.message)}</span>`); } };
+  if ($('qbo-sync')) $('qbo-sync').onclick = async () => {
+    $('qbo-sync').disabled = true; $('qbo-sync').textContent = 'Syncing…';
+    try { const d = await qboCall('sync'); qboDraw(d.busy ? 'A sync is already running — try again in a minute.' : d.error ? `<span class="error">${esc(d.error)}</span>` : '<span class="ok">Done.</span>'); load(); }
+    catch (e) { qboDraw(`<span class="error">${esc(e.message)}</span>`); }
+  };
+  if ($('qbo-save')) $('qbo-save').onclick = async () => {
+    const { error } = await sb.rpc('qbo_set_options', { p_sync_from: $('qbo-from').value, p_payments_in: $('qbo-in').checked });
+    qboDraw(error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved.</span>');
+  };
+  if ($('qbo-off')) $('qbo-off').onclick = async () => {
+    if (!confirm('Disconnect QuickBooks? Nothing already in QuickBooks is removed. Reconnect the same company later and the sync picks up where it left off.')) return;
+    try { await qboCall('disconnect'); qboDraw('Disconnected.'); } catch (e) { qboDraw(`<span class="error">${esc(e.message)}</span>`); }
+  };
+  if (flag === 'connected' && !note) { history.replaceState(null, '', 'qb-export.html'); setTimeout(() => $('qbo-sync') && $('qbo-sync').click(), 300); }
 }
 $('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
