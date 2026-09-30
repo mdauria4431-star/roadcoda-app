@@ -212,7 +212,13 @@ async function cpiAlerts() {
     const days = Math.round((new Date(c.next_cpi_date + 'T00:00:00') - today) / 86400000);
     if (days > (c.cpi_notice_days ?? 60)) return '';
     return `<div class="banner ${days < 0 ? 'over' : ''}"><b>CPI ${days < 0 ? 'overdue' : 'due'}: ${esc(c.name)}</b> — ${dt(c.next_cpi_date)}. Apply it on the <a href="rates.html">Rates</a> page before invoicing weeks after that date.</div>`;
-  }).join('');
+  }).join('');  // 138: fuel surcharge weeks billed on an earlier DOE price (holiday week); the difference goes on the customer's next invoice
+  const tu = await sb.rpc('fsc_true_ups_waiting');   // nothing happens before 138 is installed
+  $('cpi-alerts').insertAdjacentHTML('beforeend', (tu.data || []).filter(w => w.status === 'waiting_true_up').map(w =>
+    `<div class="banner"><b>Fuel true-up: ${esc(w.customer)}</b> — billing week ${dt(w.week_from)}–${dt(w.week_to)} was invoiced on DOE $${Number(w.billed_price).toFixed(3)}
+      because the price for the week of ${dt(w.target_week)} wasn't out yet. ${w.published
+        ? 'That price is in now: the difference is added to this customer\'s next invoice automatically.'
+        : 'It will be added to this customer\'s next invoice once DOE publishes it.'}</div>`).join(''));
 }
 
 // ---------- New invoice: the customer's billing window ----------

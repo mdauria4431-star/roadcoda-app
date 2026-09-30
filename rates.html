@@ -252,16 +252,35 @@
           <label for="f-method">Method<select id="f-method">
             <option value="mpg">Base price and MPG</option>
             <option value="cpm_table">Table: $ per mile</option>
-            <option value="pct_table">Table: % of linehaul</option></select></label>
+            <option value="pct_table">Table: % of linehaul</option>
+            <option value="peg_pct">Peg and percent (contract)</option></select></label>
           <label for="f-series" style="grid-column:span 2">DOE price region<select id="f-series"></select></label>
           <label for="f-base" class="mpg-only">Base diesel price $<input id="f-base" type="number" step="0.001" min="0" value="1.250"></label>
           <label for="f-mpg" class="mpg-only">Miles per gallon<input id="f-mpg" type="number" step="0.01" min="0.1" value="6"></label>
+          <label for="f-peg" class="peg-only" hidden>Peg (base) price $<input id="f-peg" type="number" step="0.0001" min="0" value="3.1311"></label>
+          <label for="f-pmpg" class="peg-only" hidden>Miles per gallon<input id="f-pmpg" type="number" step="0.01" min="0.1" value="6.76"></label>
+          <label for="f-disc" class="peg-only" hidden>Discount off DOE $<input id="f-disc" type="number" step="0.0001" min="0" value="0"></label>
+          <label for="f-dweek" class="peg-only" hidden>Which DOE week<select id="f-dweek">
+            <option value="latest">The week the billing week ends in</option>
+            <option value="prior1">1 week before</option>
+            <option value="prior2">2 weeks before</option></select></label>
+          <label for="f-pdec" class="peg-only" hidden>Round the % to<select id="f-pdec">
+            <option value="2" selected>2 places (29.67%)</option><option value="1">1 place (29.7%)</option><option value="0">Whole % (30%)</option><option value="3">3 places</option></select></label>
+          <label for="f-cdec" class="peg-only" hidden>Round the $/mile to<select id="f-cdec">
+            <option value="4" selected>4 places ($0.4632)</option><option value="3">3 places</option><option value="2">2 places (cents)</option></select></label>
+          <label for="f-credit" class="peg-only" style="grid-column:span 2;flex-direction:row;align-items:center;gap:8px" hidden>
+            <input id="f-credit" type="checkbox" checked style="width:auto"> When DOE falls below the peg, credit the customer (negative surcharge)</label>
           <label for="f-table" class="table-only" style="grid-column:span 2" hidden>Table, one row per line: from-to = value
             <textarea id="f-table" placeholder="3.50-3.99 = 0.38&#10;4.00-4.49 = 0.46"></textarea></label>
           <label for="f-note" style="grid-column:span 2">Note<input id="f-note"></label>
         </div>
         <p class="hint">Base and MPG: (DOE price − base) ÷ MPG × miles. Tables: find the row the DOE price falls in, then use its value
-          as $ per mile, or as a % of linehaul.</p>
+          as $ per mile, or as a % of linehaul.<br>
+          Peg and percent (contracts like "Exhibit 3"): % = (DOE − peg − discount) ÷ peg, and $/mile = peg ÷ MPG. The surcharge is
+          % × $/mile × the miles of every load in the customer's billing week (their week start day and time, set on the customer).
+          It is worked out when the week is invoiced. If the DOE price for that week isn't out yet (a Monday holiday moves it to
+          Tuesday), the invoice uses the latest price and says so, and the difference is added to the customer's next invoice as a
+          true-up line.</p>
         <div class="row"><button class="btn primary" id="f-save">Add version</button><span id="f-msg"></span></div>
       </details>
 
@@ -319,7 +338,8 @@ const REGIONS = {
   EMD_EPD2D_PTE_SCA_DPG: 'California'
 };
 const UNITS = ['pallets', 'boxes', 'cages', 'totes', 'parts'];
-const METHOD = { mpg: 'Base + MPG', cpm_table: 'Table, $/mile', pct_table: 'Table, % of linehaul' };
+const METHOD = { mpg: 'Base + MPG', cpm_table: 'Table, $/mile', pct_table: 'Table, % of linehaul', peg_pct: 'Peg and percent' };
+const DOE_WEEK = { latest: 'DOE week the billing week ends in', prior1: 'DOE 1 week before', prior2: 'DOE 2 weeks before' };
 let me = null, carrierId = null;
 
 async function start() {
@@ -452,7 +472,11 @@ async function loadCustomer() {
       <td>${esc(units || '–')}</td><td class="mono">${money(x.min_charge)}</td><td>${esc(x.note || '')}</td></tr>`;
   }).join('') || '<tr><td colspan="7">No rate sheet yet. Add one below.</td></tr>';
   $('fsc-list').innerHTML = (f.data || []).map(x => {
-    const det = x.method === 'mpg' ? `Base ${money(x.base_price, 3)}, ${x.mpg} mpg`
+    const det = x.method === 'peg_pct'
+      ? `Peg $${Number(x.base_price).toFixed(4)}${Number(x.discount) ? `, discount $${Number(x.discount).toFixed(4)}` : ''}, ${x.mpg} mpg`
+        + ` ($${(Number(x.base_price) / Number(x.mpg)).toFixed(x.cpm_decimals ?? 4)}/mi)<br>${DOE_WEEK[x.doe_week] || ''}`
+        + ` · % to ${x.pct_decimals} places${x.allow_credit ? ' · credits below peg' : ' · never below zero'}`
+      : x.method === 'mpg' ? `Base ${money(x.base_price, 3)}, ${x.mpg} mpg`
       : (x.price_table || []).map(t => `${t.from}–${t.to} → ${x.method === 'pct_table' ? t.value + '%' : money(t.value) + '/mi'}`).join('<br>');
     return `<tr><td class="mono">${x.effective_from} ${x.id === curF ? '<span class="current">current</span>' : ''}</td>
       <td>${METHOD[x.method]}</td><td class="mono" style="font-size:13px">${det}</td><td>${esc(REGIONS[x.doe_series] || x.doe_series)}</td><td>${esc(x.note || '')}</td></tr>`;
@@ -471,9 +495,10 @@ $('r-save').onclick = async () => {
 };
 
 $('f-method').onchange = () => {
-  const mpg = $('f-method').value === 'mpg';
-  document.querySelectorAll('.mpg-only').forEach(el => el.hidden = !mpg);
-  document.querySelectorAll('.table-only').forEach(el => el.hidden = mpg);
+  const m = $('f-method').value;
+  document.querySelectorAll('.mpg-only').forEach(el => el.hidden = m !== 'mpg');
+  document.querySelectorAll('.peg-only').forEach(el => el.hidden = m !== 'peg_pct');
+  document.querySelectorAll('.table-only').forEach(el => el.hidden = m === 'mpg' || m === 'peg_pct');
 };
 function parseTable(text) {
   const rows = [];
@@ -489,11 +514,14 @@ function parseTable(text) {
 $('f-save').onclick = async () => {
   const method = $('f-method').value;
   let price_table = [];
-  try { if (method !== 'mpg') price_table = parseTable($('f-table').value); }
+  try { if (method !== 'mpg' && method !== 'peg_pct') price_table = parseTable($('f-table').value); }
   catch (e) { $('f-msg').innerHTML = `<span class="error">${esc(e.message)}</span>`; return; }
   const { error } = await sb.from('fsc_rules').insert({
     customer_id: $('cust').value, effective_from: $('f-eff').value, method, doe_series: $('f-series').value,
-    base_price: method === 'mpg' ? num('f-base') : null, mpg: method === 'mpg' ? num('f-mpg') : null,
+    base_price: method === 'mpg' ? num('f-base') : method === 'peg_pct' ? num('f-peg') : null,
+    mpg: method === 'mpg' ? num('f-mpg') : method === 'peg_pct' ? num('f-pmpg') : null,
+    ...(method === 'peg_pct' ? { discount: num('f-disc'), doe_week: $('f-dweek').value, pct_decimals: parseInt($('f-pdec').value, 10),
+      cpm_decimals: parseInt($('f-cdec').value, 10), allow_credit: $('f-credit').checked } : {}),
     price_table, note: $('f-note').value.trim() || null
   });
   $('f-msg').innerHTML = error ? `<span class="error">${esc(error.message.includes('duplicate') ? 'A version already starts on that date.' : error.message)}</span>` : '<span class="ok">Added.</span>';

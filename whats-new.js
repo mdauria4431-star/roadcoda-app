@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-09-30-fsc-peg', date: '2026-09-30', title: 'Contract fuel surcharges: peg and percent',
+    body: 'For customers whose contract sets the fuel surcharge as a percent over a peg price (DOE − peg − discount, ÷ peg, × peg ÷ MPG × miles), pick "Peg and percent (contract)" on the Rates page. Every load in the customer\'s billing week gets the same percent, from the DOE week they ask for (current, 1 or 2 weeks before). If DOE is late because of a Monday holiday, the invoice uses the latest price and the difference is added to the next invoice as a true-up line with the math shown.',
+    link: 'rates.html', linkText: 'Open Rates', screen: ['rates', 'money'] },
   { id: '2026-09-28-scorecard', date: '2026-09-28', title: 'On-time scorecard for each customer',
     body: 'See how you are doing for a customer week by week, month by month or quarter by quarter: on-time %, how late the late ones were, time at the store, issues, claims and miles. Print it or save it as a PDF for your business review. Your customers can see the same scorecard in their portal.',
     link: 'scorecard.html', linkText: 'Open the scorecard', screen: ['customers', 'dispatch'] },
