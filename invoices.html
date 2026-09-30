@@ -192,6 +192,7 @@ async function start() {
   $('n-cust').innerHTML = customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   fillWindow();
   cpiAlerts(); fillSettings(); loadList();
+  { const qi = new URLSearchParams(location.search).get('invoice'); if (qi) showInvoice(qi); }   // 141: opened from Receivables
 }
 $('login-btn').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
@@ -439,6 +440,7 @@ async function showInvoice(id) {
       ${draft ? '<button class="btn" id="d-approve">Approve</button>' : ''}
       ${inv.status === 'approved' ? '<button class="btn" id="d-sent">Mark sent</button>' : ''}
       ${['approved', 'sent'].includes(inv.status) ? '<button class="btn" id="d-paid">Mark paid</button>' : ''}
+      <span id="d-ar"></span>
       <span style="flex-grow:1"></span>
       ${draft ? '<button class="btn danger" id="d-delete">Delete draft</button>' : ''}
       ${canReopen ? '<button class="btn danger" id="d-reopen">Reopen…</button>' : ''}
@@ -495,10 +497,19 @@ async function showInvoice(id) {
     setStatus('approved');
   };
   if ($('d-sent')) $('d-sent').onclick = () => setStatus('sent');
+  // 141: payments on this invoice, and "Record payment" (partial payments, one check for many invoices) on Receivables
+  if (inv.status !== 'draft') sb.from('ar_invoice_balances').select('paid, written_off, balance').eq('id', inv.id).maybeSingle().then(({ data: b, error }) => {
+    if (error || !b || !$('d-ar')) return;   // before 141: Mark paid as before
+    const part = Number(b.paid) || Number(b.written_off);
+    $('d-ar').innerHTML = `${part ? `<span class="hint" style="margin:0 6px">Paid ${usd(b.paid)}${Number(b.written_off) ? ` · written off ${usd(b.written_off)}` : ''} · <b>balance ${usd(b.balance)}</b></span>` : ''}
+      ${Number(b.balance) > 0 ? `<a class="btn" href="ar.html?customer=${inv.customer_id}&pay=1&invoice=${inv.id}">Record payment</a>` : ''}`;
+    if ($('d-paid')) $('d-paid').textContent = 'Mark paid in full';
+  });
   if ($('d-paid')) $('d-paid').onclick = async () => {
     const ref = prompt(`Mark ${inv.invoice_no} paid.\n\nCheck # or payment reference (optional — goes to QuickBooks with the payment):`, '');
     if (ref === null) return;
     try { await saveEdits(); } catch (e) { return msg(e.message); }
+    if (ref.trim()) await sb.from('invoices').update({ payment_ref: ref.trim().slice(0, 60) }).eq('id', inv.id);   // 141 puts it on the payment record
     const { error } = await sb.from('invoices').update({ status: 'paid' }).eq('id', inv.id);
     if (error) return msg(error.message);
     if (ref.trim()) await sb.rpc('invoice_payment_ref', { p_invoice: inv.id, p_ref: ref.trim() });   // 69; nothing happens before it's installed

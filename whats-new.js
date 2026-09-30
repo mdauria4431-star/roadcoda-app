@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-09-30-receivables', date: '2026-09-30', title: 'Receivables: payments, short-pays and aging',
+    body: 'Money › Receivables shows every open invoice by customer — current, 1–30, 31–60, 61–90 and 90+ days past due. Record a check once and apply it to several invoices (partial payments too); anything left over stays on the customer\'s account as a credit. Short-paid invoices stay open with a note until collected or written off. One click emails a customer a statement of what\'s open.',
+    link: 'ar.html', linkText: 'Open Receivables', screen: ['invoices'], feature: 'invoicing' },
   { id: '2026-09-30-arriving', date: '2026-09-30', title: 'New customer notice: arriving soon',
     body: 'Stores can now get an "arriving in about an hour" email (or 30 minutes, or an hour and a half) before the driver\'s planned arrival, on top of "On the way". Tick "Arriving soon" on a stop customer (Customers) and pick how long before; the company default is on Rates › Customer notifications. It isn\'t sent if the driver is already there or a "Running late" notice went out.',
     link: 'customers.html', linkText: 'Open Customers', screen: ['customers'] },

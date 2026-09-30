@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Receivables · RoadCoda</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#070c14">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.js" integrity="sha384-xPW3QHswsICVC2mW6BFNwMbhpLkbZ133fKOhxNx3QGGgAOJfL3O9t8r2aWn1aez6" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="access.js"></script>
+<script src="shell.js"></script>
+<style>
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+  main{padding:14px 16px 40px!important;display:flex;flex-direction:column;gap:12px}
+  .login{max-width:380px;margin:60px auto;display:flex;flex-direction:column;gap:12px;padding:20px}
+  label{display:flex;flex-direction:column;gap:5px;font-weight:600;font-size:12.5px}
+  input,select{height:32px;border:1px solid var(--line);border-radius:8px;padding:0 9px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card > header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line-soft);background:none;position:static;width:auto;height:auto;flex-wrap:wrap}
+  .card > header h2{margin:0;font-size:11px}
+  .sp{flex:1}
+  .bar{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  h1{margin:0;font-size:19px}
+  .mini{font-size:11.5px;color:var(--ink-3)}
+  .dim{color:var(--muted)}
+  .error{color:var(--late)}
+  .ok{color:var(--ok, #2fa36b)}
+  .empty{padding:16px;color:var(--muted);font-size:13px}
+  .pad{padding:12px 16px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+  .tile{padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .tile .k{font-family:var(--ui);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tile .v{font-family:var(--mono);font-size:21px;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+  .tile .s{font-size:12px;color:var(--muted);margin-top:3px}
+  .wrap{overflow-x:auto}
+  table.t{width:100%;border-collapse:collapse;font-size:13px}
+  .t th{font-family:var(--ui);font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:right;
+    padding:7px 10px;background:var(--panel-2);border-bottom:1px solid var(--line);white-space:nowrap}
+  .t th:first-child,.t td:first-child{text-align:left}
+  .t td{padding:7px 10px;border-bottom:1px solid var(--line-soft);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .t td.l{text-align:left;white-space:normal}
+  .t td.m{font-family:var(--mono);font-size:12.5px}
+  .t tr.grp{cursor:pointer}
+  .t tr.grp:hover{background:var(--row-hover)}
+  .t tr.tot td{font-weight:600;background:var(--panel-2)}
+  .t tr.det > td{padding:0;background:var(--panel-2);text-align:left}
+  .det-in{padding:10px 16px 14px;display:flex;flex-direction:column;gap:10px}
+  .det-in table{background:var(--surface);border:1px solid var(--line);border-radius:8px}
+  .late{color:var(--late);font-weight:600}
+  .warn{color:var(--warn)}
+  .pay input.amt{width:110px;text-align:right}
+  .note-in{width:220px}
+  @media print{ header, .noprint, aside, nav{display:none!important} main{padding:0!important} body{background:#fff;color:#000} }
+</style>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="brand">Road<span>Coda</span></div>
+  <nav style="display:flex;gap:14px;font-size:14px"><a href="index.html">Home</a><a href="invoices.html">Invoices</a><a class="on" href="ar.html">Receivables</a><a href="qb-export.html">QuickBooks</a><a href="driver.html">Driver app</a></nav>
+  <div class="who" id="who"></div>
+  <button class="btn small" id="signout" hidden>Sign out</button>
+</header>
+
+<main>
+  <section id="login-view" class="card login" hidden>
+    <h2>Sign in</h2>
+    <label for="email">Email<input id="email" type="email" autocomplete="username"></label>
+    <label for="password">Password<input id="password" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" id="login-btn">Sign in</button>
+    <div class="error" id="login-error"></div>
+  </section>
+
+  <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="bar"><h1>Receivables</h1><span class="sp"></span>
+      <button class="btn small noprint" id="csv">Download (CSV)</button><button class="btn small noprint" onclick="window.print()">Print</button></div>
+    <div class="tiles" id="tiles"></div>
+
+    <!-- Record a payment -->
+    <div class="card noprint" id="pay-card" hidden>
+      <header><h2 id="pay-h">Record a payment</h2><span class="sp"></span><button class="btn small" id="pay-close">Close</button></header>
+      <div class="pad pay">
+        <div class="bar">
+          <label>Customer<select id="p-cust"></select></label>
+          <label>Received on<input id="p-date" type="date"></label>
+          <label>How<select id="p-method"><option value="check">Check</option><option value="ach">ACH</option><option value="wire">Wire</option><option value="card">Card</option><option value="cash">Cash</option><option value="other">Other</option></select></label>
+          <label>Check # / reference<input id="p-ref" style="width:150px"></label>
+          <label>Amount $<input id="p-amt" type="number" step="0.01" min="0" class="amt"></label>
+          <label>Note<input id="p-note" style="width:200px" placeholder="optional"></label>
+        </div>
+        <div class="mini" style="margin:10px 0 6px">Apply it to these invoices. <a href="#" id="p-auto">Fill oldest first</a> · <a href="#" id="p-clear">Clear</a>. Anything not applied stays on the customer's account as a credit.</div>
+        <div class="wrap" id="p-invs"></div>
+        <div class="bar" style="margin-top:10px"><span id="p-sum" class="mini"></span><span class="sp"></span><span id="p-msg" class="mini"></span><button class="btn primary" id="p-save">Save payment</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>Open invoices by customer</h2><span class="sp"></span><span class="mini">Aged by days past the due date. Click a customer to see its invoices.</span>
+        <button class="btn small primary noprint" id="new-pay">Record a payment</button></header>
+      <div class="wrap" id="aging"><div class="empty">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <header><h2>Payments received</h2><span class="sp"></span><label class="noprint" style="flex-direction:row;align-items:center;gap:6px">Last<select id="days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">year</option></select></label></header>
+      <div class="wrap" id="pays"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card">
+      <header><h2>Write-offs</h2></header>
+      <div class="wrap" id="wos"><div class="empty">Loading…</div></div>
+    </div>
+  </section>
+</main>
+
+<script>
+if (!window.RC_CONFIG || !/^(sb_publishable_|eyJ)/.test(RC_CONFIG.SUPABASE_KEY || '')) {
+  document.body.innerHTML = '<div style="max-width:560px;margin:60px auto;padding:20px;background:#fff;border-radius:12px;font-family:system-ui">RoadCoda can\'t find config.js or its key.</div>';
+  throw new Error('RoadCoda settings missing');
+}
+const sb = supabase.createClient(RC_CONFIG.SUPABASE_URL, RC_CONFIG.SUPABASE_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const iso = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const money = (n) => n == null ? '' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const m0 = (n) => Number(n) ? money(n) : '<span class="dim">–</span>';
+const day = (d) => { if (!d) return ''; const [y, m, dd] = String(d).slice(0, 10).split('-'); return `${+m}/${+dd}/${y.slice(2)}`; };
+const r2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+const BUCKETS = [['cur', 'Current'], ['b30', '1–30'], ['b60', '31–60'], ['b90', '61–90'], ['b91', '90+']];
+const bucket = (d) => d <= 0 ? 'cur' : d <= 30 ? 'b30' : d <= 60 ? 'b60' : d <= 90 ? 'b90' : 'b91';
+const METHOD = { check: 'Check', ach: 'ACH', wire: 'Wire', card: 'Card', cash: 'Cash', other: 'Other' };
+const REASON = { short_pay: 'Short-pay', claim: 'Claim deduction', discount: 'Discount', bad_debt: 'Bad debt', other: 'Other' };
+let CUST = {}, OPEN = [], CREDITS = [], LASTST = {}, CAN_EDIT = false, OPENED = new Set(), TODAY = iso(new Date());
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { $('login-view').hidden = false; return; }
+  const { data } = await sb.from('profiles').select('role, full_name, carriers(name)').eq('user_id', session.user.id).single();
+  if (!data) { $('login-view').hidden = false; $('login-error').textContent = 'This login is not linked to a carrier.'; return; }
+  if (data.role === 'driver') { location.href = 'driver.html'; return; }
+  $('who').textContent = `${data.full_name || session.user.email} · ${data.carriers?.name || ''} · ${data.role}`;
+  $('signout').hidden = false;
+  await window.RC_ACCESS_READY;
+  const A = window.RC_ACCESS;
+  if (A && A.can && !A.can('invoices')) return;
+  CAN_EDIT = !A || !A.can || A.can('invoices', 'edit');
+  $('app').hidden = false;
+  if (!CAN_EDIT) $('new-pay').hidden = true;
+  $('p-date').value = TODAY;
+  $('days').onchange = loadPays;
+  await load();
+  const q = new URLSearchParams(location.search);
+  if (q.get('customer')) { OPENED.add(q.get('customer')); drawAging(); if (q.get('pay') && CAN_EDIT) openPay(q.get('customer'), q.get('invoice')); }
+}
+async function load() {
+  const [c, b, r, a, s] = await Promise.all([
+    sb.from('customers').select('id, name, contact_email, ar_email, ar_note, terms_days').order('name'),
+    sb.from('ar_invoice_balances').select('*').gt('balance', 0).order('due_date'),
+    sb.from('ar_receipts').select('id, customer_id, received_on, method, reference, amount'),
+    sb.from('ar_applications').select('receipt_id, amount'),
+    sb.from('ar_statements').select('customer_id, sent_at, to_email').order('sent_at', { ascending: false }).limit(500)]);
+  if (b.error) { $('aging').innerHTML = `<div class="empty error">${esc(b.error.message)}${/ar_invoice/.test(b.error.message) ? ' — run 141_receivables.sql first.' : ''}</div>`; return; }
+  CUST = Object.fromEntries((c.data || []).map(x => [x.id, x]));
+  OPEN = (b.data || []).map(x => ({ ...x, dpd: Math.max(0, Math.round((new Date(TODAY) - new Date(x.due_date)) / 864e5)) }));
+  const used = {}; (a.data || []).forEach(x => used[x.receipt_id] = (used[x.receipt_id] || 0) + Number(x.amount));
+  CREDITS = (r.data || []).map(x => ({ ...x, left: r2(Number(x.amount) - (used[x.id] || 0)) })).filter(x => x.left > 0);
+  LASTST = {}; (s.data || []).forEach(x => { if (!LASTST[x.customer_id]) LASTST[x.customer_id] = x; });
+  drawTiles(); drawAging(); loadPays();
+}
+function drawTiles() {
+  const t = { cur: 0, b30: 0, b60: 0, b90: 0, b91: 0 }; OPEN.forEach(x => t[bucket(x.dpd)] += Number(x.balance));
+  const all = Object.values(t).reduce((a, b) => a + b, 0), past = all - t.cur, cr = CREDITS.reduce((a, x) => a + x.left, 0);
+  $('tiles').innerHTML = `<div class="tile"><div class="k">Open</div><div class="v">${money(all)}</div><div class="s">${OPEN.length} invoice${OPEN.length === 1 ? '' : 's'}</div></div>
+    <div class="tile"><div class="k">Past due</div><div class="v ${past ? 'late' : ''}">${money(past)}</div><div class="s">${all ? Math.round(100 * past / all) : 0}% of open</div></div>
+    ${BUCKETS.slice(1).map(([k, l]) => `<div class="tile"><div class="k">${l} days</div><div class="v ${k === 'b91' && t[k] ? 'late' : ''}">${money(t[k])}</div></div>`).join('')}
+    ${cr ? `<div class="tile"><div class="k">Unapplied credit</div><div class="v">${money(cr)}</div><div class="s">payments not yet applied</div></div>` : ''}`;
+}
+function drawAging() {
+  const by = {};
+  OPEN.forEach(x => { const g = by[x.customer_id] ||= { cur: 0, b30: 0, b60: 0, b90: 0, b91: 0, tot: 0, n: 0, oldest: 0, rows: [] };
+    g[bucket(x.dpd)] += Number(x.balance); g.tot += Number(x.balance); g.n++; g.oldest = Math.max(g.oldest, x.dpd); g.rows.push(x); });
+  CREDITS.forEach(x => { by[x.customer_id] ||= { cur: 0, b30: 0, b60: 0, b90: 0, b91: 0, tot: 0, n: 0, oldest: 0, rows: [] }; });
+  const ids = Object.keys(by).sort((a, b) => (by[b].tot - by[b].cur) - (by[a].tot - by[a].cur) || by[b].tot - by[a].tot);
+  if (!ids.length) { $('aging').innerHTML = '<div class="empty">Nothing open. Every sent invoice is paid. 👍</div>'; return; }
+  const T = { cur: 0, b30: 0, b60: 0, b90: 0, b91: 0, tot: 0 }; ids.forEach(id => Object.keys(T).forEach(k => T[k] += by[id][k]));
+  $('aging').innerHTML = `<table class="t"><thead><tr><th>Customer</th>${BUCKETS.map(([, l]) => `<th>${l}</th>`).join('')}<th>Total open</th><th>Oldest</th><th>Last statement</th></tr></thead><tbody>
+    ${ids.map(id => { const g = by[id], c = CUST[id] || {}, cr = CREDITS.filter(x => x.customer_id === id), ls = LASTST[id];
+      return `<tr class="grp" data-c="${id}"><td><b>${OPENED.has(id) ? '▾' : '▸'} ${esc(c.name || '')}</b>${cr.length ? ` <span class="mini">(${money(cr.reduce((a, x) => a + x.left, 0))} credit)</span>` : ''}</td>
+        ${BUCKETS.map(([k]) => `<td class="m ${k !== 'cur' && g[k] ? (k === 'b91' || k === 'b90' ? 'late' : 'warn') : ''}">${m0(g[k])}</td>`).join('')}
+        <td class="m"><b>${money(g.tot)}</b></td><td>${g.oldest ? `<span class="${g.oldest > 60 ? 'late' : g.oldest > 0 ? 'warn' : ''}">${g.oldest} days</span>` : '<span class="dim">not due</span>'}</td>
+        <td class="mini">${ls ? day(iso(ls.sent_at)) : '—'}</td></tr>
+        ${OPENED.has(id) ? `<tr class="det"><td colspan="${BUCKETS.length + 4}">${detail(id, g, cr)}</td></tr>` : ''}`; }).join('')}
+    <tr class="tot"><td>All customers</td>${BUCKETS.map(([k]) => `<td class="m">${m0(T[k])}</td>`).join('')}<td class="m">${money(T.tot)}</td><td></td><td></td></tr></tbody></table>`;
+  document.querySelectorAll('#aging tr.grp').forEach(tr => tr.onclick = () => { const id = tr.dataset.c; OPENED.has(id) ? OPENED.delete(id) : OPENED.add(id); drawAging(); });
+  wireDetail();
+}
+function detail(id, g, cr) {
+  const c = CUST[id] || {}, ed = CAN_EDIT;
+  return `<div class="det-in" data-cust="${id}">
+    <div class="bar noprint">
+      <label>Statements go to<input data-f="ar_email" value="${esc(c.ar_email || '')}" placeholder="${esc(c.contact_email || 'billing@customer.com')}" style="width:230px" ${ed ? '' : 'disabled'}></label>
+      <label>Collections note<input data-f="ar_note" value="${esc(c.ar_note || '')}" placeholder="e.g. AP pays on the 15th; call Maria" style="width:300px" ${ed ? '' : 'disabled'}></label>
+      ${ed ? `<button class="btn small" data-act="contact">Save</button><span class="sp"></span>
+        <button class="btn small primary" data-act="pay">Record a payment</button>
+        <button class="btn small" data-act="statement" ${g.n ? '' : 'disabled'}>Send statement</button>` : ''}
+      <span class="mini" data-msg></span></div>
+    ${LASTST[id] ? `<div class="mini">Last statement ${day(iso(LASTST[id].sent_at))} to ${esc(LASTST[id].to_email)}.</div>` : ''}
+    ${g.rows.length ? `<table class="t"><thead><tr><th>Invoice</th><th>Date</th><th>Due</th><th>Past due</th><th>Amount</th><th>Paid</th><th>Written off</th><th>Balance</th><th style="text-align:left">Why still open</th><th></th></tr></thead><tbody>
+      ${g.rows.map(x => `<tr data-inv="${x.id}"><td><a href="invoices.html?invoice=${x.id}">${esc(x.invoice_no)}</a>${x.po_number ? `<div class="mini">PO ${esc(x.po_number)}</div>` : ''}</td>
+        <td>${day(x.invoice_date)}</td><td>${day(x.due_date)}</td><td class="${x.dpd > 60 ? 'late' : x.dpd ? 'warn' : ''}">${x.dpd ? x.dpd + ' days' : '—'}</td>
+        <td class="m">${money(x.total)}</td><td class="m">${m0(x.paid)}</td><td class="m">${m0(x.written_off)}</td><td class="m"><b>${money(x.balance)}</b></td>
+        <td class="l">${ed ? `<input class="note-in" data-short value="${esc(x.short_reason || '')}" placeholder="${Number(x.paid) ? 'short-paid: why?' : ''}">` : esc(x.short_reason || '')}</td>
+        <td>${ed ? `<button class="btn small" data-wo>Write off…</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="mini">No open invoices.</div>'}
+    ${cr.length ? `<div><b>Credit on account</b>${cr.map(x => `<div class="bar" style="margin-top:4px" data-rec="${x.id}"><span>${money(x.left)} left of ${esc(METHOD[x.method])} ${esc(x.reference || '')} (${day(x.received_on)}, ${money(x.amount)})</span>
+        ${ed && g.rows.length ? `<select data-to>${g.rows.map(v => `<option value="${v.id}" data-bal="${v.balance}">${esc(v.invoice_no)} · ${money(v.balance)}</option>`).join('')}</select><input type="number" step="0.01" min="0" data-amt style="width:100px" value="${Math.min(x.left, Number(g.rows[0].balance)).toFixed(2)}"><button class="btn small" data-apply>Apply</button>` : ''}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+function wireDetail() {
+  document.querySelectorAll('.det-in').forEach(box => {
+    const id = box.dataset.cust, msg = box.querySelector('[data-msg]'), say = (h) => { if (msg) msg.innerHTML = h; };
+    box.onclick = (e) => e.stopPropagation();
+    const b = (a) => box.querySelector(`[data-act="${a}"]`);
+    if (b('contact')) b('contact').onclick = async () => {
+      const { error } = await sb.rpc('ar_set_contact', { p_customer: id, p_email: box.querySelector('[data-f="ar_email"]').value, p_note: box.querySelector('[data-f="ar_note"]').value });
+      if (error) return say(`<span class="error">${esc(error.message)}</span>`);
+      CUST[id].ar_email = box.querySelector('[data-f="ar_email"]').value.trim().toLowerCase() || null; CUST[id].ar_note = box.querySelector('[data-f="ar_note"]').value.trim() || null; say('<span class="ok">Saved.</span>');
+    };
+    if (b('pay')) b('pay').onclick = () => openPay(id);
+    if (b('statement')) b('statement').onclick = async () => {
+      const to = box.querySelector('[data-f="ar_email"]').value.trim() || CUST[id].contact_email;
+      if (!to) return say('<span class="error">Add the email statements go to first.</span>');
+      if (!confirm(`Email ${CUST[id].name} a statement of their open invoices at ${to}?`)) return;
+      b('statement').disabled = true; say('Sending…');
+      const { data, error } = await sb.functions.invoke('send-statement', { body: { customer_id: id, to } });
+      b('statement').disabled = false;
+      const err = error ? (await error.context?.json?.().catch(() => null))?.error || error.message : data?.error;
+      if (err) return say(`<span class="error">${esc(err)}</span>`);
+      say(`<span class="ok">Sent to ${esc(data.to)}${data.test ? ' (test mode: the copy went to your test address)' : ''}.</span>`);
+      LASTST[id] = { sent_at: new Date().toISOString(), to_email: data.to };
+    };
+    box.querySelectorAll('[data-short]').forEach(inp => inp.onchange = async () => {
+      const { error } = await sb.rpc('ar_set_short_reason', { p_invoice: inp.closest('tr').dataset.inv, p_reason: inp.value });
+      say(error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Note saved.</span>');
+      const x = OPEN.find(v => v.id === inp.closest('tr').dataset.inv); if (x && !error) x.short_reason = inp.value.trim();
+    });
+    box.querySelectorAll('[data-wo]').forEach(btn => btn.onclick = async () => {
+      const x = OPEN.find(v => v.id === btn.closest('tr').dataset.inv);
+      const amt = prompt(`Write off how much of ${x.invoice_no}? (up to ${money(x.balance)})`, Number(x.balance).toFixed(2)); if (amt == null) return;
+      const why = prompt('Reason: type 1 short-pay, 2 claim deduction, 3 discount, 4 bad debt, 5 other', '1'); if (why == null) return;
+      const reason = ['short_pay', 'claim', 'discount', 'bad_debt', 'other'][parseInt(why, 10) - 1]; if (!reason) return alert('Pick 1 to 5.');
+      const note = prompt('Note (what it was for)', x.short_reason || ''); if (note == null) return;
+      const { error } = await sb.rpc('ar_write_off', { p_invoice: x.id, p_amount: Number(amt), p_reason: reason, p_note: note });
+      if (error) return alert(error.message); load();
+    });
+    box.querySelectorAll('[data-apply]').forEach(btn => btn.onclick = async () => {
+      const row = btn.closest('[data-rec]');
+      const { error } = await sb.rpc('ar_apply_credit', { p_receipt: row.dataset.rec, p_invoice: row.querySelector('[data-to]').value, p_amount: Number(row.querySelector('[data-amt]').value) });
+      if (error) return alert(error.message); load();
+    });
+  });
+}
+
+// ---------- Record a payment ----------
+let PAYC = null;
+function openPay(custId, invId) {
+  const ids = [...new Set([...OPEN.map(x => x.customer_id), ...Object.keys(CUST)])].filter(id => CUST[id]).sort((a, b) => CUST[a].name.localeCompare(CUST[b].name));
+  $('p-cust').innerHTML = ids.map(id => `<option value="${id}">${esc(CUST[id].name)}</option>`).join('');
+  if (custId) $('p-cust').value = custId;
+  $('p-ref').value = ''; $('p-amt').value = ''; $('p-note').value = ''; $('p-msg').textContent = ''; $('p-date').value = TODAY;
+  $('pay-card').hidden = false; drawPayInvs(invId); $('pay-card').scrollIntoView({ behavior: 'smooth' });
+}
+function drawPayInvs(invId) {
+  PAYC = $('p-cust').value;
+  const rows = OPEN.filter(x => x.customer_id === PAYC);
+  $('p-invs').innerHTML = rows.length ? `<table class="t"><thead><tr><th>Invoice</th><th>Due</th><th>Balance</th><th>Apply</th></tr></thead><tbody>
+    ${rows.map(x => `<tr><td>${esc(x.invoice_no)}</td><td>${day(x.due_date)}${x.dpd ? ` <span class="mini warn">${x.dpd} days past</span>` : ''}</td><td class="m">${money(x.balance)}</td>
+      <td><input type="number" step="0.01" min="0" class="amt" data-ap="${x.id}" data-bal="${x.balance}" value="${invId === x.id ? Number(x.balance).toFixed(2) : ''}"></td></tr>`).join('')}</tbody></table>`
+    : '<div class="mini">No open invoices for this customer — the whole payment goes on account as a credit.</div>';
+  if (invId) { const x = rows.find(v => v.id === invId); if (x) $('p-amt').value = Number(x.balance).toFixed(2); }
+  document.querySelectorAll('[data-ap]').forEach(i => i.oninput = paySum); paySum();
+}
+function paySum() {
+  const amt = r2($('p-amt').value), ap = r2([...document.querySelectorAll('[data-ap]')].reduce((a, i) => a + Number(i.value || 0), 0));
+  $('p-sum').innerHTML = `Applied <b>${money(ap)}</b> of ${money(amt)}${amt - ap > 0.004 ? ` · <b>${money(amt - ap)}</b> goes on account as a credit` : ''}${ap - amt > 0.004 ? ' · <span class="error">applied more than the payment</span>' : ''}`;
+}
+$('p-cust').onchange = () => drawPayInvs();
+$('p-amt').oninput = paySum;
+$('p-auto').onclick = (e) => { e.preventDefault(); let left = r2($('p-amt').value);
+  document.querySelectorAll('[data-ap]').forEach(i => { const v = Math.min(left, Number(i.dataset.bal)); i.value = v > 0 ? v.toFixed(2) : ''; left = r2(left - Math.max(0, v)); }); paySum(); };
+$('p-clear').onclick = (e) => { e.preventDefault(); document.querySelectorAll('[data-ap]').forEach(i => i.value = ''); paySum(); };
+$('pay-close').onclick = () => { $('pay-card').hidden = true; };
+$('new-pay').onclick = () => openPay(OPEN[0]?.customer_id);
+$('p-save').onclick = async () => {
+  const amt = r2($('p-amt').value);
+  const apply = [...document.querySelectorAll('[data-ap]')].filter(i => Number(i.value) > 0).map(i => ({ invoice_id: i.dataset.ap, amount: r2(i.value) }));
+  if (!amt) return $('p-msg').innerHTML = '<span class="error">Enter the amount received.</span>';
+  if (apply.reduce((a, x) => a + x.amount, 0) - amt > 0.004) return $('p-msg').innerHTML = '<span class="error">You applied more than the payment.</span>';
+  if (!apply.length && OPEN.some(x => x.customer_id === PAYC) && !confirm('Nothing is applied, so the whole payment goes on account as a credit. Save it that way?')) return;
+  $('p-save').disabled = true;
+  const { error } = await sb.rpc('ar_record_payment', { p_customer: PAYC, p_received_on: $('p-date').value, p_method: $('p-method').value, p_reference: $('p-ref').value,
+    p_amount: amt, p_apply: apply.length ? apply : [{ invoice_id: '00000000-0000-0000-0000-000000000000', amount: 0 }], p_note: $('p-note').value });
+  $('p-save').disabled = false;
+  if (error) return $('p-msg').innerHTML = `<span class="error">${esc(error.message)}</span>`;
+  $('pay-card').hidden = true; OPENED.add(PAYC); load();
+};
+
+// ---------- Payments received and write-offs ----------
+async function loadPays() {
+  const since = new Date(); since.setDate(since.getDate() - Number($('days').value));
+  const [r, w] = await Promise.all([
+    sb.from('ar_receipts').select('id, customer_id, received_on, method, reference, amount, note, ar_applications(amount, invoices(invoice_no))').gte('received_on', iso(since)).order('received_on', { ascending: false }).limit(500),
+    sb.from('ar_writeoffs').select('id, amount, reason, note, created_at, invoices(invoice_no, customer_id)').order('created_at', { ascending: false }).limit(200)]);
+  const P = r.data || [];
+  $('pays').innerHTML = P.length ? `<table class="t"><thead><tr><th>Received</th><th style="text-align:left">Customer</th><th style="text-align:left">How</th><th>Amount</th><th style="text-align:left">Applied to</th><th>On account</th><th></th></tr></thead><tbody>
+    ${P.map(x => { const ap = x.ar_applications || [], used = ap.reduce((a, y) => a + Number(y.amount), 0);
+      return `<tr><td>${day(x.received_on)}</td><td class="l">${esc(CUST[x.customer_id]?.name || '')}</td><td class="l">${esc(METHOD[x.method])} ${esc(x.reference || '')}${x.note ? `<div class="mini">${esc(x.note)}</div>` : ''}</td>
+        <td class="m">${money(x.amount)}</td><td class="l mini">${ap.map(y => `${esc(y.invoices?.invoice_no || '')} ${money(y.amount)}`).join(' · ') || '—'}</td>
+        <td class="m">${m0(r2(x.amount - used))}</td><td>${CAN_EDIT ? `<button class="btn small" data-delpay="${x.id}" title="Entered by mistake, or the check bounced">Remove</button>` : ''}</td></tr>`; }).join('')}</tbody></table>`
+    : '<div class="empty">No payments recorded in this time.</div>';
+  const W = w.data || [];
+  $('wos').innerHTML = W.length ? `<table class="t"><thead><tr><th>Date</th><th style="text-align:left">Customer</th><th style="text-align:left">Invoice</th><th>Amount</th><th style="text-align:left">Reason</th><th></th></tr></thead><tbody>
+    ${W.map(x => `<tr><td>${day(iso(x.created_at))}</td><td class="l">${esc(CUST[x.invoices?.customer_id]?.name || '')}</td><td class="l">${esc(x.invoices?.invoice_no || '')}</td><td class="m">${money(x.amount)}</td>
+      <td class="l">${esc(REASON[x.reason])}${x.note ? ` — ${esc(x.note)}` : ''}</td><td>${CAN_EDIT ? `<button class="btn small" data-undowo="${x.id}">Undo</button>` : ''}</td></tr>`).join('')}</tbody></table>
+    <div class="note mini" style="padding:8px 16px">Record write-offs in QuickBooks too (a credit memo against the invoice, or Receive Payment with a discount).</div>`
+    : '<div class="empty">No write-offs.</div>';
+  document.querySelectorAll('[data-delpay]').forEach(b => b.onclick = async () => {
+    const why = prompt('Why remove this payment? (e.g. entered twice, check bounced) — its invoices go back to owing.'); if (!why) return;
+    const { error } = await sb.rpc('ar_delete_payment', { p_receipt: b.dataset.delpay, p_why: why }); if (error) return alert(error.message); load();
+  });
+  document.querySelectorAll('[data-undowo]').forEach(b => b.onclick = async () => {
+    if (!confirm('Undo this write-off? The amount goes back to owing.')) return;
+    const { error } = await sb.rpc('ar_undo_write_off', { p_writeoff: b.dataset.undowo }); if (error) return alert(error.message); load();
+  });
+}
+$('csv').onclick = () => {
+  const q = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+  const lines = [['Customer', 'Invoice', 'Invoice date', 'Due date', 'Days past due', 'Bucket', 'Amount', 'Paid', 'Written off', 'Balance', 'Why still open'].join(',')];
+  OPEN.forEach(x => lines.push([q(CUST[x.customer_id]?.name), q(x.invoice_no), x.invoice_date, x.due_date, x.dpd, q(BUCKETS.find(b => b[0] === bucket(x.dpd))[1]), x.total, x.paid, x.written_off, x.balance, q(x.short_reason)].join(',')));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = `receivables-${TODAY}.csv`; a.click();
+};
+$('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value, password: $('password').value }); if (error) $('login-error').textContent = error.message; else location.reload(); };
+$('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+start();
+</script>
+</body>
+</html>
