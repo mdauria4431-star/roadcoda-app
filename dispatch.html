@@ -136,7 +136,7 @@
     <div class="card">
       <div class="boardwrap">
         <table class="board">
-          <thead><tr><th>Load</th><th>Truck</th><th>Trailer</th><th>Driver</th><th>Customer</th><th>Stop</th><th>PU</th><th>DEL</th><th>Status</th><th>Flags</th><th style="text-align:right">Miles</th></tr></thead>
+          <thead><tr><th>Load</th><th>Truck</th><th>Trailer</th><th title="How full the truck is now, from what it left with, what's been delivered and what's been picked up">Full</th><th>Driver</th><th>Customer</th><th>Stop</th><th>PU</th><th>DEL</th><th>Status</th><th>Flags</th><th style="text-align:right">Miles</th></tr></thead>
           <tbody id="board"></tbody>
         </table>
       </div>
@@ -316,7 +316,21 @@ function describe(l, ctx) {
 }
 
 // A load that changed crew mid-route (113): "2 tractors · breakdown"
-let DEF = {}, NOPRE = new Set();
+let DEF = {}, NOPRE = new Set(), FILL = {};
+// 143: how full the truck is now (deliveries off, refused freight and pickups on), against its capacity.
+// Before it leaves: amber under 80%, green 80% and up, red over 100%. Once it's running: red at 100%
+// (no room for returns), amber from 90%.
+function fillTag(l) {
+  const f = FILL[l.id]; if (!f) return '';
+  if (f.now_pct == null) return f.no_trailer ? '' : `<span class="dim" title="Set this truck's capacity on Equipment to see how full it is">?</span>`;
+  const started = !['planned', 'dispatched'].includes(l.status), p = Number(f.now_pct);
+  const col = p > 100 || (started && p >= 100) ? 'var(--late)' : started ? (p >= 90 ? 'var(--warn)' : 'var(--ink-2)') : p >= 80 ? 'var(--ok, #2fa36b)' : 'var(--warn)';
+  const unit = { pallets: ['pallets', f.now_pallets, f.cap_pallets], weight: ['lb', f.now_weight, f.cap_weight], cube: ['ft³', f.now_cube, f.cap_cube], pieces: ['pieces', f.now_pieces, f.cap_pieces] }[f.by_measure] || ['', 0, 0];
+  const n = (x) => Number(x || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const tip = `Now ${n(unit[1])} of ${n(unit[2])} ${unit[0]} (${p}%)${started && f.start_pct != null ? ` · left with ${f.start_pct}%` : ''} · measured by ${f.by_measure}${f.kinds ? ' · ' + f.kinds : ''}`;
+  return `<span title="${esc(tip)}" style="display:inline-flex;align-items:center;gap:5px;color:${col};font-weight:600">
+    <span style="display:inline-block;width:26px;height:6px;border-radius:3px;background:var(--line);overflow:hidden"><span style="display:block;height:100%;width:${Math.min(100, p)}%;background:${col}"></span></span>${p}%</span>`;
+}
 // 139: "2 defects" / "unsafe" next to the unit, and "no pre-trip" once its load has started without one
 function dvirTag(l) {
   const ids = [l.truck_id, l.trailer_id, l.trailer2_id].filter(Boolean), d = ids.map(i => DEF[i]).filter(Boolean);
@@ -343,6 +357,7 @@ function rowHtml(r, day) {
     <td class="n">${esc(l.load_no)}${old}</td>
     <td class="n">${esc(l.equipment?.unit_no || '')}${swapTag(l.id)}${dvirTag(l)}</td>
     <td class="n dim">${trailer}</td>
+    <td class="n">${fillTag(l)}</td>
     <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (l.driver2_id && DRV2[l.driver2_id] ? ` <span class="dim">+ ${esc(DRV2[l.driver2_id])}</span>${r.finished ? '' : hosTag(l.driver2_id)}` : '') + (r.finished ? '' : hosTag(l.driver_id)) + (UNREAD[l.driver_id] ? `<a href="messages.html?driver=${l.driver_id}" class="hos low" style="text-decoration:none" title="${UNREAD[l.driver_id]} unread message${UNREAD[l.driver_id] > 1 ? 's' : ''} from this driver">✉ ${UNREAD[l.driver_id]}</a>` : '') : '<span class="none">—</span>'}</td>
     <td class="dim">${esc(l.customers?.name || '')}</td>
     <td><span class="ofn${r.n > 1 ? '' : ' solo'}">${r.at}/${r.n}</span>${r.shown ? esc(name) : name}</td>
@@ -384,6 +399,10 @@ async function loadBoard(quiet) {
     LEGS = {};
     { const g = await sb.from('load_legs').select('load_id, truck_id, swap_reason').gte('created_at', addDays(from, -2));
       (g.error ? [] : g.data || []).forEach(x => { const c = LEGS[x.load_id] ||= { n: 0, trucks: new Set(), reason: null }; c.n++; if (x.truck_id) c.trucks.add(x.truck_id); if (x.swap_reason) c.reason = x.swap_reason; }); }
+    // 143: how full each truck is; nothing if not installed
+    { const ids = (loadsR.data || []).map(l => l.id); FILL = {};
+      for (let i = 0; i < ids.length; i += 150) { const fr = await sb.from('load_fill').select('*').in('load_id', ids.slice(i, i + 150));
+        if (fr.error) break; (fr.data || []).forEach(x => FILL[x.load_id] = x); } }
     // 139: open defects from drivers' inspections, and today's missing pre-trips; nothing if not installed
     DEF = {}; NOPRE = new Set();
     { const [od, mi] = await Promise.all([sb.from('inspection_defects').select('equipment_id, unsafe, item_label').eq('status', 'open'),
@@ -394,9 +413,9 @@ async function loadBoard(quiet) {
     const totalUnread = Object.values(UNREAD).reduce((a, b) => a + b, 0);
     $('msgs-btn').innerHTML = totalUnread ? `Messages <b style="margin-left:4px;color:var(--late)">${totalUnread}</b>` : 'Messages';
     HOS = {}; (hosR.error ? [] : hosR.data || []).forEach(h => HOS[h.driver_id] = h);
-    if (loadsR.error) { $('board').innerHTML = `<tr><td colspan="11" class="error">${esc(loadsR.error.message)}</td></tr>`; return; }
+    if (loadsR.error) { $('board').innerHTML = `<tr><td colspan="12" class="error">${esc(loadsR.error.message)}</td></tr>`; return; }
     const missing = [flagsR, delaysR, dwellR, closeR].find(r => r.error);
-    if (missing) { $('board').innerHTML = `<tr><td colspan="11" class="error">${esc(missing.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql in the SQL Editor.</td></tr>`; return; }
+    if (missing) { $('board').innerHTML = `<tr><td colspan="12" class="error">${esc(missing.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql in the SQL Editor.</td></tr>`; return; }
 
     const ctx = { flags: {}, openDelays: {}, dwell: {}, closed: {} };
     flagsR.data.forEach(f => ctx.flags[f.load_id] = f);
@@ -434,10 +453,10 @@ async function loadBoard(quiet) {
         (a.finished ? String(b.l.service_date).localeCompare(String(a.l.service_date)) : 0) ||
         a.sortKey - b.sortKey || String(a.l.load_no).localeCompare(String(b.l.load_no), undefined, { numeric: true }));
       if (!set.length) continue;
-      html += `<tr class="grp ${cls}"><td colspan="11">${label} · ${set.length}${note ? `<span class="gnote">${note}</span>` : ''}</td></tr>`;
+      html += `<tr class="grp ${cls}"><td colspan="12">${label} · ${set.length}${note ? `<span class="gnote">${note}</span>` : ''}</td></tr>`;
       html += set.map(r => rowHtml(r, day)).join('');
     }
-    $('board').innerHTML = html || `<tr><td colspan="11" class="empty">Nothing open for ${esc(day)}. Every trip on this date has been verified.</td></tr>`;
+    $('board').innerHTML = html || `<tr><td colspan="12" class="empty">Nothing open for ${esc(day)}. Every trip on this date has been verified.</td></tr>`;
 
     $('c-open').textContent = live.length;
     $('c-now').textContent = live.filter(r => r.band === 2).length;

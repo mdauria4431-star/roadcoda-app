@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-09-30-load-fill', date: '2026-09-30', title: 'Dispatch: how full each truck is, live',
+    body: 'A new Full column on the dispatch board shows how full each truck is right now: what it left with, less what\'s been delivered, plus what\'s been picked up (returns, cores, cages, totes) — refused freight stays on. Before a truck leaves, under 80% shows amber and 80% or more green; once it\'s running, it turns amber at 90% and red at 100% so you know there\'s no room for returns. Hover for the pallets. Set each truck\'s capacity on Equipment.',
+    link: 'dispatch.html', linkText: 'Open Dispatch', screen: ['dispatch'] },
   { id: '2026-09-30-receivables', date: '2026-09-30', title: 'Receivables: payments, short-pays and aging',
     body: 'Money › Receivables shows every open invoice by customer — current, 1–30, 31–60, 61–90 and 90+ days past due. Record a check once and apply it to several invoices (partial payments too); anything left over stays on the customer\'s account as a credit. Short-paid invoices stay open with a note until collected or written off. One click emails a customer a statement of what\'s open.',
     link: 'ar.html', linkText: 'Open Receivables', screen: ['invoices'], feature: 'invoicing' },
