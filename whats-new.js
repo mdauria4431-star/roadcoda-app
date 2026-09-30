@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-09-30-pod-check', date: '2026-09-30', title: 'AI check of BOLs and PODs before you bill',
+    body: 'Every BOL / POD photo or scan on a load is now read by AI a few minutes after it\'s added. It flags what makes a customer short-pay: no receiver signature, a PO that isn\'t the customer\'s, the receiver\'s written exception (short, damaged), a count that doesn\'t match, a missing page, or a photo it can\'t read. You\'ll see it on the trip under Documents and as the close-out flag AI — look at the photo, then fix it or click "Checked — it\'s fine". It never blocks billing on its own.',
+    screen: ['dispatch', 'invoices'], feature: 'pod_check' },
   { id: '2026-09-30-load-fill', date: '2026-09-30', title: 'Dispatch: how full each truck is, live',
     body: 'A new Full column on the dispatch board shows how full each truck is right now: what it left with, less what\'s been delivered, plus what\'s been picked up (returns, cores, cages, totes) — refused freight stays on. Before a truck leaves, under 80% shows amber and 80% or more green; once it\'s running, it turns amber at 90% and red at 100% so you know there\'s no room for returns. Hover for the pallets. Set each truck\'s capacity on Equipment.',
     link: 'dispatch.html', linkText: 'Open Dispatch', screen: ['dispatch'] },

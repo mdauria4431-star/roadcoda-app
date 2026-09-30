@@ -288,6 +288,10 @@ async function load() {
       const { data, error } = await sb.from('load_documents').select('id, kind, path, file_name, note, stop_id, shared, source, uploaded_at').eq('load_id', LOAD).order('uploaded_at');
       return error ? null : (data || []);
     })(),
+    pods: await (async () => {    // 144: what the AI read on each BOL / POD; nothing if not installed
+      const { data, error } = await sb.from('pod_reviews').select('id, document_id, status, findings, note, read, cleared_at, cleared_note, created_at').eq('load_id', LOAD);
+      return error ? null : Object.fromEntries((data || []).map(x => [x.document_id, x]));
+    })(),
     guestIds: await (async () => { const g = await sb.from('drivers').select('id').eq('is_guest', true).eq('active', true); return g.error ? [] : (g.data || []).map(x => x.id); })(),
     guest: await (async () => {   // guest driver on this load (77); nothing if not installed
       if (!L.data.driver_id) return { none: true };
@@ -728,15 +732,28 @@ function stopsHtml(edit) {
 
 // ── Documents (79): BOLs, receipts, tickets — from the driver's phone or uploaded here ──
 const DOCK = { bol: 'BOL', fuel_receipt: 'Fuel receipt', lumper: 'Lumper receipt', scale: 'Scale ticket', toll: 'Toll receipt', trip_sheet: 'Trip sheet', other: 'Other' };
+// 144: the AI check of BOLs / PODs — what it found, and a person clears it or fixes it
+function podCell(d, edit) {
+  if (!T.pods || !['bol', 'trip_sheet'].includes(d.kind)) return '';
+  const r = T.pods[d.id];
+  if (!r) return `<div class="mini dim" title="Read a few minutes after it's added">AI check: waiting</div>`;
+  if (r.status !== 'done') return `<div class="mini dim">AI check: ${esc(r.note || (r.status === 'skipped' ? 'skipped' : 'couldn\'t read it'))}${edit ? ` · <a href="#" data-podagain="${d.id}">try again</a>` : ''}</div>`;
+  const f = r.findings || [];
+  if (!f.length) return `<div class="mini" style="color:var(--ok, #2fa36b)">✓ AI check: looks right${r.read && r.read.receiver_name ? ` · signed by ${esc(r.read.receiver_name)}` : ''}</div>`;
+  if (r.cleared_at) return `<div class="mini dim" title="${esc(f.map(x => x.text).join('; '))}">AI check cleared: ${esc(r.cleared_note || '')}</div>`;
+  return `<div class="mini" style="color:var(--warn);margin-top:3px"><b>AI check found:</b><ul style="margin:2px 0 2px 16px;padding:0">${f.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul>
+    ${edit ? `<button class="btn small" data-podclear="${r.id}">Checked — it's fine…</button> <a href="#" data-podagain="${d.id}">read again</a>` : ''}</div>`;
+}
 function docsHtml(edit) {
   if (T.docs == null) return '';
   const seq = Object.fromEntries(T.l.stops.map(x => [x.id, x.seq]));
   const rows = T.docs.map(d => `<tr><td><b>${DOCK[d.kind] || esc(d.kind)}</b>${d.note ? `<div class="mini">${esc(d.note)}</div>` : ''}</td><td>${d.stop_id ? 'Stop ' + (seq[d.stop_id] || '?') : 'Load'}</td>
       <td class="mini">${d.source === 'driver' ? 'Driver' : 'Office'} · ${when(d.uploaded_at)}</td>
-      <td><a href="#" data-docview="${esc(d.path)}">View</a></td>
+      <td><a href="#" data-docview="${esc(d.path)}">View</a>${podCell(d, edit)}</td>
       <td><label class="mini" style="display:flex;gap:5px;align-items:center"><input type="checkbox" data-docshare="${d.id}" ${d.shared ? 'checked' : ''} ${edit ? '' : 'disabled'} style="height:auto"> Shared with customer</label></td>
       <td>${edit && d.kind === 'fuel_receipt' && T.sheet ? `<button class="btn small" data-docfuel="${d.id}">Add to fuel</button>` : ''}${edit ? ` <button class="btn small" data-docdel="${d.id}">Remove</button>` : ''}</td></tr>`).join('');
-  return `<div class="card" data-feature="documents"><header><h2>Documents</h2><span class="sp"></span><span class="mini">From the driver's phone or uploaded here. Tick "Shared" to show one in the customer portal.</span></header>
+  const podWait = T.pods && T.docs.some(d => ['bol', 'trip_sheet'].includes(d.kind) && !T.pods[d.id]);
+  return `<div class="card" data-feature="documents"><header><h2>Documents</h2><span class="sp"></span><span class="mini">From the driver's phone or uploaded here. Tick "Shared" to show one in the customer portal.</span>${edit && podWait ? ' <button class="btn small" id="pod-now" data-feature="pod_check">AI check now</button>' : ''}</header>
     ${T.docs.length ? `<table class="stops"><tbody>${rows}</tbody></table>` : '<div class="mini" style="padding:10px 16px">No documents yet — the driver adds them with Documents in the app.</div>'}
     ${edit ? `<div style="padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="doc-kind" style="height:30px">${Object.entries(DOCK).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
       <select id="doc-stop" style="height:30px"><option value="">Whole load</option>${T.l.stops.map(x => `<option value="${x.id}">Stop ${x.seq} · ${esc(x.consignee)}</option>`).join('')}</select>
@@ -1015,6 +1032,21 @@ function wire(edit) {
   // Documents (79)
   document.querySelectorAll('[data-docview]').forEach(a => a.onclick = async (e) => { e.preventDefault(); const { data, error } = await sb.storage.from('scan-photos').createSignedUrl(a.dataset.docview, 600); if (error) return fail(error); window.open(data.signedUrl, '_blank', 'noopener'); });
   document.querySelectorAll('[data-docshare]').forEach(c => c.onchange = async () => { const { error } = await sb.from('load_documents').update({ shared: c.checked }).eq('id', c.dataset.docshare); if (error) { c.checked = !c.checked; return fail(error); } toast(c.checked ? 'Shared with the customer' : 'No longer shared'); });
+  // 144: AI check of BOLs / PODs
+  document.querySelectorAll('[data-podclear]').forEach(b => b.onclick = async () => {
+    const note = prompt('What did you check? (e.g. "receiver signed on page 2", "PO confirmed by phone", "short was resolved")'); if (!note || !note.trim()) return;
+    const { error } = await sb.rpc('pod_clear', { p_review: b.dataset.podclear, p_note: note.trim() }); if (error) return fail(error); toast('Cleared'); load();
+  });
+  document.querySelectorAll('[data-podagain]').forEach(a => a.onclick = async (e) => {
+    e.preventDefault(); const { error } = await sb.rpc('pod_recheck', { p_document: a.dataset.podagain }); if (error) return fail(error);
+    const r = await sb.functions.invoke('pod-check', { body: { load_id: LOAD } }); if (r.error || r.data?.error) toast('It will be read again in a few minutes'); load();
+  });
+  if ($('pod-now')) $('pod-now').onclick = async () => {
+    $('pod-now').disabled = true; $('pod-now').textContent = 'Reading…';
+    const { data, error } = await sb.functions.invoke('pod-check', { body: { load_id: LOAD } });
+    if (error || data?.error) { toast(data?.error || 'Couldn\'t run it now — it runs by itself every 10 minutes'); }
+    load();
+  };
   document.querySelectorAll('[data-docdel]').forEach(b => b.onclick = async () => { if (!confirm('Remove this document from the load?')) return; const { error } = await sb.from('load_documents').delete().eq('id', b.dataset.docdel); if (error) return fail(error); load(); });
   document.querySelectorAll('[data-docfuel]').forEach(b => b.onclick = () => {
     const d = T.docs.find(x => x.id === b.dataset.docfuel);
