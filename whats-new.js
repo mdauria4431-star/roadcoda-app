@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-09-30-compliance-watch', date: '2026-09-30', title: 'Compliance watch: CSA scores, return to duty, revoked ELDs',
+    body: 'Safety › Compliance watch puts what an auditor or insurer looks at first on one page. Add your USDOT number and RoadCoda pulls your CSA categories, out-of-service rates and crashes from FMCSA every Monday — and flags a category that\'s climbing or near the threshold before it turns into a warning letter; new alerts can be emailed to your safety contact. It also tracks return to duty after a drug or alcohol violation (SAP, the return-to-duty test, follow-up tests — Dispatch sees only "not cleared"), checks your ELD against the devices FMCSA has revoked, and lists overdue Clearinghouse queries, CDLs and medical cards.',
+    link: 'compliance-watch.html', linkText: 'Open Compliance watch', screen: ['safety'] },
   { id: '2026-09-30-pod-check', date: '2026-09-30', title: 'AI check of BOLs and PODs before you bill',
     body: 'Every BOL / POD photo or scan on a load is now read by AI a few minutes after it\'s added. It flags what makes a customer short-pay: no receiver signature, a PO that isn\'t the customer\'s, the receiver\'s written exception (short, damaged), a count that doesn\'t match, a missing page, or a photo it can\'t read. You\'ll see it on the trip under Documents and as the close-out flag AI — look at the photo, then fix it or click "Checked — it\'s fine". It never blocks billing on its own.',
     screen: ['dispatch', 'invoices'], feature: 'pod_check' },

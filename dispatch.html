@@ -316,7 +316,9 @@ function describe(l, ctx) {
 }
 
 // A load that changed crew mid-route (113): "2 tractors · breakdown"
-let DEF = {}, NOPRE = new Set(), FILL = {};
+let DEF = {}, NOPRE = new Set(), FILL = {}, NOTCLEAR = new Set();
+// 145: a driver in an open return-to-duty process — Dispatch sees only "not cleared", Safety has the why
+const clrTag = (id) => id && NOTCLEAR.has(id) ? `<a href="compliance-watch.html" class="hos" style="text-decoration:none;color:var(--late);font-weight:700" title="This driver isn't cleared to drive. Safety › Compliance watch has the details.">not cleared</a>` : '';
 // 143: how full the truck is now (deliveries off, refused freight and pickups on), against its capacity.
 // Before it leaves: amber under 80%, green 80% and up, red over 100%. Once it's running: red at 100%
 // (no room for returns), amber from 90%.
@@ -358,7 +360,7 @@ function rowHtml(r, day) {
     <td class="n">${esc(l.equipment?.unit_no || '')}${swapTag(l.id)}${dvirTag(l)}</td>
     <td class="n dim">${trailer}</td>
     <td class="n">${fillTag(l)}</td>
-    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (l.driver2_id && DRV2[l.driver2_id] ? ` <span class="dim">+ ${esc(DRV2[l.driver2_id])}</span>${r.finished ? '' : hosTag(l.driver2_id)}` : '') + (r.finished ? '' : hosTag(l.driver_id)) + (UNREAD[l.driver_id] ? `<a href="messages.html?driver=${l.driver_id}" class="hos low" style="text-decoration:none" title="${UNREAD[l.driver_id]} unread message${UNREAD[l.driver_id] > 1 ? 's' : ''} from this driver">✉ ${UNREAD[l.driver_id]}</a>` : '') : '<span class="none">—</span>'}</td>
+    <td>${l.drivers?.full_name ? esc(l.drivers.full_name) + (r.finished ? '' : clrTag(l.driver_id)) + (l.driver2_id && DRV2[l.driver2_id] ? ` <span class="dim">+ ${esc(DRV2[l.driver2_id])}</span>${r.finished ? '' : clrTag(l.driver2_id) + hosTag(l.driver2_id)}` : '') + (r.finished ? '' : hosTag(l.driver_id)) + (UNREAD[l.driver_id] ? `<a href="messages.html?driver=${l.driver_id}" class="hos low" style="text-decoration:none" title="${UNREAD[l.driver_id]} unread message${UNREAD[l.driver_id] > 1 ? 's' : ''} from this driver">✉ ${UNREAD[l.driver_id]}</a>` : '') : '<span class="none">—</span>'}</td>
     <td class="dim">${esc(l.customers?.name || '')}</td>
     <td><span class="ofn${r.n > 1 ? '' : ' solo'}">${r.at}/${r.n}</span>${r.shown ? esc(name) : name}</td>
     <td class="n">${pu}</td>
@@ -395,6 +397,7 @@ async function loadBoard(quiet) {
       WEEKH = {}; (wk.error ? [] : wk.data || []).forEach(x => WEEKH[x.driver_id] = x);
       if (cr.data && cr.data.plan_max_duty_h) DAYLIM.duty = Number(cr.data.plan_max_duty_h) * 60; }
     UNREAD = {}; (msgR.error ? [] : msgR.data || []).forEach(m => UNREAD[m.driver_id] = m.unread);
+    { const nc = await sb.rpc('drivers_not_cleared'); NOTCLEAR = new Set((nc.error ? [] : nc.data || []).map(x => x.driver_id)); }   // 145; nothing if not installed
     // crew changes mid-route (113); nothing if not installed
     LEGS = {};
     { const g = await sb.from('load_legs').select('load_id, truck_id, swap_reason').gte('created_at', addDays(from, -2));
