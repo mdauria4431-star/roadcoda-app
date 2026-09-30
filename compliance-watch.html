@@ -227,7 +227,7 @@ function drawCsa(hist) {
   if (!s) { $('csa').innerHTML = `<div class="empty">${W.usdot ? (W.last_error ? 'Last check failed: ' + esc(W.last_error) : 'Press "Check FMCSA now".') : 'Add the USDOT number below.'}</div>`; $('csa-src').textContent = ''; return; }
   const c = s.carrier || {};
   $('csa-src').textContent = `${c.name || ''} · USDOT ${s.usdot}${c.safety_rating ? ' · rating ' + ({ S: 'Satisfactory', C: 'Conditional', U: 'Unsatisfactory' }[c.safety_rating] || c.safety_rating) : ' · not rated'}`;
-  const pct = (x) => x == null || x === '' ? '—' : x + '%';
+  const pct = (x) => x == null || x === '' ? '—' : (/^-?\d+(\.\d+)?$/.test(String(x)) ? String(Math.round(Number(x) * 10) / 10) : x) + '%';
   const oos = (r, n, i) => `<div class="v ${Number(r) > Number(n) && Number(i) >= 5 ? 'up' : ''}">${pct(r)}</div><div class="s">national ${pct(n)} · ${i ?? 0} inspections</div>`;
   let h = `<div class="stats">
     <div class="stat"><div class="k">Vehicle out of service</div>${oos(c.vehicle_oos_rate, c.vehicle_oos_national, c.vehicle_insp)}</div>
@@ -241,7 +241,7 @@ function drawCsa(hist) {
     const isPct = /^\d/.test(b.percentile || '');
     const alert = b.over_threshold || b.roadside_alert || b.investigation_alert;
     const near = !alert && isPct && Number(b.percentile) >= Number(b.threshold) - 10;
-    return `<tr><td><b>${esc(b.name)}</b></td><td class="n">${esc(b.measure ?? '—')}</td>
+    return `<tr><td><b>${esc(String(b.name || '').replace(/&#8203;|\u200B/g, ''))}</b></td><td class="n">${esc(b.measure ?? '—')}</td>
       <td class="n">${isPct ? `<b class="${alert ? 'up' : ''}">${esc(b.percentile)}%</b>` : `<span class="dim">${esc(b.percentile || '—')}</span>`}</td>
       <td class="n">${b.threshold ? esc(b.threshold) + '%' : '—'}</td>
       <td class="n">${esc(b.insp_with_viol ?? '—')} / ${esc(b.violations ?? '—')}</td>
