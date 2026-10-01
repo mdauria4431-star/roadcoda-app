@@ -270,6 +270,13 @@ async function load() {
     const n = Math.round((new Date(dt + 'T00:00:00') - new Date(today + 'T00:00:00')) / 864e5);
     att.push([n < 0 ? 'red' : '', `<a href="drivers.html?id=${d.id}">${esc(d.full_name)}</a> · ${what} ${n < 0 ? `expired ${esc(new Date(dt + 'T00:00:00').toLocaleDateString())}` : n === 0 ? 'expires today' : `expires in ${n} day${n === 1 ? '' : 's'}`}`]);
   }));
+  // 151: where customers send payment changed in the last 14 days (the owner sees it)
+  if (window.RC_ACCESS && window.RC_ACCESS.owner) {
+    const PC = await sb.from('carrier_settings_log').select('changed_at, changed_by, setting, new_value').eq('payment', true)
+      .gte('changed_at', new Date(Date.now() - 14 * 864e5).toISOString()).order('changed_at', { ascending: false }).limit(5);
+    const PNAME = { name: 'company name', office_address: 'office address', remit_name: 'remit-to name', remit_address: 'remit-to address', remit_email: 'billing email', remit_phone: 'remit phone' };
+    (PC.error ? [] : PC.data || []).forEach(c => att.push(['red', `<a href="company.html#paid">Payment details changed</a> · ${esc(PNAME[c.setting] || c.setting)} set to "${esc(c.new_value || 'blank')}" by ${esc(c.changed_by || 'someone')} on ${esc(new Date(c.changed_at).toLocaleString())}. If that wasn't you or someone you trust, check it now: customers pay where the invoice says.`]));
+  }
   const noAddr = stops.filter(s => !s.address && s.status === 'pending');
   if (noAddr.length) {
     const cid = noAddr[0].load?.customer_id;
