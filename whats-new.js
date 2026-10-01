@@ -8,6 +8,12 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-10-01-qualification', date: '2026-10-01', title: 'Trips can\'t start with an unqualified driver or an out-of-service truck',
+    body: 'When you assign a driver, co-driver, truck or trailer on the Trip screen, RoadCoda tells you right away if something stops the trip: an expired CDL or medical card, a driver not cleared to return to duty, a missing pre-employment drug test or Clearinghouse query for a new hire, a truck or trailer out of service, or an expired inspection or registration. The board marks those loads "can\'t start", and the driver\'s first Arrive is refused until it\'s fixed. If it has to run anyway, the owner or someone with Edit on Dispatch or Safety can let that one trip run with a written reason under "Can this trip run?". Who assigned what, when, and every override are kept on the trip.',
+    link: 'dispatch.html', linkText: 'Open Dispatch', screen: ['dispatch', 'safety'] },
+  { id: '2026-10-01-detention-fuel', date: '2026-10-01', title: 'Detention is billed, and fuel counts in Profit',
+    body: 'Coded detention now goes on the customer\'s bill by itself: when dispatch codes a delay as billable on the trip, the billed minutes times the customer\'s detention price per hour become a charge on the load, and it follows any recode or waive. Profit and the cost report now count fuel: fuel card statements uploaded on IFTA are shared over each truck\'s loads that week, and Loads › the load has "Costs on this load" for fuel not on a card, lumper, repairs and other costs.',
+    link: 'profit.html', linkText: 'Open Profit', screen: ['invoices', 'money'] },
   { id: '2026-10-01-cases', date: '2026-10-01', title: 'Freight by the case, and a leaving time for each truck',
     body: 'Cases are now a unit like pallets: on stops, in delivery lists, and in rate sheets ($ per case). Importing a customer\'s delivery list reads long headings from other systems ("Service Location - City", "Order Type Quantities - CASES"), skips a quantity column of all zeros, marks pickups, and puts a store\'s repeat rows on one stop. In the Route planner, set how many cases a trailer holds (Setup › capacity, Pieces) or what one case takes; if no ticked truck has a limit for the day\'s freight, the plan says so. Each truck can also leave at its own time today: fill in Leaves next to it.',
     link: 'planner.html', linkText: 'Open the Route planner', screen: ['dispatch'] },

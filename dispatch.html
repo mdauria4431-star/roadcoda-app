@@ -316,7 +316,11 @@ function describe(l, ctx) {
 }
 
 // A load that changed crew mid-route (113): "2 tractors · breakdown"
-let DEF = {}, NOPRE = new Set(), FILL = {}, NOTCLEAR = new Set();
+let DEF = {}, NOPRE = new Set(), FILL = {}, NOTCLEAR = new Set(), QUALB = {};
+// 158: a trip that can't start (driver files, out-of-service units), or one the office let run
+const qualTag = (l) => { const q = QUALB[l.id]; if (!q || !q.blocks) return '';
+  return q.overridden ? `<a href="trip.html?load=${l.id}#qual" class="hos low" style="text-decoration:none" title="Let run by the office: ${esc(q.summary || '')}">let run</a>`
+    : `<a href="trip.html?load=${l.id}#qual" class="hos" style="text-decoration:none;color:var(--late);font-weight:700" title="${esc(q.summary || '')}">can't start</a>`; };
 // 145: a driver in an open return-to-duty process — Dispatch sees only "not cleared", Safety has the why
 const clrTag = (id) => id && NOTCLEAR.has(id) ? `<a href="compliance-watch.html" class="hos" style="text-decoration:none;color:var(--late);font-weight:700" title="This driver isn't cleared to drive. Safety › Compliance watch has the details.">not cleared</a>` : '';
 // 143: how full the truck is now (deliveries off, refused freight and pickups on), against its capacity.
@@ -356,7 +360,7 @@ function rowHtml(r, day) {
   const del = r.shown ? hm(r.shown.window_end || r.shown.window_start || r.shown.eta) : '';
   const name = r.shown ? r.shown.consignee : '<span class="none">no stops</span>';
   return `<tr data-s="${r.s}" data-load="${l.id}" tabindex="0" title="${esc(r.why || 'Open load ' + l.load_no)}">
-    <td class="n">${esc(l.load_no)}${old}</td>
+    <td class="n">${esc(l.load_no)}${old}${qualTag(l)}</td>
     <td class="n">${esc(l.equipment?.unit_no || '')}${swapTag(l.id)}${dvirTag(l)}</td>
     <td class="n dim">${trailer}</td>
     <td class="n">${fillTag(l)}</td>
@@ -397,6 +401,7 @@ async function loadBoard(quiet) {
       WEEKH = {}; (wk.error ? [] : wk.data || []).forEach(x => WEEKH[x.driver_id] = x);
       if (cr.data && cr.data.plan_max_duty_h) DAYLIM.duty = Number(cr.data.plan_max_duty_h) * 60; }
     UNREAD = {}; (msgR.error ? [] : msgR.data || []).forEach(m => UNREAD[m.driver_id] = m.unread);
+    { const qb = await sb.rpc('loads_qualification', { p_from: from, p_to: addDays(day, 2) }); QUALB = {}; (qb.error ? [] : qb.data || []).forEach(x => QUALB[x.load_id] = x); }   // 158
     { const nc = await sb.rpc('drivers_not_cleared'); NOTCLEAR = new Set((nc.error ? [] : nc.data || []).map(x => x.driver_id)); }   // 145; nothing if not installed
     // crew changes mid-route (113); nothing if not installed
     LEGS = {};

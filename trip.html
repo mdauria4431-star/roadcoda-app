@@ -265,6 +265,8 @@ async function load() {
   const firstErr = [checks, delays, dwell, close, changes, closeLog].find(r => r.error);
   if (firstErr) { $('trip').innerHTML = `<div class="card empty error">${esc(firstErr.error.message)} — run 41_trip_closeout.sql and 42_dispatch_board.sql first.</div>`; return; }
 
+  // 158: can this trip run? (driver files, out-of-service units); nothing if not installed
+  { const q = await sb.rpc('load_qualification', { p_load: LOAD }); QUAL = q.error ? null : q.data; }
   T = {
     l, checks: (checks.data || []).sort((a, b) => a.rank - b.rank || a.sort - b.sort),
     delays: Object.fromEntries((delays.data || []).map(d => [d.stop_id, d])),
@@ -437,6 +439,7 @@ function draw() {
     </div>
   </div>`;
 
+  html += qualHtml(edit);
   html += swapHtml({ drvList, trkList, trlList });
   html += legsHtml(edit);
   html += closeoutHtml(edit);
@@ -931,8 +934,50 @@ function logHtml() {
     <div class="logs">${all.map(e => `<div class="log"><time>${when(e.at)}</time><span class="w">${esc(nameOf(e.who))}</span><span>${e.x}</span></div>`).join('') || '<div class="empty">No office changes yet. Driver taps are on the stops themselves.</div>'}</div></div>`;
 }
 
+// ── 158: can this trip run? ──────────────────────────────────────────
+let QUAL = null;
+const when2 = (t) => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+function qualHtml(edit) {
+  if (!QUAL || T.finished || ['delivered', 'cancelled'].includes(T.l.status)) return '';
+  const P = QUAL.problems || [], B = P.filter(p => p.blocks), W = P.filter(p => !p.blocks), o = QUAL.override, H = QUAL.history || [];
+  if (!P.length && !o && !H.length) return '';
+  const started = T.l.status === 'in_progress';
+  const row = (p) => `<li><b>${esc(p.who)} ${esc(p.subject || '')}</b>: ${esc(p.detail)}</li>`;
+  return `<div class="card" id="qual" style="border-color:${B.length && !o ? 'var(--late)' : 'var(--line)'}"><header><h2>Can this trip run?</h2><span class="sp"></span>
+      <span class="chip ${B.length && !o ? '' : 'ok'}" style="${B.length && !o ? 'background:var(--late);color:#fff' : ''}">${!B.length ? 'Yes' : o ? 'Let run by the office' : started ? 'Started — but these are wrong' : 'Can\'t start'}</span></header>
+    <div class="pad">
+      ${B.length ? `<div class="error" style="margin-bottom:4px"><b>${o ? 'Wrong, but let run' : 'Stops the trip'}</b> — the driver's first Arrive is refused until it's fixed${o ? '' : ' or the office lets it run'}:</div><ul style="margin:0 0 8px 18px">${B.map(row).join('')}</ul>` : ''}
+      ${W.length ? `<div class="mini" style="margin-bottom:4px"><b>Not on file</b> (doesn't stop the trip — add it on Drivers / Equipment / Compliance):</div><ul class="mini" style="margin:0 0 8px 18px">${W.map(row).join('')}</ul>` : ''}
+      ${o ? `<div class="mini">Let run by <b>${esc(o.by || 'someone')}</b> on ${esc(when2(o.at))}: "${esc(o.reason)}"${edit && QUAL.can_override ? ' · <a href="#" id="qual-off">take it back</a>' : ''}</div>` : ''}
+      ${B.length && !o && edit && QUAL.can_override ? `<div class="row" style="margin-top:8px;align-items:end"><label style="flex:1 1 300px">Let this trip run anyway — why?<input id="qual-why" placeholder="e.g. medical card renewed today, copy coming; checked the card myself"></label><button class="btn" id="qual-ok" type="button">Let this trip run</button></div>
+        <div class="mini">Only for this trip. Your name, the time, your reason and what was wrong are kept.</div>` : ''}
+      ${B.length && !o && !QUAL.can_override ? '<div class="mini">Only the owner or someone with Edit on Dispatch or Safety can let it run anyway.</div>' : ''}
+      ${H.length ? `<details style="margin-top:8px"><summary class="mini" style="cursor:pointer">Who assigned what, and when (${H.length})</summary><div class="logs">${H.map(h => `<div class="log"><time>${esc(when2(h.at))}</time><span class="w">${esc(h.by || '')}</span><span>${h.what === 'assigned' ? `assigned ${esc(h.subject)} while: ${esc(h.detail)}` : h.what === 'let run' ? `let the trip run: "${esc(h.detail)}"` : 'took back the override'}</span></div>`).join('')}</div></details>` : ''}
+    </div></div>`;
+}
+function wireQual() {
+  if ($('qual-ok')) $('qual-ok').onclick = async () => {
+    const why = $('qual-why').value.trim(); if (why.length < 5) return fail('Write why this trip may run anyway.');
+    const { error } = await sb.rpc('load_qual_override', { p_load: T.l.id, p_reason: why }); if (error) return fail(error);
+    toast('This trip may run. Your reason is kept.'); load();
+  };
+  if ($('qual-off')) $('qual-off').onclick = async (e) => { e.preventDefault();
+    const { error } = await sb.rpc('load_qual_override_off', { p_load: T.l.id }); if (error) return fail(error);
+    toast('Override taken back.'); load();
+  };
+}
+// Right after dispatch assigns someone or something: say at once if it stops the trip
+async function qualNotice(field) {
+  const role = { driver_id: 'Driver', driver2_id: 'Co-driver', truck_id: 'Truck', trailer_id: 'Trailer', trailer2_id: 'Second trailer' }[field];
+  if (!role) return;
+  const q = await sb.rpc('load_qualification', { p_load: T.l.id }); if (q.error || !q.data) return;
+  const bad = (q.data.problems || []).filter(p => p.blocks && p.who === role);
+  if (bad.length) fail(`Assigned, but this trip can't start: ${bad.map(p => `${p.subject} — ${p.detail}`).join('; ')}. Your name and the time are recorded. Fix it, pick someone else, or let the trip run with a reason under "Can this trip run?".`);
+}
+
 // ── Wiring ───────────────────────────────────────────────────────────
 function wire(edit) {
+  wireQual();
   // Load header fields
   document.querySelectorAll('select[data-load]').forEach(el => el.onchange = async () => {
     const f = el.dataset.load, was = T.l[f], now = el.value || null;
@@ -951,7 +996,8 @@ function wire(edit) {
       if ('driver2_id' in upd && f !== 'driver2_id') back.driver2_id = T.l.driver2_id;
       const r = await sb.from('loads').update(back).eq('id', T.l.id); if (r.error) fail(r.error); else { toast('Undone'); load(); }
     });
-    load();
+    await load();
+    if (now) qualNotice(f);
   });
   const sheet = $('sheet'), sheetIn = $('sheet-in');
   const setSheet = async (on) => {
