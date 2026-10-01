@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan your day free · RoadCoda</title>
+<meta name="description" content="Upload tomorrow's store list and see how many trucks it takes, the miles, the driver hours and what the day costs. Free, no sign-up.">
+<meta name="theme-color" content="#070c14">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
+<script src="config.js"></script>
+<script src="planner-core.js"></script>
+<style>
+  :root{--bg:#070c14;--panel:#0e1624;--panel-2:#131d2e;--rule:#1d2a3d;--rule-soft:#16202f;--ink:#e9eef6;--ink-2:#a9b6c8;--ink-3:#7b8798;
+        --violet:#8b5cf6;--violet-deep:#6d3fc4;--amber:#e0a325;--green:#34d399;--red:#f4685f}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+  header{border-bottom:1px solid var(--rule);background:rgba(7,12,20,.9)}
+  .bar{display:flex;align-items:center;gap:18px;height:62px}
+  .brand{font-family:Archivo;font-weight:800;font-size:20px;letter-spacing:-.02em;text-decoration:none}
+  .brand span{color:var(--violet)}
+  .bar nav{margin-left:auto;display:flex;gap:14px;font-size:14.5px}
+  .bar nav a{text-decoration:none;color:var(--ink-2)}
+  .pill-link{border:1px solid var(--violet);border-radius:6px;padding:6px 12px;color:#fff!important;background:rgba(139,92,246,.18)}
+  h1,h2,h3{font-family:Archivo,system-ui,sans-serif;font-weight:800;letter-spacing:-.02em;line-height:1.1;margin:0}
+  h1{font-size:clamp(28px,4vw,42px);margin:34px 0 10px;max-width:22ch}
+  h2{font-size:21px;margin:0 0 4px}
+  .lede{color:var(--ink-2);font-size:18px;max-width:62ch;margin:0 0 22px}
+  .step{border:1px solid var(--rule);border-radius:12px;background:var(--panel);padding:18px 20px;margin-bottom:16px}
+  .step .n{font-family:'IBM Plex Mono',monospace;color:var(--violet);font-size:13px;font-weight:600;letter-spacing:.06em}
+  .hint{color:var(--ink-3);font-size:14px;margin:4px 0 0}
+  label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--ink-2)}
+  label.chk{flex-direction:row;align-items:center;gap:8px;font-weight:500;color:var(--ink)}
+  input,select,textarea{background:var(--panel-2);border:1px solid var(--rule);border-radius:8px;color:var(--ink);font:inherit;font-size:15px;padding:0 10px;height:40px;min-width:0}
+  textarea{height:110px;padding:8px 10px;font-family:'IBM Plex Mono',monospace;font-size:13px;resize:vertical}
+  input[type=checkbox]{height:auto}
+  input[type=file]{padding:8px}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+  .span2{grid-column:span 2}.span4{grid-column:1/-1}
+  @media (max-width:820px){.grid{grid-template-columns:1fr 1fr}}
+  @media (max-width:520px){.grid{grid-template-columns:1fr}.span2{grid-column:auto}}
+  .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .btn{display:inline-flex;align-items:center;gap:8px;background:var(--violet-deep);color:#fff;border:0;border-radius:8px;padding:0 18px;height:42px;font:600 15.5px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+  .btn:hover{background:#7c4ad6}
+  .btn.ghost{background:transparent;border:1px solid var(--rule);color:var(--ink)}
+  .btn.ghost:hover{border-color:var(--violet)}
+  .btn.big{height:50px;padding:0 26px;font-size:17px;background:linear-gradient(135deg,#9b6bff 0%,#6d3fc4 100%)}
+  .btn[disabled]{opacity:.5;cursor:default}
+  .msg{font-size:14.5px;color:var(--ink-2)}
+  .error{color:var(--red)}
+  .ok{color:var(--green)}
+  details summary{cursor:pointer;color:var(--ink-2);font-size:14px;margin-top:12px}
+  .tablewrap{overflow-x:auto;margin-top:10px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th{text-align:left;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--rule)}
+  td{padding:7px 8px;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .mono{font-family:'IBM Plex Mono',monospace;font-size:13px}
+  .map select{height:34px;font-size:13.5px}
+  .tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:14px 0 6px}
+  @media (max-width:820px){.tiles{grid-template-columns:repeat(2,1fr)}}
+  .tile{background:var(--panel-2);border:1px solid var(--rule);border-radius:10px;padding:12px 14px}
+  .tile b{display:block;font-family:Archivo;font-size:28px;letter-spacing:-.02em;color:#fff}
+  .tile span{font-size:13px;color:var(--ink-3)}
+  .route{border:1px solid var(--rule);border-radius:10px;margin-top:12px;overflow:hidden}
+  .route-h{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;padding:10px 14px;background:var(--panel-2);border-bottom:1px solid var(--rule);font-size:14px;color:var(--ink-2)}
+  .route-h b{font-family:Archivo;color:var(--ink);font-size:16px}
+  .tight{color:var(--amber);font-weight:600}
+  .warn{background:rgba(224,163,37,.1);border:1px solid rgba(224,163,37,.45);border-radius:10px;padding:10px 14px;margin-top:12px;font-size:14.5px}
+  .cta{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:24px;align-items:start}
+  .grid.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  @media (max-width:520px){.grid.g2{grid-template-columns:1fr}}
+  @media (max-width:820px){.cta{grid-template-columns:1fr}}
+  .fine{font-size:12.5px;color:var(--ink-3);margin-top:10px;max-width:70ch}
+  footer{padding:30px 0 44px;font-size:13.5px;color:var(--ink-3)}
+  footer a{color:var(--ink-3)}
+  :focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+</style>
+</head>
+<body>
+<header><div class="wrap bar">
+  <a class="brand" href="https://roadcoda.com/">Road<span>Coda</span></a>
+  <nav><a href="https://roadcoda.com/">Home</a><a href="https://app.roadcoda.com/tour.html">Tour</a><a class="pill-link" href="https://app.roadcoda.com/signup.html">Free trial</a></nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Plan tomorrow free.</h1>
+  <p class="lede">Upload tomorrow's store list. See how many trucks it takes, the miles, the driver hours and what the day costs. No sign-up, and the planning happens right here in your browser.</p>
+
+  <!-- 1. The list -->
+  <section class="step">
+    <div class="n">STEP 1</div>
+    <h2>Your stops</h2>
+    <p class="hint">An Excel or CSV file with one row per stop: the store name, its address, the delivery window, and pallets (or cases). Or paste the rows straight from Excel, headers included.</p>
+    <div class="row">
+      <input type="file" id="file" accept=".xlsx,.xls,.csv,.txt" aria-label="Choose your stop list">
+      <button class="btn ghost" id="sample-btn" type="button">Try a sample day</button>
+      <a class="msg" href="#" id="paste-link">or paste rows</a>
+    </div>
+    <textarea id="paste" hidden placeholder="Store&#9;Address&#9;City&#9;State&#9;Zip&#9;Window open&#9;Window close&#9;Pallets"></textarea>
+    <div id="map-box" hidden>
+      <p class="hint" id="read-msg"></p>
+      <div class="tablewrap map"><table><thead><tr id="map-head"></tr></thead><tbody id="map-preview"></tbody></table></div>
+      <p class="hint">Check the column picks under each heading. Address can be one column ("12 Main St, Hartford, CT 06103") or split into street, city, state and zip. A window can be two columns, or one like "8:00-10:00".</p>
+    </div>
+  </section>
+
+  <!-- 2. The day -->
+  <section class="step">
+    <div class="n">STEP 2</div>
+    <h2>Your day</h2>
+    <div class="grid">
+      <label class="span2">Trucks start from (your yard or the customer's DC)<input id="depot" placeholder="e.g. 100 Industrial Rd, Windsor, CT 06095" autocomplete="off"></label>
+      <label>Trucks leave at<input id="leave" type="time" value="05:00"></label>
+      <label>Truck<select id="truck">
+        <option value="26|tractor">53' trailer · 26 pallets</option><option value="24|tractor">48' trailer · 24 pallets</option>
+        <option value="14|tractor">28' pup · 14 pallets</option><option value="12|straight">26' box truck · 12 pallets</option>
+        <option value="10|straight">24' box truck · 10 pallets</option><option value="custom|straight">Other…</option></select></label>
+      <label id="cap-wrap" hidden>Pallets per truck<input id="cap" type="number" min="1" max="60" value="20"></label>
+      <label>Minutes at each stop<input id="svc" type="number" min="5" max="240" value="30"></label>
+      <label>Arrive at least … min before a window closes<input id="buffer" type="number" min="0" max="120" value="30"></label>
+      <label>Most trucks you can use<input id="fleet" type="number" min="1" max="60" value="20"></label>
+      <label class="chk" style="align-self:end"><input type="checkbox" id="back" checked> Trucks come back at the end</label>
+    </div>
+    <details><summary>What a day costs to run, and speeds (typical figures — change them to yours)</summary>
+      <div class="grid">
+        <label>Truck, per day $<input id="c-truck" type="number" min="0" step="5" value="180" title="Tractor + trailer, or the box truck: payment, insurance, plates"></label>
+        <label>Driver, per hour $<input id="c-driver" type="number" min="0" step="0.5" value="36.40" title="Wages plus taxes and benefits"></label>
+        <label>Per mile $<input id="c-mile" type="number" min="0" step="0.01" value="0.95" title="Fuel, tires and maintenance"></label>
+        <label>Average speed (mph)<input id="mph" type="number" min="15" max="65" value="45"></label>
+        <label>Road allowance (× straight line)<input id="road" type="number" min="1" max="2" step="0.05" value="1.25"></label>
+        <label>Driving limit (hours)<input id="max-drive" type="number" min="4" max="11" value="11"></label>
+        <label>On-duty limit (hours)<input id="max-duty" type="number" min="6" max="14" value="14"></label>
+      </div>
+    </details>
+    <div class="row">
+      <button class="btn big" id="go" type="button" disabled>Plan the day</button>
+      <span class="msg" id="go-msg">Add your stops first.</span>
+    </div>
+  </section>
+
+  <!-- 3. The answer -->
+  <section class="step" id="result" hidden>
+    <div class="n">THE ANSWER</div>
+    <h2 id="r-head"></h2>
+    <div class="tiles" id="tiles"></div>
+    <p class="hint" id="r-basis"></p>
+    <div id="r-unplaced"></div>
+    <div id="r-geo"></div>
+    <div id="r-routes"></div>
+  </section>
+
+  <!-- 4. Keep it -->
+  <section class="step" id="keep" hidden>
+    <div class="cta">
+      <div>
+        <div class="n">KEEP IT</div>
+        <h2>Email me this plan</h2>
+        <p class="hint">We'll send the routes and the numbers. No mailing list.</p>
+        <div class="grid g2">
+          <label>Your name<input id="k-name" autocomplete="name"></label>
+          <label>Company<input id="k-company" autocomplete="organization"></label>
+          <label>Email *<input id="k-email" type="email" autocomplete="email"></label>
+          <label>Phone (optional)<input id="k-phone" type="tel" autocomplete="tel"></label>
+          <label class="chk span2"><input type="checkbox" id="k-call"> Call me about running this every day</label>
+        </div>
+        <div class="row"><button class="btn" id="k-send" type="button">Email me the plan</button><span class="msg" id="k-msg"></span></div>
+      </div>
+      <div>
+        <div class="n">RUN IT EVERY DAY</div>
+        <h2>The real planner does more</h2>
+        <p class="hint" style="font-size:15px;color:var(--ink-2)">In RoadCoda the same planner uses real drive times, each driver's own hours left for the day and the week, your customer's own trucks first on a dedicated account, and more than one load per tractor — then sends the routes to the drivers' phones.</p>
+        <div class="row"><a class="btn" href="https://app.roadcoda.com/signup.html">Start a free 30-day trial</a>
+          <a class="btn ghost" href="mailto:support@roadcoda.com?subject=A%2030-minute%20call%20about%20RoadCoda">Book a 30-minute call</a></div>
+      </div>
+    </div>
+  </section>
+
+  <p class="fine">How it works: your file is read in this browser. The addresses (not your store names, windows or pallets) are sent to RoadCoda to be looked up on Google's map service and aren't kept. Drive times are straight-line distance × the road allowance at the average speed, so treat it as a planning estimate. If you ask for the plan by email, we keep your name, company, email, phone and the day's totals so we can follow up — <a href="privacy.html">Privacy</a>.</p>
+</main>
+<footer><div class="wrap">RoadCoda LLC · Fairfield, Connecticut · <a href="privacy.html">Privacy</a></div></footer>
+
+<script>
+(function () {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const FN = (window.RC_CONFIG && RC_CONFIG.SUPABASE_URL ? RC_CONFIG.SUPABASE_URL.replace(/\/+$/, '') : '') + '/functions/v1/plan-day';
+const KEY = window.RC_CONFIG && RC_CONFIG.SUPABASE_KEY;
+
+// ---------- times ----------
+// "8", "8:30", "0830", "8am", "8:30 PM", "20:00", Excel fractions (0.3333) → minutes after midnight
+function mins(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') { if (v >= 0 && v < 1) return Math.round(v * 1440); if (v >= 1 && v < 2) return Math.round((v - 1) * 1440); return v % 1 ? Math.round((v % 1) * 1440) : (v <= 24 ? v * 60 : null); }
+  if (v instanceof Date) return v.getHours() * 60 + v.getMinutes();
+  const s = String(v).trim().toLowerCase().replace(/\./g, '');
+  if (!s || /^(any|anytime|any time|none|n\/a|-)$/.test(s)) return null;
+  let m = s.match(/^(\d{1,2})(?::?(\d{2}))?\s*(a|am|p|pm)?$/);
+  if (!m) { m = s.match(/(\d{1,2})(?::(\d{2}))?\s*(a|am|p|pm)?/); if (!m) return null; }
+  let h = Number(m[1]), mi = m[2] ? Number(m[2]) : 0;
+  if (!m[2] && m[1].length >= 3) { h = Math.floor(Number(m[1]) / 100); mi = Number(m[1]) % 100; }
+  if (/^\d{3,4}$/.test(s)) { h = Math.floor(Number(s) / 100); mi = Number(s) % 100; }
+  if (m[3] && m[3][0] === 'p' && h < 12) h += 12;
+  if (m[3] && m[3][0] === 'a' && h === 12) h = 0;
+  if (h > 24 || mi > 59) return null;
+  return h * 60 + mi;
+}
+function windowOf(v) {   // "8:00-10:00", "8a–10a", "8:00 to 10:00"
+  if (v == null || v === '') return [null, null];
+  const parts = String(v).split(/\s*(?:-|–|—|to)\s*/i).filter(Boolean);
+  if (parts.length < 2) return [mins(parts[0]), null];
+  let a = mins(parts[0]), b = mins(parts[1]);
+  return [a, b];
+}
+const hm = (m) => { if (m == null || !isFinite(m)) return ''; m = Math.round(m); const d = Math.floor(m / 1440); m = ((m % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60), x = m % 60, ap = h < 12 ? 'AM' : 'PM', h12 = h % 12 || 12; return `${h12}:${String(x).padStart(2, '0')} ${ap}${d > 0 ? ' +1' : ''}`; };
+const hrs = (m) => `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, '0')}`;
+const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
+
+// ---------- reading the list ----------
+const FIELDS = [
+  ['name', 'Store / name', /^(store|name|customer|location|consignee|ship ?to|stop name|account|site|store name|store #|store no)/i],
+  ['address', 'Address', /^(address|street|address ?1|addr|street address|full address|delivery address)/i],
+  ['city', 'City', /^(city|town)/i],
+  ['state', 'State', /^(state|st|province)$/i],
+  ['zip', 'Zip', /^(zip|zip ?code|postal|postal ?code)/i],
+  ['wopen', 'Window opens', /^(window ?(open|start|from)|open|start|from|earliest|time ?from|delivery ?from|begin)/i],
+  ['wclose', 'Window closes', /^(window ?(close|end|to)|close|end|to|latest|time ?to|delivery ?to|deliver ?by|by)/i],
+  ['window', 'Window (one column)', /^(window|delivery ?window|time ?window|hours|receiving ?hours|appt|appointment)$/i],
+  ['qty', 'Pallets (or cases)', /^(pallets?|plts?|qty|quantity|cases?|units?|pieces?|cube)$/i],
+];
+let ROWS = [], HEAD = [], MAP = {}, SAMPLE = false;
+function guessMap() {
+  MAP = {}; const used = new Set();
+  for (const [k, , re] of FIELDS) { const i = HEAD.findIndex((h, j) => !used.has(j) && re.test(String(h).trim())); if (i >= 0) { MAP[k] = i; used.add(i); } }
+}
+function showMap(note) {
+  $('map-box').hidden = false;
+  $('read-msg').innerHTML = note;
+  $('map-head').innerHTML = FIELDS.map(([k, label]) => `<th>${esc(label)}<br><select data-f="${k}"><option value="">—</option>${HEAD.map((h, i) => `<option value="${i}" ${MAP[k] === i ? 'selected' : ''}>${esc(h || 'column ' + (i + 1))}</option>`).join('')}</select></th>`).join('');
+  $('map-preview').innerHTML = ROWS.slice(0, 4).map(r => `<tr>${FIELDS.map(([k]) => `<td>${MAP[k] != null ? esc(cellText(r[MAP[k]])) : ''}</td>`).join('')}</tr>`).join('');
+  $('map-head').querySelectorAll('select').forEach(s => s.onchange = () => { if (s.value === '') delete MAP[s.dataset.f]; else MAP[s.dataset.f] = Number(s.value); showMap(note); ready(); });
+  ready();
+}
+const cellText = (v) => v instanceof Date ? hm(v.getHours() * 60 + v.getMinutes()) : typeof v === 'number' && v > 0 && v < 1 ? hm(Math.round(v * 1440)) : String(v ?? '');
+function takeTable(aoa, from) {
+  aoa = aoa.filter(r => r && r.some(c => String(c ?? '').trim() !== ''));
+  // the header row: the first row with an address- or store-looking heading in the first 10 rows
+  let hi = aoa.slice(0, 10).findIndex(r => r.some(c => /address|street|store|city|zip|window/i.test(String(c ?? ''))));
+  if (hi < 0) hi = 0;
+  HEAD = aoa[hi].map(c => String(c ?? '').trim()); ROWS = aoa.slice(hi + 1).filter(r => r.some(c => String(c ?? '').trim() !== '')); SAMPLE = false;
+  if (ROWS.length > 200) { ROWS = ROWS.slice(0, 200); }
+  guessMap();
+  showMap(`Read <b>${ROWS.length}</b> stop${ROWS.length === 1 ? '' : 's'} from ${esc(from)}${ROWS.length === 200 ? ' (the free planner takes up to 200)' : ''}.`);
+}
+$('file').onchange = async () => {
+  const f = $('file').files[0]; if (!f) return;
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    takeTable(XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }), f.name);
+  } catch (e) { $('map-box').hidden = false; $('read-msg').innerHTML = `<span class="error">Couldn't read that file: ${esc(e.message)}. Try saving it as .xlsx or .csv, or paste the rows.</span>`; }
+};
+$('paste-link').onclick = (e) => { e.preventDefault(); $('paste').hidden = false; $('paste').focus(); };
+$('paste').oninput = () => {
+  const t = $('paste').value; if (!t.trim()) return;
+  const sep = t.includes('\t') ? '\t' : ',';
+  takeTable(t.split(/\r?\n/).map(l => l.split(sep)), 'what you pasted');
+};
+
+// A sample day: a grocery DC near Hartford, 24 stores (map points included, so nothing is looked up)
+const SAMPLE_DEPOT = { name: 'Sample DC — Windsor, CT', lat: 41.8526, lng: -72.6437 };
+const SAMPLE_STOPS = [
+  ['Store 101 — West Hartford', 41.7621, -72.7420, '05:00', '08:00', 9], ['Store 104 — Wallingford', 41.4570, -72.8231, '06:00', '10:00', 14],
+  ['Store 107 — Middletown', 41.5623, -72.6507, '06:00', '09:00', 8], ['Store 110 — Meriden', 41.5382, -72.8070, '07:00', '11:00', 11],
+  ['Store 112 — Groton', 41.3501, -72.0787, '05:00', '09:00', 10], ['Store 113 — New London', 41.3557, -72.0995, '06:00', '10:00', 7],
+  ['Store 115 — Norwich', 41.5243, -72.0759, '06:00', '10:00', 12], ['Store 118 — Manchester', 41.7759, -72.5215, '05:00', '07:30', 9],
+  ['Store 120 — Vernon', 41.8187, -72.4795, '06:00', '09:00', 6], ['Store 121 — Danbury', 41.3948, -73.4540, '07:00', '11:00', 13],
+  ['Store 123 — Waterbury', 41.5582, -73.0515, '06:00', '10:00', 12], ['Store 125 — Torrington', 41.8007, -73.1212, '07:00', '12:00', 8],
+  ['Store 127 — Bristol', 41.6718, -72.9493, '05:30', '08:30', 9], ['Store 130 — New Britain', 41.6612, -72.7795, '06:00', '09:00', 10],
+  ['Store 132 — Glastonbury', 41.7123, -72.6082, '06:00', '09:30', 7], ['Store 134 — Enfield', 41.9762, -72.5918, '05:00', '08:00', 11],
+  ['Store 136 — Storrs', 41.8084, -72.2495, '07:00', '11:00', 6], ['Store 138 — Willimantic', 41.7107, -72.2081, '07:00', '11:00', 8],
+  ['Store 140 — New Haven', 41.3083, -72.9279, '06:00', '10:00', 15], ['Store 141 — Hamden', 41.3959, -72.8968, '06:00', '10:00', 9],
+  ['Store 143 — Milford', 41.2223, -73.0565, '07:00', '11:00', 12], ['Store 145 — Shelton', 41.3165, -73.0932, '07:00', '12:00', 8],
+  ['Store 147 — Old Saybrook', 41.2918, -72.3762, '07:00', '12:00', 7], ['Store 149 — Southington', 41.6005, -72.8782, '06:00', '09:00', 10],
+];
+$('sample-btn').onclick = () => {
+  SAMPLE = true; HEAD = ['Store', 'Window opens', 'Window closes', 'Pallets']; MAP = {};
+  ROWS = SAMPLE_STOPS.map(s => [s[0], s[3], s[4], s[5]]);
+  $('depot').value = SAMPLE_DEPOT.name;
+  $('map-box').hidden = false;
+  $('read-msg').innerHTML = `A sample grocery day: <b>24 stores</b> across Connecticut from a DC in Windsor, 6 to 15 pallets each, morning windows. Change the truck or the times below and plan it.`;
+  $('map-head').innerHTML = HEAD.map(h => `<th>${esc(h)}</th>`).join('');
+  $('map-preview').innerHTML = ROWS.slice(0, 4).map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');
+  ready();
+};
+$('truck').onchange = () => { $('cap-wrap').hidden = !$('truck').value.startsWith('custom'); };
+
+function stopsFromRows() {
+  return ROWS.map((r, i) => {
+    const g = (k) => MAP[k] != null ? r[MAP[k]] : '';
+    const name = String(g('name') || '').trim() || `Stop ${i + 1}`;
+    const addr = MAP.address != null ? [g('address'), g('city'), g('state'), g('zip')].map(x => String(x ?? '').trim()).filter(Boolean).join(', ')
+                                     : [g('city'), g('state'), g('zip')].map(x => String(x ?? '').trim()).filter(Boolean).join(', ');
+    let ws = null, we = null;
+    if (MAP.wopen != null || MAP.wclose != null) { ws = mins(g('wopen')); we = mins(g('wclose')); }
+    if (ws == null && we == null && MAP.window != null) [ws, we] = windowOf(g('window'));
+    const q = Number(String(g('qty') ?? '').replace(/[^\d.]/g, '')) || 0;
+    return { id: 's' + i, name, addr, ws, we, qty: q };
+  });
+}
+function ready() {
+  let ok = false, why = 'Add your stops first.';
+  if (SAMPLE) { ok = true; why = ''; }
+  else if (ROWS.length) {
+    if (MAP.address == null && MAP.city == null) why = 'Pick the address column above.';
+    else { ok = true; why = `${ROWS.length} stops ready.`; }
+  }
+  $('go').disabled = !ok; $('go-msg').textContent = why;
+}
+
+// ---------- the server: map points ----------
+async function call(body) {
+  if (!FN || !KEY) throw new Error('The planner isn\'t set up on this site yet.');
+  const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: 'Bearer ' + KEY }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `The planner server said ${r.status}`);
+  return j;
+}
+const GEO = new Map();   // address → point, so planning again doesn't look them up twice
+
+// ---------- plan ----------
+$('go').onclick = async () => {
+  $('go').disabled = true; const say = (t) => { $('go-msg').innerHTML = t; };
+  try {
+    const leave = mins($('leave').value) ?? 300;
+    const tv = $('truck').value, [capS, kind] = tv.split('|'), cap = capS === 'custom' ? Number($('cap').value) || 20 : Number(capS);
+    const truckName = tv.startsWith('custom') ? `truck · ${cap} pallets` : $('truck').selectedOptions[0].textContent;
+    let depot, stops;
+    if (SAMPLE) {
+      depot = { lat: SAMPLE_DEPOT.lat, lng: SAMPLE_DEPOT.lng };
+      stops = SAMPLE_STOPS.map((s, i) => ({ id: 's' + i, name: s[0], lat: s[1], lng: s[2], ws: mins(s[3]), we: mins(s[4]), qty: s[5] }));
+    } else {
+      if (!$('depot').value.trim()) { say('<span class="error">Enter where the trucks start from.</span>'); $('depot').focus(); return; }
+      stops = stopsFromRows();
+      const want = [$('depot').value.trim(), ...stops.map(s => s.addr)].filter(a => a && !GEO.has(a));
+      const uniq = [...new Set(want)];
+      if (uniq.length) {
+        say(`Finding ${uniq.length} address${uniq.length === 1 ? '' : 'es'} on the map…`);
+        for (let i = 0; i < uniq.length; i += 100) {
+          const part = uniq.slice(i, i + 100), j = await call({ action: 'geocode', addresses: part });
+          part.forEach((a, k) => GEO.set(a, j.points[k] || null));
+        }
+      }
+      const dp = GEO.get($('depot').value.trim());
+      if (!dp) { say('<span class="error">We couldn\'t find the start address on the map. Add the town and state, or the zip.</span>'); return; }
+      depot = { lat: dp.lat, lng: dp.lng };
+      stops = stops.map(s => { const p = s.addr ? GEO.get(s.addr) : null; return Object.assign(s, p ? { lat: p.lat, lng: p.lng, partial: p.partial, found: p.formatted } : { lat: null, lng: null }); });
+    }
+    const noQty = stops.every(s => !s.qty);
+    const svc = Number($('svc').value) || 30, buffer = Number($('buffer').value) || 0;
+    const pStops = stops.map(s => ({ id: s.id, lat: s.lat, lng: s.lng, ws: s.ws, we: s.we, service: svc, demand: { pallets: noQty ? 1 : s.qty } }));
+    const n = Math.max(1, Math.min(60, Number($('fleet').value) || 20));
+    const dayCost = Number($('c-truck').value) || 0;
+    const vehicles = Array.from({ length: n }, (_, k) => ({ id: 'Truck ' + (k + 1), cap: { pallets: noQty ? 999 : cap }, start: leave, runs: 1,
+      maxDrive: (Number($('max-drive').value) || 11) * 60, maxDuty: (Number($('max-duty').value) || 14) * 60, dayCost }));
+    const params = { mph: Number($('mph').value) || 45, roadFactor: Number($('road').value) || 1.25, returnToStart: $('back').checked, goal: 'cost', buffer,
+      costs: { driverHr: Number($('c-driver').value) || 0, perMile: Number($('c-mile').value) || 0 }, timeLimitMs: 12000 };
+    say('Planning…'); await new Promise(r => setTimeout(r, 30));
+    const t0 = performance.now();
+    const r = RC_PLANNER.plan(depot, pStops, vehicles, params);
+    show(r, stops, { truckName, cap, noQty, svc, buffer, leave, params, secs: (performance.now() - t0) / 1000 });
+    say(`Planned in ${((performance.now() - t0) / 1000).toFixed(1)} seconds.`);
+  } catch (e) { say(`<span class="error">${esc(e.message || e)}</span>`); }
+  finally { $('go').disabled = false; }
+};
+
+let LAST = null;
+function show(r, stops, o) {
+  const byId = new Map(stops.map(s => [s.id, s])), used = r.routes.filter(x => x.stops.length);
+  const driverMin = used.reduce((a, x) => a + x.duty, 0), miles = used.reduce((a, x) => a + x.miles, 0);
+  const cost = used.reduce((a, x) => a + (x.cost || 0), 0), placed = used.reduce((a, x) => a + x.stops.length, 0);
+  $('result').hidden = false; $('keep').hidden = false;
+  $('r-head').textContent = `${used.length} truck${used.length === 1 ? '' : 's'} for ${placed} stop${placed === 1 ? '' : 's'}`;
+  $('tiles').innerHTML = [[used.length, 'trucks'], [Math.round(miles).toLocaleString('en-US'), 'miles'], [(driverMin / 60).toFixed(1), 'driver hours'],
+    [money(cost), 'what the day costs'], [placed ? money(cost / placed) : '—', 'per stop']].map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join('');
+  const basis = `${o.truckName}${o.noQty ? ' (no pallet column, so capacity wasn\'t limited)' : ''}; leaving ${hm(o.leave)} or later to make the first window; ${o.svc} min a stop; at least ${o.buffer} min before each window closes; ${o.params.mph} mph × ${o.params.roadFactor} road allowance; up to ${Number($('max-drive').value) || 11} h driving and ${(Number($('max-duty').value) || 14)} h on duty; trucks ${o.params.returnToStart ? 'come back' : 'don\'t come back'}; $${$('c-truck').value} a truck-day, $${$('c-driver').value} a driver hour, $${$('c-mile').value} a mile.`;
+  $('r-basis').textContent = 'Based on: ' + basis;
+  const un = (r.unassigned || []).filter(u => { const s = byId.get(u.id); return !s || SAMPLE || s.lat != null; });   // no map point: listed under "Not found" instead
+  $('r-unplaced').innerHTML = un.length ? `<div class="warn"><b>${un.length} stop${un.length === 1 ? '' : 's'} couldn't be planned:</b> ${un.map(u => { const s = byId.get(u.id) || {}; return `${esc(s.name || u.id)} — ${esc(u.why || 'no room')}${u.leaveBy != null ? ` (a truck would have to leave by ${hm(u.leaveBy)})` : ''}`; }).join('; ')}.</div>` : '';
+  const partial = stops.filter(s => s.partial), missing = stops.filter(s => !SAMPLE && s.lat == null);
+  $('r-geo').innerHTML = (missing.length ? `<div class="warn">Not found on the map, so left out: ${missing.map(s => esc(s.name)).join(', ')}. Check the address and plan again.</div>` : '') +
+    (partial.length ? `<p class="hint">Only roughly placed (check these addresses): ${partial.map(s => `${esc(s.name)} → ${esc(s.found || '')}`).join('; ')}.</p>` : '');
+  $('r-routes').innerHTML = used.map((x, k) => {
+    const tms = x.times || [];
+    return `<div class="route"><div class="route-h"><b>Truck ${k + 1}</b><span>leaves ${hm(x.start)}</span><span>back ${hm(x.end)}</span><span>${Math.round(x.miles)} mi</span><span>${hrs(x.duty)} on duty</span>
+        ${o.noQty ? '' : `<span>${Math.round(x.load && x.load.pallets || 0)} of ${o.cap} pallets</span>`}${x.cost != null ? `<span>${money(x.cost)}</span>` : ''}</div>
+      <div class="tablewrap" style="margin:0"><table><thead><tr><th>#</th><th>Stop</th><th>Window</th><th>Arrives</th>${o.noQty ? '' : '<th class="num">Pallets</th>'}</tr></thead><tbody>
+      ${x.stops.map((id, i) => { const s = byId.get(id) || {}, t = tms[i] || {};
+        return `<tr><td class="mono">${i + 1}</td><td>${esc(s.name)}</td><td class="mono">${s.ws != null || s.we != null ? `${hm(s.ws) || 'any'}–${hm(s.we) || 'any'}` : 'any time'}</td>
+          <td class="mono ${t.tight ? 'tight' : ''}">${hm(t.arrive)}${t.tight ? ' · tight' : ''}</td>${o.noQty ? '' : `<td class="num">${esc(s.qty)}</td>`}</tr>`; }).join('')}</tbody></table></div></div>`;
+  }).join('');
+  LAST = { stops: stops.length, trucks: used.length, miles: Math.round(miles * 10) / 10, driver_hours: Math.round(driverMin / 6) / 10, day_cost: Math.round(cost * 100) / 100,
+    truck_type: o.truckName, basis,
+    routes: used.map((x, k) => ({ truck: `Truck ${k + 1}`, leave: hm(x.start), back: hm(x.end), miles: Math.round(x.miles), hours: Math.round(x.duty / 6) / 10, cost: x.cost != null ? Math.round(x.cost) : null,
+      stops: x.stops.map((id, i) => { const s = byId.get(id) || {}, t = (x.times || [])[i] || {}; return { name: s.name, eta: hm(t.arrive), window: s.ws != null || s.we != null ? `${hm(s.ws) || 'any'}–${hm(s.we) || 'any'}` : '' }; }) })),
+    unplaced: un.map(u => ({ name: (byId.get(u.id) || {}).name || u.id, why: u.why || 'no room' })) };
+  $('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------- keep it ----------
+$('k-send').onclick = async () => {
+  if (!LAST) return;
+  const email = $('k-email').value.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { $('k-msg').innerHTML = '<span class="error">Enter your email.</span>'; $('k-email').focus(); return; }
+  $('k-send').disabled = true; $('k-msg').textContent = 'Sending…';
+  try {
+    await call({ action: 'email', email, name: $('k-name').value.trim(), company: $('k-company').value.trim(), phone: $('k-phone').value.trim(), wants_call: $('k-call').checked, summary: LAST });
+    $('k-msg').innerHTML = `<span class="ok">Sent to ${esc(email)}.${$('k-call').checked ? ' We\'ll call you within a business day.' : ''}</span>`;
+  } catch (e) { $('k-msg').innerHTML = `<span class="error">${esc(e.message || e)}</span>`; $('k-send').disabled = false; }
+};
+})();
+</script>
+</body>
+</html>
