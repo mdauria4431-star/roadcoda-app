@@ -161,6 +161,7 @@
       <div class="row" style="margin-top:16px">
         <button class="btn primary" id="save-btn" type="button">Save</button>
         <button class="btn" id="pm-btn" type="button" hidden>PM done today</button>
+        <a class="btn" id="pm-wo-btn" hidden>Make PM work order</a>
         <button class="btn" id="cancel-btn" type="button">Close</button>
         <span style="flex-grow:1"></span>
         <button class="btn danger" id="active-btn" type="button" hidden>Retire</button>
@@ -295,7 +296,7 @@ function pmDue(u) {
 }
 
 // ---------- List ----------
-let openDef = {};
+let openDef = {}, openWo = {}, WO_ON = false;
 async function load() {
   const { data, error } = await sb.from('equipment').select('*').order('unit_no');
   if (error) { $('list').innerHTML = `<tr><td colspan="8" class="error">${esc(error.message)}${/column/.test(error.message) ? ' · Run 36_equipment.sql in the Supabase SQL Editor first.' : ''}</td></tr>`; return; }
@@ -320,6 +321,11 @@ async function load() {
   // 139: open DVIR defects per unit (nothing before 139 is installed)
   openDef = {}; try { const od = await sb.from('inspection_defects').select('equipment_id, unsafe').eq('status', 'open');
     (od.data || []).forEach(x => { const o = openDef[x.equipment_id] = openDef[x.equipment_id] || { n: 0, unsafe: 0 }; o.n++; if (x.unsafe) o.unsafe++; }); } catch (_) {}
+  // 146: open work orders per unit (only when work orders are installed and switched on)
+  await Promise.race([window.RC_ACCESS_READY, new Promise(r => setTimeout(r, 4000))]); const RA = window.RC_ACCESS;
+  WO_ON = !!(RA && RA.features && RA.features.work_orders === true && (RA.can('equipment') || RA.can('safety')));
+  openWo = {}; if (WO_ON) { try { const ow = await sb.from('work_orders').select('equipment_id, takes_down').not('status', 'in', '("done","cancelled")');
+    (ow.data || []).forEach(x => { openWo[x.equipment_id] = (openWo[x.equipment_id] || 0) + 1; }); } catch (_) {} }
   customers = C.data || []; const keepC = $('f-home_customer_id').value;
   $('f-home_customer_id').innerHTML = '<option value="">None (floater)</option>' + customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   $('f-home_customer_id').value = keepC;
@@ -340,7 +346,7 @@ function render() {
       : dv.some(x => x.locked_at) ? '<span class="pill p-bad">Locked</span>'
       : cd ? `<span class="pill p-ok">${esc(drivers.find(d => d.id === cd.current_driver_id)?.full_name || 'In use')}</span>` : '<span class="pill p-none">Paired</span>';
     return `<tr data-id="${u.id}" class="${cur && cur.id === u.id ? 'sel' : ''}">
-      <td><b>${esc(u.unit_no)}</b>${!u.active ? ' <span class="pill p-none">Retired</span>' : ''}${u.active && u.down_since ? ` <span class="pill p-bad" title="${esc(u.down_reason || '')}">Down for repair</span>` : ''}${openDef[u.id] ? ` <a class="pill ${openDef[u.id].unsafe ? 'p-bad' : 'p-warn'}" href="inspections.html?unit=${u.id}" title="Open defects from drivers' inspections">${openDef[u.id].n} defect${openDef[u.id].n === 1 ? '' : 's'}</a>` : ''}<div class="hint" style="margin:0">${esc([TYPES[u.unit_type], u.year, u.make, u.model].filter(Boolean).join(' · '))}</div></td>
+      <td><b>${esc(u.unit_no)}</b>${!u.active ? ' <span class="pill p-none">Retired</span>' : ''}${u.active && u.down_since ? ` <span class="pill p-bad" title="${esc(u.down_reason || '')}">Down for repair</span>` : ''}${openDef[u.id] ? ` <a class="pill ${openDef[u.id].unsafe ? 'p-bad' : 'p-warn'}" href="inspections.html?unit=${u.id}" title="Open defects from drivers' inspections">${openDef[u.id].n} defect${openDef[u.id].n === 1 ? '' : 's'}</a>` : ''}${openWo[u.id] ? ` <a class="pill p-warn" href="work-orders.html?unit=${u.id}" title="Open work orders">${openWo[u.id]} work order${openWo[u.id] === 1 ? '' : 's'}</a>` : ''}<div class="hint" style="margin:0">${esc([TYPES[u.unit_type], u.year, u.make, u.model].filter(Boolean).join(' · '))}</div></td>
       <td>${esc([u.plate, u.plate_state].filter(Boolean).join(' '))}</td>
       <td class="mono">${u.vin ? '…' + esc(u.vin.slice(-6)) : ''}</td>
       <td class="mono">${esc([u.toll_tag, u.toll_class && 'class ' + u.toll_class].filter(Boolean).join(' · '))}</td>
@@ -397,6 +403,12 @@ function edit(u, quiet) {
   let dl = document.getElementById('ed-dvir');
   if (!dl) { dl = document.createElement('span'); dl.id = 'ed-dvir'; dl.className = 'mini'; dl.style.marginLeft = '10px'; $('ed-status').after(dl); }
   dl.innerHTML = u ? `<a href="inspections.html?unit=${u.id}">Inspections${openDef[u.id] ? `: <b>${openDef[u.id].n} open defect${openDef[u.id].n === 1 ? '' : 's'}</b>` : ''} →</a>` : '';
+  // 146: this unit's work orders
+  let wl = document.getElementById('ed-wo');
+  if (!wl) { wl = document.createElement('span'); wl.id = 'ed-wo'; wl.className = 'mini'; wl.style.marginLeft = '10px'; dl.after(wl); }
+  wl.innerHTML = u && WO_ON ? `<a href="work-orders.html?unit=${u.id}">Work orders${openWo[u.id] ? `: <b>${openWo[u.id]} open</b>` : ''} →</a>` : '';
+  $('pm-wo-btn').hidden = !(u && WO_ON && (u.pm_every_days || u.pm_every_miles));
+  if (u) $('pm-wo-btn').href = `work-orders.html?new=1&kind=pm&unit=${u.id}`;
   $('oos-wrap').hidden = !(u && !u.active);
   $('active-btn').hidden = !u; $('active-btn').textContent = u && !u.active ? 'Put back in service' : 'Retire';
   $('active-btn').classList.toggle('danger', !!(u && u.active));

@@ -8,6 +8,12 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-10-01-fleetio', date: '2026-10-01', title: 'Fleetio sync (add-on)',
+    body: 'If your shop runs on Fleetio: connect it on Setup › Integrations with a Fleetio API key and account token. Defects from your drivers\' inspections go to Fleetio as issues; when an issue is resolved in Fleetio, the defect is certified as repaired here and the truck comes back into service. Service finished in Fleetio comes in as work orders, so Cost per unit includes it. It runs every hour, or click Sync now.',
+    link: 'integrations.html', linkText: 'Open Integrations', screen: ['integrations', 'equipment'], feature: 'fleetio' },
+  { id: '2026-10-01-work-orders', date: '2026-10-01', title: 'Work orders: repairs and PM on each truck',
+    body: 'Safety › Work orders keeps every repair and PM on each unit. On Safety › Inspections, click "Make work order" on a driver\'s defect; for service coming due, open the PM due tab and click "Make PM work order". Add parts, labor and other costs, the vendor and their invoice #, and tick "Unit is down" to keep the truck off Dispatch until it\'s fixed. Finish signs off the repair: the driver\'s defects are certified as repaired, the PM is recorded on the unit, and the truck comes back into service. Cost per unit shows parts, labor and cost per mile for any dates.',
+    link: 'work-orders.html', linkText: 'Open Work orders', screen: ['equipment', 'safety'], feature: 'work_orders' },
   { id: '2026-09-30-compliance-watch', date: '2026-09-30', title: 'Compliance watch: CSA scores, return to duty, revoked ELDs',
     body: 'Safety › Compliance watch puts what an auditor or insurer looks at first on one page. Add your USDOT number and RoadCoda pulls your CSA categories, out-of-service rates and crashes from FMCSA every Monday — and flags a category that\'s climbing or near the threshold before it turns into a warning letter; new alerts can be emailed to your safety contact. It also tracks return to duty after a drug or alcohol violation (SAP, the return-to-duty test, follow-up tests — Dispatch sees only "not cleared"), checks your ELD against the devices FMCSA has revoked, and lists overdue Clearinghouse queries, CDLs and medical cards.',
     link: 'compliance-watch.html', linkText: 'Open Compliance watch', screen: ['safety'] },

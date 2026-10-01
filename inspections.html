@@ -141,7 +141,7 @@ const dt = (t) => t ? new Date(t).toLocaleString([], { month: 'numeric', day: 'n
 const KIND = { pre: 'Pre-trip', post: 'Post-trip' };
 const TYPES = { tractor: 'Tractor', straight_truck: 'Straight truck', trailer: 'Trailer', van: 'Van', pickup: 'Pickup' };
 const Q = new URLSearchParams(location.search);
-let ME = null, CAN_EDIT = false, UNITS = [], DRIVERS = [], TAB = Q.get('tab') || 'defects', REPORTS = [], CAR = {};
+let ME = null, CAN_EDIT = false, WO = false, UNITS = [], DRIVERS = [], TAB = Q.get('tab') || 'defects', REPORTS = [], CAR = {};
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -158,6 +158,7 @@ async function start() {
     document.querySelector('main').insertAdjacentHTML('beforeend', '<div class="card empty">Inspections need Equipment, Safety or Dispatch in your access. Ask the owner to add it (Users).</div>'); return;
   }
   CAN_EDIT = !A || !A.can || A.can('equipment', 'edit') || A.can('safety', 'edit');
+  WO = !!(A && A.features && A.features.work_orders === true && (A.can('equipment') || A.can('safety')));   // 146: work orders
   $('app').hidden = false;
   const [u, d] = await Promise.all([sb.from('equipment').select('id, unit_no, unit_type, body_type, active').order('unit_no'), sb.from('drivers').select('id, full_name').order('full_name')]);
   UNITS = u.data || []; DRIVERS = d.data || [];
@@ -181,7 +182,7 @@ function draw() {
 // ---------- Open defects ----------
 async function loadDefects() {
   const unit = Q.get('unit');
-  let q = sb.from('inspection_defects').select('*, inspections(kind, driver_name, submitted_at, units_text)').eq('status', 'open').order('created_at');
+  let q = sb.from('inspection_defects').select('*, inspections(kind, driver_name, submitted_at, units_text)' + (WO ? ', work_orders(id, wo_no, status)' : '')).eq('status', 'open').order('created_at');
   if (unit) q = q.eq('equipment_id', unit);
   const since = new Date(); since.setDate(since.getDate() - 30);
   let q2 = sb.from('inspection_defects').select('*, inspections(kind, driver_name, submitted_at)').neq('status', 'open').gte('resolved_at', since.toISOString()).order('resolved_at', { ascending: false });
@@ -192,7 +193,9 @@ async function loadDefects() {
     ${o.data.map(x => `<tr><td><b>${esc(x.unit_no)}</b>${x.unsafe ? ' <span class="pill p-bad">Unsafe to drive</span>' : ''}</td><td>${esc(x.item_label)}</td>
       <td>${esc(x.note || '')}${x.photos.length ? ` <a href="#" data-rep="${x.inspection_id}">${x.photos.length} photo${x.photos.length === 1 ? '' : 's'}</a>` : ''}</td>
       <td>${dt(x.created_at)}<div class="mini">${esc(KIND[x.inspections?.kind] || '')} · ${esc(x.inspections?.driver_name || '')} · <a href="#" data-rep="${x.inspection_id}">report</a></div></td>
-      <td style="min-width:320px">${CAN_EDIT ? `<div class="cert" data-cert="${x.id}">
+      <td style="min-width:320px">${WO ? (x.work_orders && !['done', 'cancelled'].includes(x.work_orders.status)
+          ? `<div style="margin-bottom:4px">On <a href="work-orders.html?id=${x.work_orders.id}"><b>${esc(x.work_orders.wo_no)}</b></a> <span class="mini">— finishing it certifies this defect</span></div>`
+          : CAN_EDIT ? `<div style="margin-bottom:4px"><a class="btn small" href="work-orders.html?new=1&unit=${x.equipment_id}&defects=${x.id}">Make work order</a> <span class="mini">or certify it here:</span></div>` : '') : ''}${CAN_EDIT ? `<div class="cert" data-cert="${x.id}">
         <label>Certified by<input data-f="name" value="${esc(ME.full_name || '')}" style="width:150px"></label>
         <label>What was done<input data-f="note" placeholder="e.g. replaced bulb" style="width:170px"></label>
         <label>Cost $<input data-f="cost" type="number" step="0.01" min="0" style="width:80px"></label>
