@@ -121,7 +121,8 @@
         <option value="26|tractor">53' trailer · 26 pallets</option><option value="24|tractor">48' trailer · 24 pallets</option>
         <option value="14|tractor">28' pup · 14 pallets</option><option value="12|straight">26' box truck · 12 pallets</option>
         <option value="10|straight">24' box truck · 10 pallets</option><option value="custom|straight">Other…</option></select></label>
-      <label id="cap-wrap" hidden>Pallets per truck<input id="cap" type="number" min="1" max="60" value="20"></label>
+      <label>Load counted in<select id="measure"><option value="pallets">Pallets</option><option value="cases">Cases</option><option value="pounds">Pounds</option></select></label>
+      <label id="cap-wrap"><span id="cap-label">Pallets per truck</span><input id="cap" type="number" min="1" max="200000" value="26"></label>
       <label>Minutes at each stop<input id="svc" type="number" min="5" max="240" value="30"></label>
       <label>Arrive at least … min before a window closes<input id="buffer" type="number" min="0" max="120" value="30"></label>
       <label>Most trucks you can use<input id="fleet" type="number" min="1" max="60" value="20"></label>
@@ -224,28 +225,47 @@ const hrs = (m) => `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStar
 const money = (n) => '$' + Math.round(n).toLocaleString('en-US');
 
 // ---------- reading the list ----------
+// Each field: the headings it can be, headings it must not be. Matching is anywhere in the heading, so
+// "Service Location - Address Line 1" and "Stop - Open/Close Detail - Open Time" are found; when several
+// columns fit, the one with the most filled-in rows wins.
 const FIELDS = [
-  ['name', 'Store / name', /^(store|name|customer|location|consignee|ship ?to|stop name|account|site|store name|store #|store no)/i],
-  ['address', 'Address', /^(address|street|address ?1|addr|street address|full address|delivery address)/i],
-  ['city', 'City', /^(city|town)/i],
-  ['state', 'State', /^(state|st|province)$/i],
-  ['zip', 'Zip', /^(zip|zip ?code|postal|postal ?code)/i],
-  ['wopen', 'Window opens', /^(window ?(open|start|from)|open|start|from|earliest|time ?from|delivery ?from|begin)/i],
-  ['wclose', 'Window closes', /^(window ?(close|end|to)|close|end|to|latest|time ?to|delivery ?to|deliver ?by|by)/i],
-  ['window', 'Window (one column)', /^(window|delivery ?window|time ?window|hours|receiving ?hours|appt|appointment)$/i],
-  ['qty', 'Pallets (or cases)', /^(pallets?|plts?|qty|quantity|cases?|units?|pieces?|cube)$/i],
+  ['type', 'Pickup / delivery', /(^|- )(order|stop) ?type$|^type$|pu ?\/ ?del|^action$/i, null],
+  ['name', 'Store / name', /description|store ?(name|#|no\.?|number)|consignee|ship ?to|customer ?name|location ?name|stop ?name|account ?name|^name$|^store$|^customer$|^location$|^site$/i, /\bid\b|zip|postal/i],
+  ['address', 'Address', /address ?(line)? ?1|^address$|full ?address|delivery ?address|street|addr/i, /line ?2|address ?2/i],
+  ['city', 'City', /city|town/i, null],
+  ['state', 'State', /\bstate\b|^st$|\bprov/i, null],
+  ['zip', 'Zip', /zip|postal/i, null],
+  ['wopen', 'Window opens', /open ?time|window ?(open|start|from)|^open$|earliest|time ?from|delivery ?from|receiving ?(open|start)|^from$/i, /departure|arrival|route|close ?time/i],
+  ['wclose', 'Window closes', /close ?time|window ?(close|end)|^close$|latest|time ?to|deliver ?by|receiving ?(close|end)|^to$/i, /departure|arrival|route|open ?time/i],
+  ['window', 'Window (one column)', /^(window|delivery ?window|time ?window|hours|receiving ?hours|appt|appointment)$/i, null],
+  ['qty', 'Load (pallets, cases or lbs)', /pallets?|plts?|cases?|\bcs\b|weight|\blbs?\b|pounds|qty|quantity|pieces?/i, null],
 ];
 let ROWS = [], HEAD = [], MAP = {}, SAMPLE = false;
+const filled = (i, nonzero) => ROWS.reduce((a, r) => { const v = String(r[i] ?? '').trim(); return a + (v !== '' && (!nonzero || Number(v.replace(/[^\d.]/g, '')) > 0) ? 1 : 0); }, 0);
+// what a load column counts, from its heading
+const measureOf = (h) => /weight|\blbs?\b|pounds/i.test(h) ? 'pounds' : /cases?|\bcs\b/i.test(h) ? 'cases' : 'pallets';
 function guessMap() {
   MAP = {}; const used = new Set();
-  for (const [k, , re] of FIELDS) { const i = HEAD.findIndex((h, j) => !used.has(j) && re.test(String(h).trim())); if (i >= 0) { MAP[k] = i; used.add(i); } }
+  for (const [k, , re, not] of FIELDS) {
+    let cand = HEAD.map((h, i) => i).filter(i => !used.has(i) && re.test(String(HEAD[i]).trim()) && !(not && not.test(String(HEAD[i]))));
+    if (!cand.length) continue;
+    if (k === 'qty') {   // pallets if any are filled in, then cases, then weight; a column of zeros never wins
+      const rank = { pallets: 0, cases: 1, pounds: 2 };
+      cand = cand.filter(i => filled(i, true) > 0);
+      if (!cand.length) continue;
+      cand.sort((x, y) => rank[measureOf(HEAD[x])] - rank[measureOf(HEAD[y])] || filled(y, true) - filled(x, true));
+    } else cand.sort((x, y) => filled(y) - filled(x) || x - y);
+    MAP[k] = cand[0]; used.add(cand[0]);
+  }
+  if (MAP.qty != null) setMeasure(measureOf(HEAD[MAP.qty]));
 }
 function showMap(note) {
   $('map-box').hidden = false;
   $('read-msg').innerHTML = note;
   $('map-head').innerHTML = FIELDS.map(([k, label]) => `<th>${esc(label)}<br><select data-f="${k}"><option value="">—</option>${HEAD.map((h, i) => `<option value="${i}" ${MAP[k] === i ? 'selected' : ''}>${esc(h || 'column ' + (i + 1))}</option>`).join('')}</select></th>`).join('');
   $('map-preview').innerHTML = ROWS.slice(0, 4).map(r => `<tr>${FIELDS.map(([k]) => `<td>${MAP[k] != null ? esc(cellText(r[MAP[k]])) : ''}</td>`).join('')}</tr>`).join('');
-  $('map-head').querySelectorAll('select').forEach(s => s.onchange = () => { if (s.value === '') delete MAP[s.dataset.f]; else MAP[s.dataset.f] = Number(s.value); showMap(note); ready(); });
+  $('map-head').querySelectorAll('select').forEach(s => s.onchange = () => { if (s.value === '') delete MAP[s.dataset.f]; else MAP[s.dataset.f] = Number(s.value);
+    if (s.dataset.f === 'qty' && s.value !== '') setMeasure(measureOf(HEAD[Number(s.value)])); showMap(note); ready(); });
   ready();
 }
 const cellText = (v) => v instanceof Date ? hm(v.getHours() * 60 + v.getMinutes()) : typeof v === 'number' && v > 0 && v < 1 ? hm(Math.round(v * 1440)) : String(v ?? '');
@@ -300,27 +320,49 @@ $('sample-btn').onclick = () => {
   $('map-preview').innerHTML = ROWS.slice(0, 4).map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');
   ready();
 };
-$('truck').onchange = () => { $('cap-wrap').hidden = !$('truck').value.startsWith('custom'); };
+// A truck's room, in whatever the list counts. Typical figures — the visitor can change them.
+const ROOM = { '26|tractor': { pallets: 26, cases: 1800, pounds: 44000 }, '24|tractor': { pallets: 24, cases: 1600, pounds: 44000 },
+  '14|tractor': { pallets: 14, cases: 900, pounds: 22000 }, '12|straight': { pallets: 12, cases: 700, pounds: 10000 },
+  '10|straight': { pallets: 10, cases: 600, pounds: 8000 } };
+const LABEL = { pallets: 'Pallets per truck', cases: 'Cases per truck', pounds: 'Pounds per truck' };
+function fillCap() { const r = ROOM[$('truck').value], m = $('measure').value; $('cap-label').textContent = LABEL[m]; if (r) $('cap').value = r[m]; }
+function setMeasure(m) { $('measure').value = m; fillCap(); }
+$('truck').onchange = fillCap; $('measure').onchange = fillCap; fillCap();
 
+let LEFT_OUT = [];
 function stopsFromRows() {
-  return ROWS.map((r, i) => {
+  LEFT_OUT = [];
+  const byKey = new Map(), out = [];
+  ROWS.forEach((r, i) => {
     const g = (k) => MAP[k] != null ? r[MAP[k]] : '';
     const name = String(g('name') || '').trim() || `Stop ${i + 1}`;
-    const addr = MAP.address != null ? [g('address'), g('city'), g('state'), g('zip')].map(x => String(x ?? '').trim()).filter(Boolean).join(', ')
-                                     : [g('city'), g('state'), g('zip')].map(x => String(x ?? '').trim()).filter(Boolean).join(', ');
+    if (MAP.type != null && /^\s*(p|pu|pick ?up|pickup|backhaul)\s*$/i.test(String(g('type')))) { LEFT_OUT.push(name); return; }   // a pickup isn't a delivery
+    const addr = [g('address'), g('city'), g('state'), g('zip')].map(x => String(x ?? '').trim()).filter(Boolean).join(', ');
     let ws = null, we = null;
     if (MAP.wopen != null || MAP.wclose != null) { ws = mins(g('wopen')); we = mins(g('wclose')); }
     if (ws == null && we == null && MAP.window != null) [ws, we] = windowOf(g('window'));
     const q = Number(String(g('qty') ?? '').replace(/[^\d.]/g, '')) || 0;
-    return { id: 's' + i, name, addr, ws, we, qty: q };
+    // the same store on several rows (several orders) is one stop with all of it
+    const key = (addr || name).toUpperCase().replace(/\s+/g, ' ');
+    const seen = byKey.get(key);
+    if (seen) { seen.qty += q; seen.orders++; if (seen.ws == null) seen.ws = ws; if (seen.we == null) seen.we = we; return; }
+    const st = { id: 's' + i, name, addr, ws, we, qty: q, orders: 1 };
+    byKey.set(key, st); out.push(st);
   });
+  return out;
 }
 function ready() {
   let ok = false, why = 'Add your stops first.';
   if (SAMPLE) { ok = true; why = ''; }
   else if (ROWS.length) {
     if (MAP.address == null && MAP.city == null) why = 'Pick the address column above.';
-    else { ok = true; why = `${ROWS.length} stops ready.`; }
+    else {
+      ok = true; const st = stopsFromRows(), rows = ROWS.length - LEFT_OUT.length;
+      why = `${st.length} stop${st.length === 1 ? '' : 's'} ready` +
+        (rows > st.length ? ` (${rows} rows; the same address on several rows is one stop)` : '') + '.' +
+        (LEFT_OUT.length ? ` ${LEFT_OUT.length} pickup${LEFT_OUT.length === 1 ? '' : 's'} left out: ${LEFT_OUT.slice(0, 4).join(', ')}${LEFT_OUT.length > 4 ? '…' : ''}.` : '') +
+        (MAP.address != null && MAP.city == null && MAP.state == null && MAP.zip == null ? ' Only the street is picked. Add the city, state or zip column so the map finds the right town.' : '');
+    }
   }
   $('go').disabled = !ok; $('go-msg').textContent = why;
 }
@@ -340,8 +382,10 @@ $('go').onclick = async () => {
   $('go').disabled = true; const say = (t) => { $('go-msg').innerHTML = t; };
   try {
     const leave = mins($('leave').value) ?? 300;
-    const tv = $('truck').value, [capS, kind] = tv.split('|'), cap = capS === 'custom' ? Number($('cap').value) || 20 : Number(capS);
-    const truckName = tv.startsWith('custom') ? `truck · ${cap} pallets` : $('truck').selectedOptions[0].textContent;
+    const measure = $('measure').value, cap = Number($('cap').value) || 0;
+    if (cap <= 0) { say('<span class="error">Enter how much one truck carries.</span>'); $('cap').focus(); return; }
+    const tv = $('truck').value, unitWord = { pallets: 'pallets', cases: 'cases', pounds: 'lb' }[measure];
+    const truckName = `${tv.startsWith('custom') ? 'truck' : $('truck').selectedOptions[0].textContent.split(' · ')[0]} · ${cap.toLocaleString('en-US')} ${unitWord}`;
     let depot, stops;
     if (SAMPLE) {
       depot = { lat: SAMPLE_DEPOT.lat, lng: SAMPLE_DEPOT.lng };
@@ -375,13 +419,15 @@ $('go').onclick = async () => {
     say('Planning…'); await new Promise(r => setTimeout(r, 30));
     const t0 = performance.now();
     const r = RC_PLANNER.plan(depot, pStops, vehicles, params);
-    show(r, stops, { truckName, cap, noQty, svc, buffer, leave, params, secs: (performance.now() - t0) / 1000 });
+    show(r, stops, { depot, truckName, cap, noQty, svc, buffer, leave, params, unitWord, secs: (performance.now() - t0) / 1000 });
     say(`Planned in ${((performance.now() - t0) / 1000).toFixed(1)} seconds.`);
   } catch (e) { say(`<span class="error">${esc(e.message || e)}</span>`); }
   finally { $('go').disabled = false; }
 };
 
 let LAST = null;
+const miAir = (a, b) => { const R = 3958.8, rad = Math.PI / 180, dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 function show(r, stops, o) {
   const byId = new Map(stops.map(s => [s.id, s])), used = r.routes.filter(x => x.stops.length);
   const driverMin = used.reduce((a, x) => a + x.duty, 0), miles = used.reduce((a, x) => a + x.miles, 0);
@@ -390,21 +436,28 @@ function show(r, stops, o) {
   $('r-head').textContent = `${used.length} truck${used.length === 1 ? '' : 's'} for ${placed} stop${placed === 1 ? '' : 's'}`;
   $('tiles').innerHTML = [[used.length, 'trucks'], [Math.round(miles).toLocaleString('en-US'), 'miles'], [(driverMin / 60).toFixed(1), 'driver hours'],
     [money(cost), 'what the day costs'], [placed ? money(cost / placed) : '—', 'per stop']].map(([b, s]) => `<div class="tile"><b>${b}</b><span>${s}</span></div>`).join('');
-  const basis = `${o.truckName}${o.noQty ? ' (no pallet column, so capacity wasn\'t limited)' : ''}; leaving ${hm(o.leave)} or later to make the first window; ${o.svc} min a stop; at least ${o.buffer} min before each window closes; ${o.params.mph} mph × ${o.params.roadFactor} road allowance; up to ${Number($('max-drive').value) || 11} h driving and ${(Number($('max-duty').value) || 14)} h on duty; trucks ${o.params.returnToStart ? 'come back' : 'don\'t come back'}; $${$('c-truck').value} a truck-day, $${$('c-driver').value} a driver hour, $${$('c-mile').value} a mile.`;
+  const basis = `${o.truckName}${o.noQty ? ' (no load column, so room on the truck wasn\'t limited)' : ''}; leaving ${hm(o.leave)} or later to make the first window; ${o.svc} min a stop; at least ${o.buffer} min before each window closes; ${o.params.mph} mph × ${o.params.roadFactor} road allowance; up to ${Number($('max-drive').value) || 11} h driving and ${(Number($('max-duty').value) || 14)} h on duty; trucks ${o.params.returnToStart ? 'come back' : 'don\'t come back'}; $${$('c-truck').value} a truck-day, $${$('c-driver').value} a driver hour, $${$('c-mile').value} a mile.`;
   $('r-basis').textContent = 'Based on: ' + basis;
   const un = (r.unassigned || []).filter(u => { const s = byId.get(u.id); return !s || SAMPLE || s.lat != null; });   // no map point: listed under "Not found" instead
-  $('r-unplaced').innerHTML = un.length ? `<div class="warn"><b>${un.length} stop${un.length === 1 ? '' : 's'} couldn't be planned:</b> ${un.map(u => { const s = byId.get(u.id) || {}; return `${esc(s.name || u.id)} — ${esc(u.why || 'no room')}${u.leaveBy != null ? ` (a truck would have to leave by ${hm(u.leaveBy)})` : ''}`; }).join('; ')}.</div>` : '';
+  // how far a truck can get out and back inside the driving hours
+  const reach = ((Number($('max-drive').value) || 11) * o.params.mph / o.params.roadFactor) / (o.params.returnToStart ? 2 : 1);
+  const far = un.filter(u => { const s = byId.get(u.id); return s && s.lat != null && o.depot && miAir(o.depot, s) > reach; });
+  const big = un.filter(u => u.why === 'bigger than any truck');
+  const notes = [];
+  if (far.length) notes.push(`<b>${far.length}</b> ${far.length === 1 ? 'is' : 'are'} more than a day's drive${o.params.returnToStart ? ' out and back' : ''} from where the trucks start (about ${Math.round(reach)} miles with ${Number($('max-drive').value) || 11} h of driving). If your trucks average more on the highway, raise the average speed under "What a day costs to run, and speeds". This free planner plans one day; overnight and team runs are planned in RoadCoda. <a href="mailto:support@roadcoda.com?subject=A%2030-minute%20call%20about%20RoadCoda">Book a 30-minute call</a> and we'll plan those with you.`);
+  if (big.length) notes.push(`<b>${big.length}</b> ${big.length === 1 ? 'is' : 'are'} more than one truck holds (${o.cap.toLocaleString('en-US')} ${o.unitWord}). Check "Load counted in" and how much a truck carries, or split the order.`);
+  $('r-unplaced').innerHTML = un.length ? `<div class="warn"><b>${un.length} stop${un.length === 1 ? '' : 's'} couldn't be planned.</b> ${notes.join(' ')}<details style="margin-top:6px"><summary>Each stop and why</summary>${un.map(u => { const s = byId.get(u.id) || {}; return `${esc(s.name || u.id)} — ${far.includes(u) ? 'too far for one day' : `${esc(u.why || 'no room')}${u.leaveBy != null ? ` (a truck would have to leave by ${hm(u.leaveBy)})` : ''}`}${s.qty && u.why === 'bigger than any truck' ? ` · ${Number(s.qty).toLocaleString('en-US')} ${o.unitWord}` : ''}`; }).join('; ')}.</details></div>` : '';
   const partial = stops.filter(s => s.partial), missing = stops.filter(s => !SAMPLE && s.lat == null);
   $('r-geo').innerHTML = (missing.length ? `<div class="warn">Not found on the map, so left out: ${missing.map(s => esc(s.name)).join(', ')}. Check the address and plan again.</div>` : '') +
     (partial.length ? `<p class="hint">Only roughly placed (check these addresses): ${partial.map(s => `${esc(s.name)} → ${esc(s.found || '')}`).join('; ')}.</p>` : '');
   $('r-routes').innerHTML = used.map((x, k) => {
     const tms = x.times || [];
     return `<div class="route"><div class="route-h"><b>Truck ${k + 1}</b><span>leaves ${hm(x.start)}</span><span>back ${hm(x.end)}</span><span>${Math.round(x.miles)} mi</span><span>${hrs(x.duty)} on duty</span>
-        ${o.noQty ? '' : `<span>${Math.round(x.load && x.load.pallets || 0)} of ${o.cap} pallets</span>`}${x.cost != null ? `<span>${money(x.cost)}</span>` : ''}</div>
-      <div class="tablewrap" style="margin:0"><table><thead><tr><th>#</th><th>Stop</th><th>Window</th><th>Arrives</th>${o.noQty ? '' : '<th class="num">Pallets</th>'}</tr></thead><tbody>
+        ${o.noQty ? '' : `<span>${Math.round(x.load && x.load.pallets || 0).toLocaleString('en-US')} of ${o.cap.toLocaleString('en-US')} ${o.unitWord}</span>`}${x.cost != null ? `<span>${money(x.cost)}</span>` : ''}</div>
+      <div class="tablewrap" style="margin:0"><table><thead><tr><th>#</th><th>Stop</th><th>Window</th><th>Arrives</th>${o.noQty ? '' : `<th class="num">${o.unitWord === 'lb' ? 'Pounds' : o.unitWord[0].toUpperCase() + o.unitWord.slice(1)}</th>`}</tr></thead><tbody>
       ${x.stops.map((id, i) => { const s = byId.get(id) || {}, t = tms[i] || {};
         return `<tr><td class="mono">${i + 1}</td><td>${esc(s.name)}</td><td class="mono">${s.ws != null || s.we != null ? `${hm(s.ws) || 'any'}–${hm(s.we) || 'any'}` : 'any time'}</td>
-          <td class="mono ${t.tight ? 'tight' : ''}">${hm(t.arrive)}${t.tight ? ' · tight' : ''}</td>${o.noQty ? '' : `<td class="num">${esc(s.qty)}</td>`}</tr>`; }).join('')}</tbody></table></div></div>`;
+          <td class="mono ${t.tight ? 'tight' : ''}">${hm(t.arrive)}${t.tight ? ' · tight' : ''}</td>${o.noQty ? '' : `<td class="num">${esc(Number(s.qty).toLocaleString('en-US'))}${s.orders > 1 ? ` <span class="hint">(${s.orders} orders)</span>` : ''}</td>`}</tr>`; }).join('')}</tbody></table></div></div>`;
   }).join('');
   LAST = { stops: stops.length, trucks: used.length, miles: Math.round(miles * 10) / 10, driver_hours: Math.round(driverMin / 6) / 10, day_cost: Math.round(cost * 100) / 100,
     truck_type: o.truckName, basis,
