@@ -201,7 +201,7 @@
     [/^Stop (\d+) · PICKUP · (.+)$/, 'Parada $1 · RECOGIDA · $2'], [/^Stop (\d+) · (.+)$/, 'Parada $1 · $2'],
     [/^Load (\S+)$/i, 'Carga $1'], [/^Documents · Load (.+)$/, 'Documentos · Carga $1'],
     [/^Window$/, 'Horario'], [/^Window (.+)$/, 'Horario $1'],
-    [/^(\d+) stops? left$/, 'Quedan $1 paradas'], [/^All done for today: (\d+) loads? delivered\.$/, 'Todo listo por hoy: $1 cargas entregadas.'],
+    [/^(\d+) stops? left$/, 'Quedan $1 paradas'], [/^Tomorrow · (\d+) stops? left$/, 'Mañana · quedan $1 paradas'], [/^From yesterday · (\d+) stops? left$/, 'De ayer · quedan $1 paradas'], [/^All done for today: (\d+) loads? delivered\.$/, 'Todo listo por hoy: $1 cargas entregadas.'],
     [/^Odometer( \(hub miles\))?$/, 'Odómetro$1'], [/^start (.*) · end (.*)$/, 'salida $1 · llegada $2'],
     [/^(.+) delivered \(of (\d+)\)$/, function (m, u, n) { return (UNITS[u] || u) + ' entregadas (de ' + n + ')'; }],
     [/^(.+) picked up \(of (\d+)\)$/, function (m, u, n) { return (UNITS[u] || u) + ' recogidas (de ' + n + ')'; }],
