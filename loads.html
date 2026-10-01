@@ -19,6 +19,7 @@
 <script src="planner-core.js"></script>
 <script src="rc-drive-times.js"></script>
 <script src="new-customer.js"></script>
+<script src="listmatch.js"></script>
 <style>
   :root{--ground:#f4f2ee;--surface:#fff;--ink:#1c1f24;--muted:#5b5750;--line:#e2ddd3;--accent:#0f5e63;--late:#8f2318;
         --ok-bg:#e3f1e6;--ok:#1e6b34;--info-bg:#e3edf6;--info:#1d4e89;--risk-bg:#fbeed8;--risk:#8a4b08}
@@ -177,7 +178,7 @@ const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, {maximumFrac
 const money2 = (n) => '$' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const time = (t) => t ? new Date(t).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '–';
 const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
-const UNITS = ['pallets', 'boxes', 'cages', 'parts', 'totes', 'other'];
+const UNITS = ['pallets', 'cases', 'boxes', 'cages', 'parts', 'totes', 'pounds', 'other'];
 // Scans and photos the driver took at a stop.
 function scanInfo(s) {
   const codes = (s.scans || []).filter(c => c.barcode), photos = (s.scans || []).filter(c => c.photo_path);
@@ -939,16 +940,10 @@ async function pdfRows(buf) {
   });
 }
 
-function guessMap() {
-  const head = imp.rows[imp.header].map(h => String(h).trim());
-  imp.map = {};
-  const used = new Set();
-  // most specific first, so "Store #" goes to code and "Store name" to name
-  for (const key of ['type', 'code', 'route', 'qty', 'unit', 'zip', 'state', 'city', 'address', 'wend', 'wstart', 'name']) {
-    const [, , re] = FIELDS.find(f => f[0] === key);
-    const i = head.findIndex((h, j) => h && !used.has(j) && re.test(h));
-    if (i >= 0) { imp.map[key] = i; used.add(i); }
-  }
+function guessMap() {   // listmatch.js: long headings, ruled-out columns, the fullest column wins, never a column of zeros
+  const g = RC_LISTMATCH.guess(imp.rows[imp.header], imp.rows.slice(imp.header + 1));
+  imp.map = g.map; imp.unit = UNITS.includes(g.unit) ? g.unit : null;
+  if ($('imp-unit')) $('imp-unit').value = imp.unit || 'pallets';
 }
 
 // "6:00 AM", "0600", "6am", 0.25 (Excel) -> "06:00"
@@ -965,13 +960,13 @@ function toTime(v) {
 
 function importRows() {
   const g = (r, k) => imp.map[k] != null ? r[imp.map[k]] : '';
-  const unitDefault = $('imp-unit')?.value || 'pallets';
+  const unitDefault = $('imp-unit')?.value || imp.unit || 'pallets';
   return imp.rows.slice(imp.header + 1).map((r, i) => {
     let ws = g(r, 'wstart'), we = g(r, 'wend');
     if (typeof ws === 'string' && /[-–]/.test(ws) && !we) { const [a, b] = ws.split(/\s*[-–]\s*/); ws = a; we = b; }
     const addr = [g(r, 'address'), g(r, 'city'), [g(r, 'state'), /^\d{3,4}$/.test(String(g(r, 'zip')).trim()) ? String(g(r, 'zip')).trim().padStart(5, '0') : g(r, 'zip')].filter(Boolean).join(' ')].map(x => String(x).trim()).filter(Boolean).join(', ');
     const unitRaw = String(g(r, 'unit') || '').toLowerCase();
-    const unit = UNITS.find(u => unitRaw.startsWith(u.replace(/e?s$/, ''))) || unitDefault;
+    const unit = RC_LISTMATCH.unitCell(unitRaw, UNITS) || unitDefault;
     const row = { i, name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address: addr,
       window_start: toTime(ws), window_end: toTime(we), qty: parseFloat(String(g(r, 'qty')).replace(/[^\d.]/g, '')) || 0, unit,
       route: String(g(r, 'route')).trim(), type: /^\s*p/i.test(String(g(r, 'type'))) ? 'pickup' : 'delivery' };
@@ -996,7 +991,7 @@ async function drawImport() {
         <option value="route" ${groupBy === 'route' ? 'selected' : ''} ${hasRoute ? '' : 'disabled'}>One per route / load no. in the file</option>
         <option value="all" ${groupBy === 'all' ? 'selected' : ''}>All deliveries on one load (the Route planner shares them over your trucks)</option>
         <option value="each" ${groupBy === 'each' ? 'selected' : ''}>One load per delivery</option></select></label>
-      <label for="imp-unit">Unit if the file has none<select id="imp-unit">${UNITS.map(u => `<option ${u === ($('imp-unit')?.value || 'pallets') ? 'selected' : ''}>${u}</option>`).join('')}</select></label>
+      <label for="imp-unit">Quantity counts (if the file doesn't say)<select id="imp-unit">${UNITS.map(u => `<option ${u === ($('imp-unit')?.value || imp.unit || 'pallets') ? 'selected' : ''}>${u}</option>`).join('')}</select></label>
     </div>
     <details style="margin-top:10px" ${Object.keys(imp.map).length < 2 ? 'open' : ''}><summary style="cursor:pointer;font-weight:600">Match the file's columns (${Object.keys(imp.map).length} found automatically)</summary>
       <div class="grid" style="margin-top:8px">${FIELDS.map(([k, label]) => `<label>${label}<select data-map="${k}">${colOpts(imp.map[k])}</select></label>`).join('')}</div>
@@ -1005,6 +1000,10 @@ async function drawImport() {
     <p style="margin-top:12px"><b>${rows.filter(r => r.ok).length}</b> deliveries ·
       <span class="tag-old">${rows.filter(r => r.ok && r.loc).length} on file</span>
       <span class="tag-new">${news.size} new delivery customer${news.size === 1 ? '' : 's'} will be added</span>
+      ${(() => { const ok = rows.filter(r => r.ok), gk = (r, n) => groupBy === 'route' ? (r.route || '') : groupBy === 'all' ? 'all' : 'row' + n;
+        const m = ok.length - RC_LISTMATCH.mergeRepeats(ok.map((r, n) => ({ ...r, g: gk(r, n) })), x => x.g).length;
+        return m ? ` · ${m} repeat row${m === 1 ? '' : 's'} (the same store again on the same load) will be added to the first` : ''; })()}
+      ${rows.filter(r => r.ok && r.type === 'pickup').length ? ` · <span class="tag-pu">${rows.filter(r => r.ok && r.type === 'pickup').length} pickup${rows.filter(r => r.ok && r.type === 'pickup').length === 1 ? '' : 's'}</span>` : ''}
       ${rows.some(r => !r.ok) ? ` · <span class="error">${rows.filter(r => !r.ok).length} row(s) without a name or code will be skipped</span>` : ''}</p>
     <div class="tablewrap" style="max-height:360px;overflow:auto"><table class="imp-tbl">
       <thead><tr><th>Row</th><th>Load</th><th>Delivery customer</th><th>Code</th><th>Address</th><th>Window</th><th class="num">Qty</th><th></th></tr></thead>
@@ -1024,7 +1023,7 @@ async function drawImport() {
     const g = $('imp-group').value, groups = new Map();
     ok.forEach((r, n) => { const k = g === 'route' ? (r.route || '(no route)') : g === 'all' ? 'all' : 'row' + n; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
     const payload = [...groups.entries()].map(([k, list]) => ({ load_no: g === 'route' && k !== '(no route)' ? k : null,
-      stops: list.map(r => ({ type: r.type, name: r.name, code: r.code, address: r.address, window_start: r.window_start, window_end: r.window_end, unit: r.unit, qty: r.qty })) }));
+      stops: RC_LISTMATCH.mergeRepeats(list.map(r => ({ type: r.type, name: r.name, code: r.code, address: r.address, window_start: r.window_start, window_end: r.window_end, unit: r.unit, qty: r.qty }))) }));
     $('imp-go').disabled = true;
     const { data, error } = await sb.rpc('create_loads_from_import', { p_customer_id: $('imp-cust').value, p_date: $('imp-date').value,
       p_loads: payload, p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York' });

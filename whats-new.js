@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-10-01-cases', date: '2026-10-01', title: 'Freight by the case, and a leaving time for each truck',
+    body: 'Cases are now a unit like pallets: on stops, in delivery lists, and in rate sheets ($ per case). Importing a customer\'s delivery list reads long headings from other systems ("Service Location - City", "Order Type Quantities - CASES"), skips a quantity column of all zeros, marks pickups, and puts a store\'s repeat rows on one stop. In the Route planner, set how many cases a trailer holds (Setup › capacity, Pieces) or what one case takes; if no ticked truck has a limit for the day\'s freight, the plan says so. Each truck can also leave at its own time today: fill in Leaves next to it.',
+    link: 'planner.html', linkText: 'Open the Route planner', screen: ['dispatch'] },
   { id: '2026-10-01-fleetio', date: '2026-10-01', title: 'Fleetio sync (add-on)',
     body: 'If your shop runs on Fleetio: connect it on Setup › Integrations with a Fleetio API key and account token. Defects from your drivers\' inspections go to Fleetio as issues; when an issue is resolved in Fleetio, the defect is certified as repaired here and the truck comes back into service. Service finished in Fleetio comes in as work orders, so Cost per unit includes it. It runs every hour, or click Sync now.',
     link: 'integrations.html', linkText: 'Open Integrations', screen: ['integrations', 'equipment'], feature: 'fleetio' },

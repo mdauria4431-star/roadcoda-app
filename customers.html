@@ -294,7 +294,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n, d = 2) => '$' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: d, maximumFractionDigits: 4});
 const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
-const UNITS = ['pallets', 'boxes', 'cages', 'totes', 'parts'];
+const UNITS = ['pallets', 'cases', 'boxes', 'cages', 'totes', 'parts'];
 let me = null, customers = [];
 
 async function start() {

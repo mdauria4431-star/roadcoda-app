@@ -14,6 +14,7 @@
 <script src="shell.js"></script>
 <script src="planner-core.js"></script>
 <script src="rc-drive-times.js"></script>
+<script src="listmatch.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <style>
   *{box-sizing:border-box} [hidden]{display:none!important}
@@ -278,7 +279,8 @@ function capOf(l) {                        // the trailer's capacity for a tract
 function demandOf(s) {
   const d = { pallets: 0, weight: 0, cube: 0, pieces: 0 };
   (s.stop_items || []).forEach(i => { const u = UNITS[String(i.unit_type || '').toLowerCase()], q = Number(i.qty_ordered) || 0;
-    if (u) { d.pallets += q * u.pallets; d.weight += q * u.weight_lb; d.cube += q * u.cube_ft; d.pieces += q * u.pieces; } else d.pieces += q; });
+    if (u) { d.pallets += q * u.pallets; d.weight += q * u.weight_lb; d.cube += q * u.cube_ft; d.pieces += q * u.pieces; }
+    else if (/^(pounds?|lbs?)$/i.test(String(i.unit_type || '').trim())) d.weight += q; else d.pieces += q; });
   return d;
 }
 const pointOf = (s) => s._pt || (s.delivery_locations && s.delivery_locations.lat != null ? { lat: s.delivery_locations.lat, lng: s.delivery_locations.lon } : null);
@@ -350,8 +352,9 @@ function leaveCtl() {
     $('leave-save').innerHTML = LEAVE_TODAY ? `<span class="warn">this day only</span> · usual ${esc(usual)} · <a href="#" id="leave-reset">put back</a>` : '';
     if ($('leave-reset')) $('leave-reset').onclick = (ev) => { ev.preventDefault(); el.value = usual; el.onchange(); }; };
 }
+const hhmm24 = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
 const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 });
-let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
+let DRIVE_LEG = null, DRIVE_NOTE = '', LIMIT_NOTE = '';   // real drive times for this plan (123)
 const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks',
   localMph: CAR.plan_local_mph != null ? Number(CAR.plan_local_mph) : null, localMiles: Number(CAR.plan_local_miles || 0), leg: DRIVE_LEG,
   buffer: Number(CAR.plan_window_buffer || 0), costs: { driverHr: COST().driverHr, perMile: COST().perMile, minDayH: COST().minDayH, longDayH: COST().longDayH },
@@ -370,6 +373,7 @@ const COST = () => ({ tractor: num(CAR.plan_cost_tractor_day, 150), straight: nu
 function num(v, d) { return v != null && v !== '' && Number.isFinite(+v) ? +v : d; }
 const money = (v) => '$' + Math.round(v).toLocaleString();
 const TEAM = new Set();   // trucks running as a team today (two drivers)
+const START = new Map();  // a truck that leaves at its own time today (minutes), instead of the day's leaving time
 if ($('multi')) $('multi').onchange = async () => {
   PLAN = null; $('result').innerHTML = ''; buildFleet(); drawFleet();
   // for this plan only: the default is set on Setup
@@ -401,14 +405,7 @@ $('geo').onclick = async () => {
 // Same column matching as Loads › Import delivery list. Every row becomes a stop on one list for the
 // day; the planner then shares them over the trucks. PDFs, or a file whose columns need matching by
 // hand, go through Loads › Import delivery list.
-const IMP_FIELDS = [
-  ['name', /store ?name|consignee|ship ?to|deliver(y)? ?to|customer|location|name|account ?name|dest/i],
-  ['code', /store ?(#|no|num)|code|site|loc(ation)? ?(#|no|id)|acct|account ?(#|no)|dest ?(#|no)|^#$|^store$/i],
-  ['address', /address|street|addr/i], ['city', /city|town/i], ['state', /^st$|state|prov/i], ['zip', /zip|postal/i],
-  ['wstart', /open|start|from|earliest|window|appt|appointment|time/i], ['wend', /close|end|latest|until|^to$/i],
-  ['qty', /qty|quantity|pallets?|cases|pieces|pcs|units|count|plts?|cages?|totes?|boxes/i], ['unit', /unit|uom|type/i],
-  ['route', /route|load|trip|run|truck/i], ['type', /^type$|stop ?type|p\/?u|pu ?\/ ?del|pick|action|activity/i]];
-const IMP_UNITS = ['pallets', 'boxes', 'cages', 'parts', 'totes', 'other'];
+const IMP_UNITS = ['pallets', 'cases', 'boxes', 'cages', 'parts', 'totes', 'pounds', 'other'];
 let IMP = null;
 function impTime(v) {
   if (v === '' || v == null) return '';
@@ -421,10 +418,9 @@ function impTime(v) {
 }
 function impParse(rows) {
   const header = Math.max(0, rows.slice(0, 15).findIndex(r => r.filter(c => /[A-Za-z]/.test(String(c))).length >= 2));
-  const head = rows[header].map(h => String(h).trim()), map = {}, used = new Set();
-  for (const key of ['type', 'code', 'route', 'qty', 'unit', 'zip', 'state', 'city', 'address', 'wend', 'wstart', 'name']) {
-    const re = IMP_FIELDS.find(f => f[0] === key)[1], i = head.findIndex((h, j) => h && !used.has(j) && re.test(h));
-    if (i >= 0) { map[key] = i; used.add(i); } }
+  const head = rows[header].map(h => String(h).trim());
+  const guessed = RC_LISTMATCH.guess(head, rows.slice(header + 1)), map = guessed.map;   // listmatch.js
+  const unitDefault = IMP_UNITS.includes(guessed.unit) ? guessed.unit : 'pallets';
   const g = (r, k) => map[k] != null ? r[map[k]] : '';
   const stops = rows.slice(header + 1).map(r => {
     let ws = g(r, 'wstart'), we = g(r, 'wend');
@@ -433,10 +429,11 @@ function impParse(rows) {
     const address = [g(r, 'address'), g(r, 'city'), [g(r, 'state'), /^\d{3,4}$/.test(zip) ? zip.padStart(5, '0') : zip].filter(Boolean).join(' ')].map(x => String(x).trim()).filter(Boolean).join(', ');
     const unitRaw = String(g(r, 'unit') || '').toLowerCase();
     return { type: /^\s*p/i.test(String(g(r, 'type'))) ? 'pickup' : 'delivery', name: String(g(r, 'name')).trim(), code: String(g(r, 'code')).trim(), address,
-             window_start: impTime(ws), window_end: impTime(we), unit: IMP_UNITS.find(u => unitRaw.startsWith(u.replace(/e?s$/, ''))) || 'pallets',
+             window_start: impTime(ws), window_end: impTime(we), unit: RC_LISTMATCH.unitCell(unitRaw, IMP_UNITS) || unitDefault,
              qty: parseFloat(String(g(r, 'qty')).replace(/[^\d.]/g, '')) || 0 };
   }).filter(x => x.name || x.code);
-  return { head, map, stops };
+  const merged = RC_LISTMATCH.mergeRepeats(stops.map(x => ({ ...x })));   // the same store on several rows is one stop
+  return { head, map, stops: merged, rows: stops.length, unitDefault };
 }
 $('imp-file').onchange = async () => {
   const f = $('imp-file').files[0]; if (!f) return;
@@ -462,7 +459,7 @@ function drawImp() {
   const dup = stops.filter(x => onDay.has(key(x.name)) || [...onDay].some(k => x.code && k.includes(key(x.code))));
   const d = new Date($('day').value + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   box.innerHTML = `<div class="pad" style="border-bottom:1px solid var(--line-soft)">
-    <div><b>${esc(IMP.file)}</b>: ${stops.length} stop${stops.length === 1 ? '' : 's'} found · ${win} with a delivery window · ${Math.round(qty * 10) / 10} units</div>
+    <div><b>${esc(IMP.file)}</b>: ${dels.length} deliver${dels.length === 1 ? 'y' : 'ies'}${stops.length > dels.length ? ` and ${stops.length - dels.length} pickup${stops.length - dels.length === 1 ? '' : 's'}` : ''} · ${win} with a delivery window · ${Math.round(qty).toLocaleString()} ${esc([...new Set(dels.map(x => x.unit))].join(' / ') || 'units')}${IMP.rows > stops.length ? ` · ${IMP.rows - stops.length} repeat row${IMP.rows - stops.length === 1 ? '' : 's'} added to the same store` : ''}</div>
     <div class="mini" style="margin-top:4px">Columns used: ${Object.entries(map).map(([k, i]) => esc(head[i])).join(', ') || 'none'}</div>
     ${dup.length ? `<div class="error" style="margin-top:6px">${dup.length === stops.length ? 'All' : dup.length} of these stores already have a stop on this day — this list looks like it's been added already. Adding it again would deliver to them twice.</div>` : ''}
     ${missing.length ? `<div class="error" style="margin-top:6px">No ${missing.join(' or ')} column found. Use <a href="loads.html">Loads › Import delivery list</a> to match the columns yourself.</div>` : ''}
@@ -559,15 +556,18 @@ function gapTxt(g) {
 function drawFleet() {
   const n = ticked().length;
   $('fleet-n').textContent = `${n} ticked of ${FLEET.length}`;
-  $('fleet').innerHTML = FLEET.length ? `<table class="t"><thead><tr><th></th><th>Truck</th><th>Kind</th>${DIMS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th>Team</th><th></th></tr></thead><tbody>${FLEET.map(u => `<tr>
+  $('fleet').innerHTML = FLEET.length ? `<table class="t"><thead><tr><th></th><th>Truck</th><th>Kind</th>${DIMS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th>Team</th><th title="Leave blank to use the day's leaving time">Leaves</th><th></th></tr></thead><tbody>${FLEET.map(u => `<tr>
       <td><input type="checkbox" data-fu="${u.key}" ${u.noTrailer || u.gap?.none ? 'disabled' : OFF.has(u.key) ? '' : 'checked'} style="height:auto"></td>
       <td><b>${esc(u.name)}</b>${u.load ? ` <span class="mini">on load ${esc(u.load.load_no)}</span>` : ''}${gapTxt(u.gap)}</td>
       <td class="mini">${esc(u.truck.unit_type === 'tractor' ? 'tractor + trailer' : String(u.truck.unit_type).replace('_', ' '))}</td>
       ${DIMS.map(([k]) => `<td class="n">${u.cap[k] ?? '—'}</td>`).join('')}
       <td><input type="checkbox" data-team="${u.key}" ${TEAM.has(u.key) ? 'checked' : ''} title="Two drivers on this truck today" style="height:auto"></td>
+      <td><input type="time" data-start="${u.key}" value="${START.has(u.key) ? hhmm24(START.get(u.key)) : ''}" title="This truck's own leaving time today. Blank: ${esc(leaveTxt())}" style="width:9.5em;padding:3px 4px"></td>
       <td class="mini">${u.noTrailer ? '<span class="warn">no free trailer</span>' : u.known ? '' : '<span class="warn">no capacity set</span>'}${u.trailer2 ? 'trailers take turns, drop and hook at the DC' : u.noTrailer2 ? '<span class="warn">no second trailer free — one load</span>' : ''}</td></tr>`).join('')}</tbody></table>`
     : '<div class="empty">No free trucks that day. Trucks already on another load, and inactive units, aren\'t listed.</div>';
   document.querySelectorAll('[data-team]').forEach(c => c.onchange = () => { if (c.checked) TEAM.add(c.dataset.team); else TEAM.delete(c.dataset.team); PLAN = null; $('result').innerHTML = ''; });
+  document.querySelectorAll('[data-start]').forEach(c => c.onchange = () => { const v = c.value; if (v) { const [h, m] = v.split(':').map(Number); START.set(c.dataset.start, h * 60 + m); } else START.delete(c.dataset.start);
+    PLAN = null; $('result').innerHTML = ''; });
   document.querySelectorAll('[data-fu]').forEach(c => c.onchange = () => { if (c.checked) OFF.delete(c.dataset.fu); else OFF.add(c.dataset.fu); PLAN = null; $('result').innerHTML = ''; drawFleet(); });
 }
 
@@ -821,6 +821,13 @@ $('run').onclick = async () => {
   if (missingPoints(loads).length) return fail('Some stops (or the start) have no map point yet — use "Look up missing map points" first.');
   const fleet = ticked(); if (!fleet.length) return fail('Tick at least one truck.');
   const stops = planStops(loads, fleet);
+  // freight no ticked truck has a limit for (cases on trailers that only have a pallet count, say) would
+  // fit any truck without end — say so, rather than plan overloaded trucks without a word
+  const limited = (k) => fleet.some(u => (u.cap && u.cap[k]) || (u.cap2 && u.cap2[k]));
+  const loose = stops.filter(s => { const d = s.demand || {}, on = DIMS.filter(([k]) => d[k] > 0); return on.length && !on.some(([k]) => limited(k)); });
+  const kinds = [...new Set(loose.flatMap(s => { const id = String(s.id).split('|')[0], st = loads.flatMap(l => l.stops).find(x => x.id === id);
+    return st ? (st.stop_items || []).map(i => i.unit_type) : []; }).filter(Boolean))];
+  LIMIT_NOTE = loose.length ? `${loose.length} stop${loose.length === 1 ? '' : 's'} (${esc(kinds.join(', ') || 'freight')}) aren't limited by any of the ticked trucks: ${DIMS.filter(([k]) => loose.some(s => s.demand[k] > 0)).map(([, l]) => l.toLowerCase()).join(' / ')} isn't set on them, so a truck could be planned over what it holds. On Setup, set what one ${esc(kinds[0] ? String(kinds[0]).replace(/(x|ch|sh)es$/i, '$1').replace(/s$/i, '') : 'unit')} takes (for example its weight) or how many a trailer carries.` : '';
   // real drive times: remembered ones, and Google for any pair of places not asked before
   DRIVE_LEG = null; DRIVE_NOTE = '';
   if (window.RC_DRIVE && CAR.plan_truck_factor != null) {
@@ -853,7 +860,7 @@ $('run').onclick = async () => {
       return Object.assign(t, { fixedEquip: fe, fixedDriver: fd, outside: !fe && !fd }); };
     const trucks = crewed.map(u => acct(u, lim(u, { id: u.key, cap: u.cap, cap2: u.cap2, runs: MULTI() && u.trailer2 ? 8 : 1, reload: RELOAD_MIN(), maxWait: num(CAR.plan_store_wait_min, 30),
       dayCost: u.truck.unit_type === 'tractor' ? C.tractor + (u.trailer ? C.trailer : 0) : C.straight, trailer2Cost: u.trailer2 ? C.trailer : 0,
-      start: Math.max(leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
+      start: Math.max(START.has(u.key) ? START.get(u.key) : leave(), u.gap && u.gap.from != null ? u.gap.from : 0),
       latestEnd: u.gap && u.gap.to != null ? u.gap.to : null, maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60,
       // a team: two drivers taking turns, so the truck can drive twice as long in a day (each driver's own 11 / 14 hours are theirs to split)
       ...(TEAM.has(u.key) ? { drivers: 2, maxDrive: 2 * CAR.plan_max_drive_h * 60, maxDuty: 24 * 60 } : {}) })));
@@ -975,6 +982,7 @@ function drawResult() {
   $('result').innerHTML = `${rentalBanner()}<div class="tiles">${[['Trucks needed', used.length + ' of ' + fleet.length], ...(PLAN.multi ? [['Loads', used.reduce((a, x) => a + runsOf(x).length, 0) + '']] : []), ['Stops placed', (r.routes.reduce((a, x) => a + x.stops.length, 0)) + ' of ' + (r.routes.reduce((a, x) => a + x.stops.length, 0) + r.unassigned.length)], ['Estimated miles', Math.round(r.miles) + ''], ...(fill != null ? [['Trailers filled', fill + '% average']] : []), ['Driver hours', hrs(used.reduce((a, x) => a + x.duty * (x.crew || 1), 0))], ...(r.cost != null ? [['Cost to run the day', money(r.cost)]] : []), ['Stops not placed', r.unassigned.length + '']]
       .map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v ${k === 'Stops not placed' && r.unassigned.length ? 'error' : ''}">${v}</div></div>`).join('')}</div>
     ${DRIVE_NOTE ? `<div class="mini" style="margin:6px 2px">${esc(DRIVE_NOTE)}</div>` : ''}
+    ${LIMIT_NOTE ? `<div class="warn" style="margin:6px 2px">${LIMIT_NOTE}</div>` : ''}
     ${acctNote()}
     ${hoursNote()}
     ${splitNote()}
@@ -987,7 +995,7 @@ function drawResult() {
         ${runsOf(rt).length > 1 ? '' : capRows(rt.load, rt.cap)}
         ${rt.costParts ? `<div class="mini" style="margin-top:6px"><b>${money(rt.cost)}</b> to run: equipment ${money(rt.costParts.equipment)} · driver${TEAM.has(rt.vehicle) ? 's (team)' : ''} ${money(rt.costParts.driver)} · miles ${money(rt.costParts.miles)}</div>` : ''}
         <div class="mini" style="margin-top:6px">${runsOf(rt).length > 1 ? `<b>${runsOf(rt).length} loads</b> · ` : ''}${rt.stops.length} stops · ${Math.round(rt.miles)} mi · ${hrs(rt.drive)} driving · ${hrs(rt.duty)} on duty · back ${hhmm(rt.end)}${overH ? ' <span class="error">over hours</span>' : ''}</div>
-        <div class="mini" style="margin-top:4px">Leaves <b>${hhmm(rt.start != null ? rt.start : leave())}</b>${rt.start != null && rt.start > leave() + 0.5 ? ` (not before ${hhmm(leave())}, so no one waits for the first window)` : ''}. Each stop shows when the truck gets there, then its window.</div>
+        <div class="mini" style="margin-top:4px">Leaves <b>${hhmm(rt.start != null ? rt.start : leave())}</b>${START.has(rt.vehicle) ? ' (its own leaving time today)' : rt.start != null && rt.start > leave() + 0.5 ? ` (not before ${hhmm(leave())}, so no one waits for the first window)` : ''}. Each stop shows when the truck gets there, then its window.</div>
         ${runsOf(rt).map((run, g) => `${runsOf(rt).length > 1 ? `<div style="margin-top:10px"><b>Load ${g + 1}</b> <span class="mini">· trailer ${esc(run.trailer?.unit_no || '—')} · leaves the DC ${hhmm(run.depart)}</span></div>${capRows(run.load, run.cap)}` : ''}
         <ol class="st">${run.stops.map((id, i) => { const s = byStop[id], tm = run.times[i];
           const at = tm ? `<b>${hhmm(tm.arrive)}</b>${tm.start > tm.arrive + 0.5 ? ` <span class="mini">(waits till ${hhmm(tm.start)})</span>` : ''}${tm.tight ? ` <span class="warn">tight — ${Math.max(0, Math.round(tm.spare))} min spare</span>` : ''} · ` : '';
