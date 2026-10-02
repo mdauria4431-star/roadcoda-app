@@ -109,8 +109,12 @@
       <p class="hint" id="unmatched"></p>
     </section>
 
-    <!-- 147: Fleetio sync (a paid add-on) -->
-    <section class="card prov" id="fl-card" hidden></section>
+    <section class="card" id="dvir-card" hidden>
+      <h2>Inspections done in the ELD's app</h2>
+      <p class="hint">Drivers who do their pre-trip and post-trip in the Samsara, Motive or Geotab app: their defects come into RoadCoda (Safety › Inspections, Dispatch, Equipment). An <b>unsafe</b> defect takes the truck or trailer out of service until it's repaired, here or in the ELD. RoadCoda only reads; it never changes anything in the ELD. The key needs read access to DVIRs / inspection reports.</p>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="dvir-on" style="width:auto;height:auto"> Bring in inspections from the ELD</label>
+      <p class="hint" id="dvir-msg"></p>
+    </section>
 
     <section class="card" id="drv-card" hidden>
       <h2>Drivers and ELD drivers</h2>
@@ -182,7 +186,7 @@ async function load() {
   ]);
   if (a.error) { $('cards').innerHTML = `<div class="card error">${esc(a.error.message)}. Run 30_integrations.sql in the Supabase SQL Editor first.</div>`; return; }
   rows = a.data || []; trucks = t.data || [];
-  renderCards(); renderPcm(); await renderVehicles(); await renderDrivers(); await renderFleetio();
+  renderCards(); renderPcm(); await renderVehicles(); await renderDrivers();
 }
 
 function renderCards() {
@@ -287,7 +291,19 @@ async function renderVehicles() {
   const loose = trucks.filter(t => !matched.has(t.id) && t.unit_type !== 'trailer');
   $('unmatched').textContent = loose.length ? `Trucks with no ELD vehicle: ${loose.map(t => t.unit_no).join(', ')}.` : 'Every truck is matched to an ELD vehicle.';
 }
+async function renderDvir() {   // 149
+  const anyEld = rows.some(r => r.kind === 'eld' && r.status !== 'disconnected');
+  const c = anyEld ? await sb.from('carriers').select('dvir_from_eld').maybeSingle() : { error: true };
+  $('dvir-card').hidden = !anyEld || !!c.error || !c.data;
+  if ($('dvir-card').hidden) return;
+  $('dvir-on').checked = c.data.dvir_from_eld !== false;
+  $('dvir-on').onchange = async () => {
+    const { error } = await sb.rpc('dvir_from_eld_set', { p_on: $('dvir-on').checked });
+    $('dvir-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : `<span class="ok">${$('dvir-on').checked ? 'On: new inspections come in within 15 minutes.' : 'Off: inspections from the ELD are no longer brought in.'}</span>`;
+  };
+}
 async function renderDrivers() {
+  renderDvir();
   const anyEld = rows.some(r => r.kind === 'eld' && r.status !== 'disconnected');
   $('drv-card').hidden = !anyEld;
   if (!anyEld) return;
@@ -333,88 +349,6 @@ $('sync-all').onclick = async () => {
     if (bad.length) alert(bad.map(x => `${x.provider}: ${x.error}`).join('\n'));
   } catch (e) { alert(e.message); }
   $('sync-all').disabled = false;
-};
-
-// ---------- 147: Fleetio sync (paid add-on) ----------
-async function flFn(body) {
-  const { data, error } = await sb.functions.invoke('fleetio', { body });
-  if (error) { let m = error.message; try { m = (await error.context.json()).error || m; } catch (_) {} throw new Error(m); }
-  if (data && data.error) throw new Error(data.error);
-  return data;
-}
-const flSay = (r) => r && r.busy ? r.notes[0] : r && !r.error ? `Fleetio vehicles: ${r.vehicles} (${r.matched} matched) · service entries in: ${r.service_new + r.service_updated} · defects sent: ${r.issues_sent}${r.issues_failed ? ` (${r.issues_failed} failed)` : ''} · repairs certified: ${r.certified}${r.meters ? ` · odometer readings sent: ${r.meters}` : ''}` : '';
-async function renderFleetio() {
-  await Promise.race([window.RC_ACCESS_READY, new Promise(r => setTimeout(r, 4000))]);
-  const A = window.RC_ACCESS, card = $('fl-card');
-  if (!A || !A.features || !('fleetio' in A.features)) { card.hidden = true; return; }     // before 147
-  card.hidden = false;
-  const owner = me.role === 'owner', canSync = owner || (A.can && (A.can('integrations', 'edit') || A.can('equipment', 'edit')));
-  if (!A.features.fleetio) {
-    card.innerHTML = `<div class="top"><h2>Fleetio</h2><span class="pill p-none">Add-on</span></div>
-      <p class="hint" style="margin:0">For carriers who run their shop in Fleetio: driver defects go to Fleetio as issues, and repairs and service done there come back to RoadCoda's work orders. It's a paid add-on — <a href="features.html">ask RoadCoda about it</a>.</p>`;
-    return;
-  }
-  const r = rows.find(x => x.provider === 'fleetio'), on = r && r.status !== 'disconnected', st = (r && r.settings) || {};
-  const pill = !on ? '<span class="pill p-none">Not connected</span>' : r.status === 'error' ? '<span class="pill p-error">Problem</span>' : '<span class="pill p-connected">Connected</span>';
-  card.innerHTML = `<div class="top"><h2>Fleetio</h2>${pill}<span style="flex-grow:1"></span>
-      ${on && canSync ? '<button class="btn small" data-fl="sync" type="button">Sync now</button>' : ''}
-      ${on && owner ? '<button class="btn small danger" data-fl="disc" type="button">Disconnect</button>' : ''}</div>
-    <p class="hint" style="margin:0">Fleetio stays your maintenance system. Driver defects from the RoadCoda app go to Fleetio as <b>issues</b>; when an issue is resolved there, the defect is certified as repaired here and the truck comes back into service (closed = no repair needed). Service entries finished in Fleetio come in as finished <a href="work-orders.html">work orders</a> (FL-…) for Cost per unit. Every hour. RoadCoda never deletes anything in Fleetio.</p>
-    ${on ? `<div class="facts">Account <b>${esc(r.key_hint || '')}</b> · connected ${esc(ago(r.connected_at))} · last sync <b>${esc(ago(r.last_sync_at))}</b>${r.vehicles_seen != null ? ` · ${r.vehicles_seen} vehicles in Fleetio` : ''}
-      ${r.last_error ? `<br><span class="error">${esc(r.last_error)}</span>` : ''}</div>
-      <div class="row" style="gap:18px">
-        <label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="fl-def" ${st.send_defects !== false ? 'checked' : ''} ${owner || (A.can && A.can('integrations', 'edit')) ? '' : 'disabled'}> Send driver defects to Fleetio as issues</label>
-        <label style="flex-direction:row;align-items:center;gap:7px;font-weight:500"><input type="checkbox" id="fl-odo" ${st.send_odometer ? 'checked' : ''} ${owner || (A.can && A.can('integrations', 'edit')) ? '' : 'disabled'}> Send odometer readings to Fleetio once a day <span class="hint">(leave off if your ELD already sends them)</span></label>
-      </div>` : ''}
-    ${owner ? `<details ${on ? '' : 'open'}><summary class="hint" style="cursor:pointer">${on ? 'Replace the key' : 'Connect'}</summary>
-      <div class="keybox" style="margin-top:8px"><p class="hint" style="margin:0">Fleetio › <b>Settings › Manage API Keys</b> › + Add API Key (needs the Professional or Premium plan). The <b>account token</b> is at the bottom of that page. The key sees what the Fleetio user who made it can see, so make it with a user that can see all vehicles, issues and service entries.</p>
-        <div class="grid3"><label>API key<input id="fl-key" type="password" autocomplete="new-password" spellcheck="false"></label><label>Account token<input id="fl-acct" autocomplete="off" spellcheck="false"></label></div>
-        <div class="row"><button class="btn primary" data-fl="connect" type="button">Test and connect</button><span class="hint" id="fl-m"></span></div></div></details>` : ''}
-    <div class="hint" id="fl-r"></div>
-    ${on ? '<div id="fl-veh"></div><div id="fl-prob"></div>' : ''}`;
-  if (on) await renderFleetioVehicles();
-}
-async function renderFleetioVehicles() {
-  const [v, p] = await Promise.all([sb.from('fleetio_vehicles').select('id, name, vin, plate, equipment_id, match_how').order('name'), sb.rpc('fleetio_problems')]);
-  const list = v.data || [], canMatch = me.role === 'owner' || (window.RC_ACCESS?.can && (RC_ACCESS.can('integrations', 'edit') || RC_ACCESS.can('equipment', 'edit')));
-  const opts = (sel) => '<option value="">Not matched</option>' + trucks.map(t => `<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${esc(t.unit_no)}</option>`).join('');
-  $('fl-veh').innerHTML = `<details ${list.some(x => !x.equipment_id) ? 'open' : ''}><summary class="hint" style="cursor:pointer">Fleetio vehicles and RoadCoda units (${list.filter(x => x.equipment_id).length} of ${list.length} matched)</summary>
-    <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>Vehicle in Fleetio</th><th>VIN</th><th>Plate</th><th>RoadCoda unit</th></tr></thead><tbody>
-    ${list.map(x => `<tr><td>${esc(x.name || '(no name)')}</td><td class="mono">${esc(x.vin || '')}</td><td>${esc(x.plate || '')}</td>
-      <td><select data-flveh="${x.id}" ${canMatch ? '' : 'disabled'}>${opts(x.equipment_id)}</select>${x.match_how ? `<div class="hint">matched by ${x.match_how === 'unit_no' ? 'unit number' : x.match_how === 'vin' ? 'VIN' : 'hand'}</div>` : ''}</td></tr>`).join('')
-      || '<tr><td colspan="4" class="hint">No vehicles yet. Click Sync now.</td></tr>'}</tbody></table></div>
-    <p class="hint">Only defects on matched units go to Fleetio.</p></details>`;
-  const probs = p.data || [];
-  $('fl-prob').innerHTML = probs.length ? `<p class="hint" style="margin:8px 0 0"><span class="error">Defects Fleetio didn't take:</span> ${probs.map(x => `${esc(x.unit_no)} ${esc(x.label)} — ${esc(x.error)}`).join('; ')}. Certify these on <a href="inspections.html">Safety › Inspections</a> or in a work order.</p>` : '';
-}
-$('fl-card').onchange = async (ev) => {
-  const s = ev.target.closest('select[data-flveh]');
-  if (s) { const { error } = await sb.rpc('fleetio_match', { p_vehicle: s.dataset.flveh, p_equipment: s.value || null }); if (error) alert(error.message); await renderFleetioVehicles(); return; }
-  if (ev.target.id === 'fl-def' || ev.target.id === 'fl-odo') {
-    const { error } = await sb.rpc('fleetio_settings', { p_send_defects: $('fl-def').checked, p_send_odometer: $('fl-odo').checked });
-    $('fl-r').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Saved.</span>';
-  }
-};
-$('fl-card').onclick = async (ev) => {
-  const b = ev.target.closest('button[data-fl]'); if (!b) return;
-  const act = b.dataset.fl; b.disabled = true;
-  try {
-    if (act === 'connect') {
-      $('fl-m').textContent = 'Testing with Fleetio…';
-      const r = await flFn({ action: 'connect', api_key: $('fl-key').value, account_token: $('fl-acct').value });
-      await load();
-      $('fl-r').innerHTML = r.sync?.error ? `<span class="error">Connected, but the first sync failed: ${esc(r.sync.error)}</span>` : `<span class="ok">Connected. ${esc(flSay(r.sync))}</span>`;
-    } else if (act === 'sync') {
-      $('fl-r').textContent = 'Syncing with Fleetio…';
-      const r = await flFn({ action: 'sync' }); await load();
-      $('fl-r').innerHTML = `<span class="ok">${esc(flSay(r) || 'Done.')}</span>`;
-    } else if (act === 'disc') {
-      if (!confirm('Disconnect Fleetio? The saved key is deleted and syncing stops. Work orders and certifications already made stay.')) { b.disabled = false; return; }
-      const { error } = await sb.rpc('integration_disconnect', { p_provider: 'fleetio' }); if (error) throw error;
-      await load();
-    }
-  } catch (e) { const m = act === 'connect' ? $('fl-m') : $('fl-r'); if (m) m.innerHTML = `<span class="error">${esc(e.message || e)}</span>`; else alert(e.message || e); }
-  b.disabled = false;
 };
 
 start();

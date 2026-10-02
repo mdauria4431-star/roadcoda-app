@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-10-02-eld-dvir', date: '2026-10-02', title: 'Inspections from Samsara, Motive and Geotab',
+    body: 'Drivers who do their pre-trip and post-trip in the Samsara, Motive or Geotab app now show up in RoadCoda too: the report under Safety › Inspections (marked with the ELD\'s name), and each defect on Dispatch, Equipment and the open-defects list. An unsafe defect takes the truck or trailer out of service until it\'s repaired, here or in the ELD (a repair signed off there is picked up within the hour). It comes in with the ELD connection; switch it off on the Integrations page.',
+    link: 'inspections.html', linkText: 'Open Inspections', screen: ['equipment', 'safety', 'dispatch'] },
   { id: '2026-10-02-here-truck', date: '2026-10-02', title: 'Truck miles and truck tolls',
     body: 'Work out miles on a load now uses truck routing: the route a truck can legally take for its height, weight, length and axles (no low bridges, parkways or truck-restricted roads), the drive time for a truck, and the truck\'s own toll price at E-ZPass rates for its real axle count. The load also shows miles by state. Put the truck on the load first for the exact toll; without one it works it out for a tractor with a 53\' trailer. Change to a truck with more or fewer axles and the toll estimate adjusts. The Route planner and load ETAs now use truck drive times too (not car times with a factor), and address lookups come from the same truck map.',
     link: 'loads.html', linkText: 'Open Loads', screen: ['loads', 'dispatch'] },
