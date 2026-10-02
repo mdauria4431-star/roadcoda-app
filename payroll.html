@@ -142,6 +142,11 @@
       <div id="probs"></div>
     </div>
 
+    <div class="card" id="fuel-card" hidden>
+      <header><h2>Fuel card purchases to look at</h2><span class="sp"></span><span class="mini">From Motive / Geotab. Nothing is taken from pay unless you press Deduct.</span></header>
+      <div class="wrap" id="fuel"></div>
+    </div>
+
     <div class="card">
       <header><h2>Drivers</h2><span class="sp"></span><span class="mini">Click a driver for every line.</span></header>
       <div class="wrap"><table class="t"><thead><tr><th>Driver</th><th class="r">Trips</th><th class="r">Gross</th><th class="r">Deductions</th><th class="r">Net</th><th></th></tr></thead><tbody id="drivers"></tbody></table></div>
@@ -244,7 +249,44 @@ $('s-save').onclick = async () => {
   FROM = weekOf(FROM); $('settings').hidden = true; toast('Pay week saved'); load();
 };
 
+// 150: card purchases flagged for a look — not fuel, no load that day, far from the truck, no truck, no state
+const FLAG = { not_fuel: 'Not fuel', no_load: 'No load that day', far_from_truck: 'Far from the truck', no_truck: 'No truck matched', no_state: 'No state (IFTA)' };
+let FUEL = [];
+async function loadFuel() {
+  const since = new Date(Date.now() - 90 * 864e5).toISOString();
+  const { data, error } = await sb.from('fuel_purchases')
+    .select('id, source, card_program, bought_at, unit_text, driver_text, driver_id, merchant, address, state, total, fuel_amount, other_amount, items, flags, review, review_note, reviewed_at')
+    .is('dup_of', null).gte('bought_at', since).in('review', ['open', 'ok', 'deducted']).order('bought_at', { ascending: false }).limit(300);
+  FUEL = error ? null : (data || []);
+}
+function drawFuel() {
+  const to = addDays(FROM, 7);
+  const recent = Date.now() - 7 * 864e5;   // reviewed in the last week stay in view (so Undo is at hand), and this pay week's
+  const rows = (FUEL || []).filter(f => f.review === 'open' || (f.reviewed_at && new Date(f.reviewed_at).getTime() > recent) || (f.bought_at.slice(0, 10) >= FROM && f.bought_at.slice(0, 10) < to));
+  $('fuel-card').hidden = FUEL === null || !rows.length;
+  if ($('fuel-card').hidden) return;
+  const ed = canEdit();
+  const items = (f) => (f.items || []).filter(i => i.product !== 'diesel' && i.product !== 'def' && i.product !== 'reefer').map(i => `${esc(i.label || i.product)} ${money(i.amount)}`).join(', ');
+  $('fuel').innerHTML = `<table class="t"><thead><tr><th>When</th><th>Driver · unit</th><th>Where</th><th class="r">Total</th><th>Why it's here</th><th></th></tr></thead><tbody>${rows.map(f => `
+    <tr data-f="${f.id}"><td class="n">${new Date(f.bought_at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
+      <td>${esc(f.driver_text || '—')} · ${esc(f.unit_text || '—')}<div class="mini">${esc(f.card_program || { motive_card: 'Motive Card', motive: 'Motive', geotab: 'Geotab' }[f.source] || '')}</div></td>
+      <td>${esc(f.merchant || '')}<div class="mini">${esc(f.address || f.state || '')}</div></td>
+      <td class="r n">${money(f.total)}${f.other_amount > 0 ? `<div class="mini">not fuel ${money(f.other_amount)}</div>` : ''}</td>
+      <td>${(f.flags || []).map(x => `<span class="pill">${FLAG[x] || x}</span>`).join(' ')}${items(f) ? `<div class="mini">${items(f)}</div>` : ''}</td>
+      <td style="white-space:nowrap">${f.review === 'open' ? (ed ? `<input type="number" step="0.01" min="0" data-amt value="${(f.other_amount > 0 ? f.other_amount : f.total).toFixed(2)}" style="width:86px" title="Amount to take from the driver's pay">
+          <button class="btn small" data-act="deduct" ${f.driver_id ? '' : 'disabled title="No driver matched to this card"'}>Deduct</button> <button class="btn small" data-act="ok">OK</button>` : '<span class="mini">to look at</span>')
+        : `<span class="mini">${f.review === 'deducted' ? 'Deducted' : 'OK'}${f.review_note ? ' · ' + esc(f.review_note) : ''}</span>${ed ? ` <a href="#" data-act="reopen">undo</a>` : ''}`}</td></tr>`).join('')}</tbody></table>`;
+  document.querySelectorAll('#fuel [data-act]').forEach(b => b.onclick = async (ev) => {
+    ev.preventDefault();
+    const tr = b.closest('tr'), act = b.dataset.act, amt = tr.querySelector('[data-amt]');
+    const { data, error } = await sb.rpc('fuel_review', { p_id: tr.dataset.f, p_action: act, p_amount: amt ? +amt.value : null, p_note: null });
+    if (error) return fail(error);
+    toast(act === 'deduct' ? `Deducted on load ${esc(data?.load || '')} (Personal fuel on card).` : act === 'ok' ? 'Marked OK.' : 'Undone.');
+    await loadFuel(); load();
+  });
+}
 async function load() {
+  if (!FUEL.length && FUEL !== null) await loadFuel();
   const to = addDays(FROM, 6);
   history.replaceState(null, '', '?week=' + FROM);
   $('wk').textContent = `${label(FROM)} – ${label(to)}`;
@@ -375,6 +417,7 @@ function draw() {
   $('probs-card').hidden = approved || !PROBS.length;
   $('probs').innerHTML = PROBS.map(p => `<div class="prob"><b>${esc(p.load_no || '')}</b><span class="dim" style="min-width:70px">${label(p.work_date)}</span><span style="min-width:120px">${esc(DRIVERS[p.driver_id]?.full_name || '')}</span><span>${esc(p.problem)}</span><span class="sp"></span>${p.load_id ? `<a href="trip.html?load=${p.load_id}">Open trip</a>` : ''}</div>`).join('');
 
+  drawFuel();
   $('hist-card').hidden = !HIST.length;
   $('hist').innerHTML = HIST.map(x => `<div class="prob"><span class="n dim" style="min-width:150px">${new Date(x.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span><span style="min-width:140px">${esc(NAMES[x.who] || 'the office')}</span><span><b>${esc({ approved: 'Approved', reopened: 'Reopened', exported: 'Downloaded' }[x.action] || x.action)}</b>${x.detail ? ' — ' + esc(x.detail) : ''}</span></div>`).join('');
   $('approve').hidden = approved || !ended || !canEdit();

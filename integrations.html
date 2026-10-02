@@ -110,9 +110,10 @@
     </section>
 
     <section class="card" id="dvir-card" hidden>
-      <h2>Inspections done in the ELD's app</h2>
+      <h2>Inspections and fuel from the ELD</h2>
       <p class="hint">Drivers who do their pre-trip and post-trip in the Samsara, Motive or Geotab app: their defects come into RoadCoda (Safety › Inspections, Dispatch, Equipment). An <b>unsafe</b> defect takes the truck or trailer out of service until it's repaired, here or in the ELD. RoadCoda only reads; it never changes anything in the ELD. The key needs read access to DVIRs / inspection reports.</p>
       <label style="display:flex;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="dvir-on" style="width:auto;height:auto"> Bring in inspections from the ELD</label>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px" id="fuel-wrap" title="Motive Card, and the fuel cards connected in Motive or loaded into Geotab"><input type="checkbox" id="fuel-on" style="width:auto;height:auto"> Bring in fuel-card purchases (Motive, Geotab): diesel goes into IFTA; anything odd is flagged on Payroll</label>
       <p class="hint" id="dvir-msg"></p>
     </section>
 
@@ -293,10 +294,17 @@ async function renderVehicles() {
 }
 async function renderDvir() {   // 149
   const anyEld = rows.some(r => r.kind === 'eld' && r.status !== 'disconnected');
-  const c = anyEld ? await sb.from('carriers').select('dvir_from_eld').maybeSingle() : { error: true };
+  let c = anyEld ? await sb.from('carriers').select('dvir_from_eld, fuel_from_eld').maybeSingle() : { error: true };
+  if (anyEld && c.error) c = await sb.from('carriers').select('dvir_from_eld').maybeSingle();   // before 150
   $('dvir-card').hidden = !anyEld || !!c.error || !c.data;
   if ($('dvir-card').hidden) return;
   $('dvir-on').checked = c.data.dvir_from_eld !== false;
+  $('fuel-wrap').hidden = !('fuel_from_eld' in c.data);
+  $('fuel-on').checked = c.data.fuel_from_eld !== false;
+  $('fuel-on').onchange = async () => {
+    const { error } = await sb.rpc('fuel_from_eld_set', { p_on: $('fuel-on').checked });
+    $('dvir-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : `<span class="ok">${$('fuel-on').checked ? 'On: fuel purchases come in within 15 minutes.' : 'Off: fuel purchases from the ELD are no longer brought in.'}</span>`;
+  };
   $('dvir-on').onchange = async () => {
     const { error } = await sb.rpc('dvir_from_eld_set', { p_on: $('dvir-on').checked });
     $('dvir-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : `<span class="ok">${$('dvir-on').checked ? 'On: new inspections come in within 15 minutes.' : 'Off: inspections from the ELD are no longer brought in.'}</span>`;

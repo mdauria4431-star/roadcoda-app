@@ -8,6 +8,9 @@
 //   feature  only companies with this module switched on see it
 // Who has seen what is kept per person on each computer or phone.
 window.RC_WHATS_NEW = [
+  { id: '2026-10-02-fuel-feed', date: '2026-10-02', title: 'Fuel-card purchases come in by themselves',
+    body: 'With Motive or Geotab connected, fuel bought on the company cards now comes into RoadCoda on its own: Motive Card (every item on the ticket), the other cards connected in Motive (EFS, Comdata, WEX, Fleetcor) and the cards loaded into Geotab. Diesel goes straight into the IFTA report by state. Anything worth a look (snacks or gas on the card, a purchase on a day with no load, far from where the truck was) is listed on Payroll: press Deduct to take it from the driver\'s pay, or OK. Nothing is deducted by itself.',
+    link: 'payroll.html', linkText: 'Open Payroll', screen: ['payroll', 'ifta'] },
   { id: '2026-10-02-eld-dvir', date: '2026-10-02', title: 'Inspections from Samsara, Motive and Geotab',
     body: 'Drivers who do their pre-trip and post-trip in the Samsara, Motive or Geotab app now show up in RoadCoda too: the report under Safety › Inspections (marked with the ELD\'s name), and each defect on Dispatch, Equipment and the open-defects list. An unsafe defect takes the truck or trailer out of service until it\'s repaired, here or in the ELD (a repair signed off there is picked up within the hour). It comes in with the ELD connection; switch it off on the Integrations page.',
     link: 'inspections.html', linkText: 'Open Inspections', screen: ['equipment', 'safety', 'dispatch'] },

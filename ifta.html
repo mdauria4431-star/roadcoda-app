@@ -324,9 +324,9 @@ async function loadFuel() {
   const unit = (id) => TRUCKS.find(t => t.id === id)?.unit_no;
   $('fuel-list').innerHTML = (data || []).length ? `<table class="t"><thead><tr><th>Date</th><th>Truck</th><th>State</th><th class="n">Gallons</th><th class="n">Amount</th><th>Fuel</th><th>From</th><th>Tax paid</th><th></th></tr></thead><tbody>
     ${data.map(f => `<tr><td>${esc(f.bought_on)}</td><td>${esc(unit(f.truck_id) || f.unit_text || '—')}</td><td>${esc(f.jurisdiction)}</td><td class="n">${num(f.gallons, 3)}</td><td class="n">${money(f.amount)}</td>
-      <td>${esc(f.fuel_type || '')}</td><td>${{ card: 'Card', receipt: 'Receipt', office: 'Office', trip_sheet: 'Trip sheet' }[f.source] || f.source}</td>
+      <td>${esc(f.fuel_type || '')}</td><td>${{ card: 'Card', receipt: 'Receipt', office: 'Office', trip_sheet: 'Trip sheet', feed: 'Card (automatic)' }[f.source] || f.source}</td>
       <td>${f.source === 'trip_sheet' ? 'yes' : `<input type="checkbox" data-tp="${f.ref_id}" ${f.tax_paid ? 'checked' : ''} ${canEdit() ? '' : 'disabled'} style="height:auto">`}</td>
-      <td>${canEdit() && f.source !== 'trip_sheet' ? `<button class="btn small" data-delf="${f.ref_id}">Remove</button>` : f.source === 'trip_sheet' ? '<span class="mini">edit on the trip</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No fuel in this period.</div>';
+      <td>${f.source === 'feed' ? '<span class="mini">from the card feed</span>' : canEdit() && f.source !== 'trip_sheet' ? `<button class="btn small" data-delf="${f.ref_id}">Remove</button>` : f.source === 'trip_sheet' ? '<span class="mini">edit on the trip</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No fuel in this period.</div>';
   document.querySelectorAll('[data-tp]').forEach(c => c.onchange = async () => { const { error } = await sb.from('ifta_fuel').update({ tax_paid: c.checked }).eq('id', c.dataset.tp); if (error) return fail(error); load(); });
   document.querySelectorAll('[data-delf]').forEach(b => b.onclick = async () => { const { error } = await sb.from('ifta_fuel').delete().eq('id', b.dataset.delf); if (error) return fail(error); load(); });
 }
