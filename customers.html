@@ -745,7 +745,7 @@ $('dl-check').onclick = async () => {
   out.textContent = 'Checking…'; dlPoint = null;
   try {
     const hit = await geocodeOne(typed);
-    if (!hit) { out.innerHTML = '<span class="error">Google couldn\'t find that address.</span>'; return; }
+    if (!hit) { out.innerHTML = '<span class="error">The map couldn\'t find that address.</span>'; return; }
     dlPoint = { lat: hit.lat, lon: hit.lng };
     const same = (hit.formatted || '').toLowerCase().replace(/[.,]/g, '') === typed.toLowerCase().replace(/[.,]/g, '');
     // a street name repeats from town to town: if Google answered with another town (or zip), say so loudly
@@ -753,7 +753,7 @@ $('dl-check').onclick = async () => {
     const moved = townMoved || (tZip && gZip && tZip !== gZip);
     if (moved) dlPoint = null;   // don't keep a map point in the wrong town
     out.innerHTML = same ? '<span class="ok">Found — map point saved with this stop.</span>'
-      : moved ? `<span class="error"><b>Careful:</b> Google's match is in a different ${townMoved ? 'town' : 'zip code'}: <b>${esc(hit.formatted || '')}</b>. The same street name is in many towns, so check the address with the customer.</span> <button class="btn small" type="button" id="dl-use">Use it anyway</button>`
+      : moved ? `<span class="error"><b>Careful:</b> the map's match is in a different ${townMoved ? 'town' : 'zip code'}: <b>${esc(hit.formatted || '')}</b>. The same street name is in many towns, so check the address with the customer.</span> <button class="btn small" type="button" id="dl-use">Use it anyway</button>`
       : `Matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not exact)</span>' : ''} <button class="btn" type="button" id="dl-use">Use this</button>`;
     const use = document.getElementById('dl-use');
     if (use) use.onclick = () => { $('dl-addr').value = hit.formatted; dlPoint = { lat: hit.lat, lon: hit.lng }; out.innerHTML = '<span class="ok">Updated — save to keep it.</span>'; };
@@ -1189,10 +1189,10 @@ async function fillZips(list) {
     catch (e) { part.forEach(x => out.set(x, { why: 'the address lookup is unavailable' })); continue; }
     part.forEach((x, j) => {
       const h = pts[j];
-      if (!h || !h.formatted) { out.set(x, { why: 'Google couldn\'t find the address' }); return; }
+      if (!h || !h.formatted) { out.set(x, { why: 'The map couldn\'t find the address' }); return; }
       const z = zipOf(h.formatted);
-      if (otherTown(`${x.street} ${x.city}`, h.formatted)) { out.set(x, { why: `Google put it in ${h.formatted.replace(/, USA$/, '')}, a different town` }); return; }
-      if (!z) { out.set(x, { why: 'Google\'s answer had no zip' }); return; }
+      if (otherTown(`${x.street} ${x.city}`, h.formatted)) { out.set(x, { why: `The map put it in ${h.formatted.replace(/, USA$/, '')}, a different town` }); return; }
+      if (!z) { out.set(x, { why: 'The map\'s answer had no zip' }); return; }
       out.set(x, { zip: z, point: { lat: h.lat, lon: h.lng } });
     });
   }

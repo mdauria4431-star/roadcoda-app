@@ -70,7 +70,7 @@
   <section id="app" hidden style="display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <h1 style="flex:1">Settings check</h1>
-      <button class="btn" id="google-btn" title="Looks up your office address once, to prove miles, prices and address checks work">Test Google maps</button>
+      <button class="btn" id="google-btn" title="Looks up your office address once, to prove miles, prices and address checks work">Test maps</button>
       <a class="btn" href="RoadCoda-Setup-Guide.pdf" target="_blank" rel="noopener">Setup guide (PDF)</a>
     </div>
     <div class="mini">Everything RoadCoda needs to be set up, checked against your company's own settings and records. <b>Missing</b> means a core job (dispatch, invoicing, payroll) won't work until it's set. <b>Fix</b> means something important works badly. <b>Consider</b> is worth doing. <b>Know this</b> is how RoadCoda behaves. It updates as you fix things; press a heading's <b>How to fix it</b> for the steps.</div>
@@ -132,18 +132,20 @@ function draw() {
   document.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { SHOW = b.dataset.show; draw(); });
 }
 
-// Google's key lives in Supabase, where no page can read it: one address lookup proves it works
+// The map keys (HERE, Google) live in Supabase, where no page can read them: one address lookup proves maps work
 $('google-btn').onclick = async () => {
   const addr = ME.carriers?.office_address || 'Hartford, CT';
-  $('google-msg').textContent = 'Asking Google…'; $('google-btn').disabled = true;
+  $('google-msg').textContent = 'Checking maps…'; $('google-btn').disabled = true;
   try {
     const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'geocode', addresses: [addr] } });
     let why = error ? (error.message || 'failed') : '';
     if (error) { try { const b = error.context && typeof error.context.json === 'function' ? await error.context.json() : null; if (b && b.error) why = b.error; } catch (_) {} }
     const p = data && data.points && data.points[0];
-    $('google-msg').innerHTML = !error && p ? `<span class="ok">Google maps works: miles, prices and address checks can run. (Found ${esc(p.formatted || addr)}.)</span>`
-      : !error ? '<span class="error">Google answered but couldn\'t find your office address. Check it on Setup › Company.</span>'
-      : `<span class="error">Google maps isn't working: ${esc(why)}. Miles, prices and address checks can't run. Report a problem so RoadCoda can check the Google key.</span>`;
+    const eng = data && data.source === 'here' ? ' (HERE truck maps)' : data && data.source === 'google' ? ' (Google maps)' : '';
+    $('google-msg').innerHTML = /RoadCoda tour/.test(why) ? '<span class="hint">This is the RoadCoda tour: map lookups are switched off here. In a real company account this checks that miles, tolls, drive times and address checks work.</span>'
+      : !error && p ? `<span class="ok">Maps work${eng}: miles, tolls, drive times and address checks can run. (Found ${esc(p.formatted || addr)}.)</span>`
+      : !error ? '<span class="error">The map service answered but couldn\'t find your office address. Check it on Setup › Company.</span>'
+      : `<span class="error">Maps aren't working: ${esc(why)}. Miles, tolls and address checks can't run. Report a problem so RoadCoda can check the map keys.</span>`;
   } catch (e) { $('google-msg').innerHTML = `<span class="error">${esc(e.message || e)}</span>`; }
   $('google-btn').disabled = false;
 };

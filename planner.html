@@ -337,7 +337,7 @@ const leaveTxt = () => LEAVE_TODAY || usualLeave();
 const leave = () => { const [h, m] = leaveTxt().split(':').map(Number); return h * 60 + m; };
 // "Trucks can leave from" on the plan: changes this plan at once; "keep as usual" saves it on Setup too
 function setBasis() {
-  $('basis').textContent = `${CAR.plan_window_buffer ? `Arriving at least ${CAR.plan_window_buffer} min before each window closes. ` : ''}Planning with Google drive times where known, otherwise ${CAR.plan_local_mph ?? CAR.plan_mph} mph under ${CAR.plan_local_miles ?? 0} mi and ${CAR.plan_mph} mph beyond × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${usualLeave()}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
+  $('basis').textContent = `${CAR.plan_window_buffer ? `Arriving at least ${CAR.plan_window_buffer} min before each window closes. ` : ''}Planning with real drive times where known (HERE truck routing, or Google), otherwise ${CAR.plan_local_mph ?? CAR.plan_mph} mph under ${CAR.plan_local_miles ?? 0} mi and ${CAR.plan_mph} mph beyond × road factor ${CAR.plan_road_factor}, ${CAR.plan_stop_min} min a stop, trucks leave ${usualLeave()}, up to ${CAR.plan_max_drive_h} h driving / ${CAR.plan_max_duty_h} h on duty. Change it under Setup.`;
 }
 function leaveCtl() {
   // "Trucks can leave from" on the plan: an exception for this day's plan only. It never changes the saved

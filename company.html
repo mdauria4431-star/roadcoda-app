@@ -332,7 +332,7 @@ async function checkAddress(fieldId) {
   out.textContent = 'Checking…';
   try {
     const hit = await geocodeOne(typed);
-    if (!hit) { out.innerHTML = '<span class="error">Google couldn\'t find that address. Check the street, town and ZIP.</span>'; return; }
+    if (!hit) { out.innerHTML = '<span class="error">The map couldn\'t find that address. Check the street, town and ZIP.</span>'; return; }
     const same = (hit.formatted || '').toLowerCase().replace(/[.,]/g, '') === typed.toLowerCase().replace(/[.,]/g, '');
     if (same) { out.innerHTML = '<span class="ok">Found — the address looks right.</span>'; return; }
     out.innerHTML = `Matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not an exact match)</span>' : ''}

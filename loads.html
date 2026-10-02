@@ -226,7 +226,7 @@ const hasMoney = () => !window.RC_ACCESS || window.RC_ACCESS.money !== false;
 const STATUS_LABEL = {planned:'Planned', dispatched:'Dispatched', in_progress:'In progress', delivered:'Delivered', cancelled:'Cancelled'};
 let lists = {customers: [], drivers: [], equipment: []};
 let yard = '', tollFactor = 1;
-// Google prices tolls for a car; the carrier's truck factor (set on the Tolls page) scales it
+// HERE prices the truck's own tolls; Google prices a car, which the carrier's truck factor (Tolls page) scales
 const tollEst = (r) => r && r.tolls_truck != null ? Math.round(r.tolls_truck * 100) / 100
   : r && r.tolls_car != null ? Math.round(r.tolls_car * tollFactor * 100) / 100 : null;
 const tollLine = (r) => r.tolls_truck != null ? `Tolls estimate: ${money2(r.tolls_truck)} (${r.source === 'here' ? `HERE truck tolls, ${r.toll_axles || 5} axles, E-ZPass where accepted` : 'PC*MILER truck tolls'})`
@@ -656,7 +656,8 @@ async function loadEtas(l, stops) {
       if (pairs.some(([a, b]) => !cache.has(RC_DRIVE.key(a) + '|' + RC_DRIVE.key(b)))) await RC_DRIVE.fill(sb, cache, pairs);
       leg = RC_DRIVE.leg(cache, P.plan_truck_factor);
       const have = pairs.filter(([a, b]) => leg(a, b)).length;
-      drive = have === pairs.length ? ` · drive times from Google (× ${P.plan_truck_factor} for a truck)` : have ? ` · ${have} of ${pairs.length} drive times from Google, the rest estimated` : '';
+      const hh = RC_DRIVE.fromHere ? RC_DRIVE.fromHere(cache, pairs) : 0, src = hh === have && have ? 'HERE truck routing' : hh ? 'HERE and Google' : `Google (× ${P.plan_truck_factor} for a truck)`;
+      drive = have === pairs.length ? ` · drive times from ${src}` : have ? ` · ${have} of ${pairs.length} drive times from ${src}, the rest estimated` : '';
     }
   }
   const r = RC_PLANNER.timeline(dep, pts, { start: h * 60 + m }, { mph: Number(P.plan_mph), roadFactor: Number(P.plan_road_factor), returnToStart: !!P.plan_return,

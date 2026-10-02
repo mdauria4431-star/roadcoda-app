@@ -129,7 +129,7 @@
           <label style="flex-direction:row;align-items:center;gap:8px;height:40px;color:var(--ink)"><input type="checkbox" id="b-master" style="height:auto"> <b>Master bill</b> (all loads for the week on one invoice)</label>
           <label for="b-sname">Truck starts at (customer facility)<input id="b-sname" style="width:180px" placeholder="e.g. ABC Route 9 DC"></label>
           <label for="b-saddr" style="flex:1 1 260px">Facility address<input id="b-saddr" placeholder="blank = our yard"></label>
-          <label for="b-miles">Miles billed on<select id="b-miles"><option value="route">Route miles (Google / typed)</option><option value="hub">Hub miles (driver enters odometer)</option><option value="pcmiler">PC*MILER miles (needs PC*MILER connected on Integrations)</option></select></label>
+          <label for="b-miles">Miles billed on<select id="b-miles"><option value="route">Route miles (truck route / typed)</option><option value="hub">Hub miles (driver enters odometer)</option><option value="pcmiler">PC*MILER miles (needs PC*MILER connected on Integrations)</option></select></label>
           <label for="b-terms">Payment terms (days)<input id="b-terms" type="number" min="0" style="width:110px" placeholder="default"></label>
           <label for="b-po">PO / reference no.<input id="b-po" style="width:150px"></label>
           <label for="b-code">Customer code<input id="b-code" style="width:100px" placeholder="ABC"></label>
@@ -229,7 +229,6 @@
           <label for="r-pm">$ per mile<input id="r-pm" type="number" step="0.0001" min="0" value="0"></label>
           <label for="r-ps">$ per stop<input id="r-ps" type="number" step="0.01" min="0" value="0"></label>
           <label for="r-pallets">$ per pallet<input id="r-pallets" type="number" step="0.01" min="0" value="0"></label>
-          <label for="r-cases">$ per case<input id="r-cases" type="number" step="0.01" min="0" value="0"></label>
           <label for="r-boxes">$ per box<input id="r-boxes" type="number" step="0.01" min="0" value="0"></label>
           <label for="r-cages">$ per cage<input id="r-cages" type="number" step="0.01" min="0" value="0"></label>
           <label for="r-totes">$ per tote<input id="r-totes" type="number" step="0.01" min="0" value="0"></label>
@@ -340,7 +339,7 @@ const REGIONS = {
   EMD_EPD2D_PTE_R50_DPG: 'West Coast',
   EMD_EPD2D_PTE_SCA_DPG: 'California'
 };
-const UNITS = ['pallets', 'cases', 'boxes', 'cages', 'totes', 'parts'];
+const UNITS = ['pallets', 'boxes', 'cages', 'totes', 'parts'];
 const METHOD = { mpg: 'Base + MPG', cpm_table: 'Table, $/mile', pct_table: 'Table, % of linehaul', peg_pct: 'Peg and percent' };
 const DOE_WEEK = { latest: 'DOE week the billing week ends in', prior1: 'DOE 1 week before', prior2: 'DOE 2 weeks before' };
 let me = null, carrierId = null;

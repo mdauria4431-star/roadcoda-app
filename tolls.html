@@ -165,7 +165,7 @@
 
     <section class="card" id="fac-card" hidden>
       <h2>Fallback: estimate factor by axles</h2>
-      <p class="hint" style="margin-top:-6px">Google prices tolls for a car. Each axle count gets its own multiplier, so a straight truck and a 5-axle rig are estimated differently. Suggested from the last 3 months of correctly charged, matched tolls (needs 3 loads or more).</p>
+      <p class="hint" style="margin-top:-6px">Only used when Google prices a load's tolls (HERE truck maps price each truck's own tolls and need no multiplier). Google prices tolls for a car. Each axle count gets its own multiplier, so a straight truck and a 5-axle rig are estimated differently. Suggested from the last 3 months of correctly charged, matched tolls (needs 3 loads or more).</p>
       <div id="fac"></div>
     </section>
 
@@ -477,12 +477,12 @@ $('rematch').onclick = async () => {
 function drawEst() {
   const e = rec.estimate || {}, f = Number(e.factor_now) || 1, owner = me.role === 'owner';
   const suggest = e.estimated > 0 ? Math.round(f * e.actual / e.estimated * 100) / 100 : null;
-  $('est').innerHTML = `<p class="hint" style="margin-top:0">Loads get a toll estimate when dispatch clicks Get miles &amp; price. Google prices tolls for a car,
-      so the estimate is multiplied by your <b>truck factor</b>. Statements show what the factor should be.</p>
+  $('est').innerHTML = `<p class="hint" style="margin-top:0">Loads get a toll estimate when dispatch clicks Get miles &amp; price. With HERE truck maps set up (the usual case), that's the truck's own toll price at E-ZPass rates, and no factor is used.
+      Only when Google is used instead (HERE switched off or its monthly limit reached), Google's car price is multiplied by your <b>truck factor</b>. Statements show what the factor should be.</p>
     ${e.loads ? `<p><b>${e.loads}</b> load${e.loads === 1 ? '' : 's'} this month with an estimate: estimated <b>${money(e.estimated)}</b>, actual <b>${money(e.actual)}</b>
        (${Math.round(e.actual / e.estimated * 100)}% of the estimate).${suggest ? ` Suggested factor: <b>${suggest}</b>.` : ''}</p>`
       : '<p class="hint">No loads with both an estimate and statement tolls this month yet.</p>'}
-    <div class="row"><label for="factor">Truck factor (× Google's car price)<input id="factor" type="number" min="0.5" max="20" step="0.05" value="${f}" style="width:140px" ${owner ? '' : 'disabled'}></label>
+    <div class="row"><label for="factor">Truck factor (× Google's car price, only when Google is used)<input id="factor" type="number" min="0.5" max="20" step="0.05" value="${f}" style="width:140px" ${owner ? '' : 'disabled'}></label>
       ${owner ? `${suggest ? `<button class="btn" id="use-suggest" type="button">Use ${suggest}</button>` : ''}<button class="btn primary" id="factor-save" type="button">Save factor</button>` : '<span class="hint">Only the owner can change this.</span>'}<span id="factor-msg"></span></div>`;
   if (!owner) return;
   if ($('use-suggest')) $('use-suggest').onclick = () => { $('factor').value = suggest; };
