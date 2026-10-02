@@ -744,10 +744,11 @@ async function showDetail(id) {
       <span id="d-miles-msg"></span>
     </div>
     <div class="row money" style="margin-top:12px">
-      <label for="d-tolls">Tolls on this load $<input id="d-tolls" type="number" min="0" step="0.01" style="width:140px"
+      <label for="d-tolls">Tolls actually paid $<input id="d-tolls" type="number" min="0" step="0.01" style="width:140px"${l.toll_estimate != null ? ` placeholder="est. ${Number(l.toll_estimate).toFixed(2)}"` : ''}
         value="${(l.load_costs || []).filter(c => c.cost_type === 'tolls').reduce((a, c) => a + Number(c.amount), 0) || ''}"></label>
       <button class="btn" id="d-tolls-save" ${l.invoice_id || tollRows.length ? `disabled title="${tollRows.length ? 'Set by the toll statement' : 'Already invoiced'}"` : ''}>Save tolls</button>
-      <span class="hint" id="d-tolls-msg">${l.toll_estimate != null ? `Estimate ${money2(l.toll_estimate)}. ` : ''}${tollRows.length
+      <span id="d-tolls-msg"></span>
+      <span class="hint">${l.toll_estimate != null ? `<b>Estimate ${money2(l.toll_estimate)}</b>${l.miles_source === 'here' ? ' (HERE truck tolls)' : ''}. ` : ''}${tollRows.length
         ? `From the toll statement: ${tollRows.filter(t => t.status === 'matched').length} transaction(s)${tollRows.some(t => t.status !== 'matched') ? ', others set aside' : ''}. Change them on the <a href="tolls.html">Tolls</a> page.`
         : 'Filled in automatically when the toll statement is uploaded on the Tolls page. Billed on the weekly invoice when the contract has a tolls line.'}</span>
     </div>
@@ -809,7 +810,9 @@ async function showDetail(id) {
     const amt = parseFloat($('d-tolls').value || '0');
     await sb.from('load_costs').delete().eq('load_id', id).eq('cost_type', 'tolls');
     const { error } = amt > 0 ? await sb.from('load_costs').insert({ load_id: id, cost_type: 'tolls', amount: amt }) : { error: null };
-    $('d-tolls-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>` : '<span class="ok">Tolls saved.</span>';
+    $('d-tolls-msg').innerHTML = error ? `<span class="error">${esc(error.message)}</span>`
+      : amt > 0 ? `<span class="ok">Saved ${money2(amt)} tolls paid.</span>`
+      : '<span class="ok">No tolls paid entered (the estimate stays).</span>';
   };
   drawEldMiles(l);
 
