@@ -351,7 +351,30 @@ function leaveCtl() {
     if ($('leave-reset')) $('leave-reset').onclick = (ev) => { ev.preventDefault(); el.value = usual; el.onchange(); }; };
 }
 const truckOf = (l) => ({ id: l.id, cap: capOf(l).cap, start: leave(), maxDrive: CAR.plan_max_drive_h * 60, maxDuty: CAR.plan_max_duty_h * 60 });
-let DRIVE_LEG = null, DRIVE_NOTE = '';   // real drive times for this plan (123)
+let DRIVE_LEG = null, DRIVE_NOTE = '', DRIVE_CACHE = null, DRIVE_INFO = null;   // real drive times for this plan (123, 148)
+function driveNote() {
+  const I = DRIVE_INFO; if (!I) return '';
+  if (I.error) return 'Drive times estimated (run 123_drive_times.sql for real drive times).';
+  const pairs = RC_DRIVE.allPairs(I.pts), have = pairs.filter(([a, b]) => DRIVE_LEG && DRIVE_LEG(a, b)).length, h = RC_DRIVE.fromHere(DRIVE_CACHE, pairs);
+  const asked = I.got.asked ? ` ${I.got.found} asked for just now${I.got.billed ? ` (${I.got.billed} HERE transactions)` : ''}.` : '';
+  const err = I.got.error ? ` Drive times: ${I.got.error}` : '';
+  if (I.eng === 'here') return `Drive times: ${h} trips between nearby stops, to and from the DC, and on the chosen routes from HERE truck routing (truck times); far-apart stops a truck wouldn't drive between are estimated.${asked}${err}`;
+  return `Drive times: ${have} of ${pairs.length} from Google (car time × ${CAR.plan_truck_factor} for a truck)${have < pairs.length ? `; the rest estimated (${CAR.plan_local_mph} mph under ${CAR.plan_local_miles} mi, ${CAR.plan_mph} mph beyond)` : ''}.${asked}${err}`;
+}
+// 148: after planning, every leg the plan actually drives gets a real HERE time; if any were estimated,
+// they're asked for and the plan is worked out once more on them.
+async function checkChosenLegs(r) {
+  if (!DRIVE_CACHE || !DRIVE_INFO || DRIVE_INFO.eng !== 'here' || !r) return false;
+  const byId = new Map(DRIVE_INFO.pts.slice(1).map(s => [s.id, s])), dep = DRIVE_INFO.pts[0], want = [];
+  (r.routes || []).forEach(x => (x.runs || []).forEach(run => { if (!run.length) return;
+    const seq = [dep, ...run.map(id => byId.get(id)).filter(Boolean), dep];
+    for (let i = 0; i + 1 < seq.length; i++) want.push([seq[i], seq[i + 1]]); }));
+  const miss = want.filter(([a, b]) => RC_DRIVE.key(a) !== RC_DRIVE.key(b) && !DRIVE_CACHE.has(RC_DRIVE.key(a) + '|' + RC_DRIVE.key(b)));
+  if (!miss.length) return false;
+  const g = await RC_DRIVE.fill(sb, DRIVE_CACHE, miss);
+  DRIVE_INFO.got = { asked: DRIVE_INFO.got.asked + g.asked, found: DRIVE_INFO.got.found + g.found, billed: (DRIVE_INFO.got.billed || 0) + (g.billed || 0), error: g.error || DRIVE_INFO.got.error };
+  return g.found > 0;
+}
 const params = () => ({ mph: Number(CAR.plan_mph), roadFactor: Number(CAR.plan_road_factor), returnToStart: !!CAR.plan_return, goal: $('goal') ? $('goal').value : 'trucks',
   localMph: CAR.plan_local_mph != null ? Number(CAR.plan_local_mph) : null, localMiles: Number(CAR.plan_local_miles || 0), leg: DRIVE_LEG,
   buffer: Number(CAR.plan_window_buffer || 0), costs: { driverHr: COST().driverHr, perMile: COST().perMile, minDayH: COST().minDayH, longDayH: COST().longDayH },
@@ -822,22 +845,23 @@ $('run').onclick = async () => {
   const fleet = ticked(); if (!fleet.length) return fail('Tick at least one truck.');
   const stops = planStops(loads, fleet);
   // real drive times: remembered ones, and Google for any pair of places not asked before
-  DRIVE_LEG = null; DRIVE_NOTE = '';
+  DRIVE_LEG = null; DRIVE_NOTE = ''; DRIVE_CACHE = null; DRIVE_INFO = null;
   if (window.RC_DRIVE && CAR.plan_truck_factor != null) {
     const pts = [depot(), ...stops];
     $('run').disabled = true; $('run-msg').textContent = 'Getting drive times…';
     const { cache, error } = await RC_DRIVE.load(sb, pts);
-    let got = { asked: 0, found: 0 };
+    let got = { asked: 0, found: 0, billed: 0 };
+    const eng = await RC_DRIVE.engine(sb), engName = eng === 'here' ? 'HERE truck routing' : 'Google';
+    // 148: with HERE, ask only for trips between nearby stops (and to/from the DC); Google: every pair, as before
+    const wanted = eng === 'here' ? RC_DRIVE.nearPairs(pts) : RC_DRIVE.allPairs(pts);
     if (!error) {
-      const need = RC_DRIVE.allPairs(pts).filter(([a, b]) => !cache.has(RC_DRIVE.key(a) + '|' + RC_DRIVE.key(b)) && RC_DRIVE.key(a) !== RC_DRIVE.key(b)).length;
-      const engName = (await RC_DRIVE.engine(sb)) === 'here' ? 'HERE truck routing' : 'Google';
-      if (need) { $('run-msg').textContent = `Asking ${engName} for ${need} drive times (new places only; remembered after this)…`; got = await RC_DRIVE.fill(sb, cache, RC_DRIVE.allPairs(pts)); }
-      DRIVE_LEG = RC_DRIVE.leg(cache, CAR.plan_truck_factor);
+      const need = wanted.filter(([a, b]) => !cache.has(RC_DRIVE.key(a) + '|' + RC_DRIVE.key(b)) && RC_DRIVE.key(a) !== RC_DRIVE.key(b)).length;
+      if (need) { $('run-msg').textContent = `Asking ${engName} for ${need} drive times (new places only; remembered after this)…`; got = await RC_DRIVE.fill(sb, cache, wanted); }
+      DRIVE_LEG = RC_DRIVE.leg(cache, CAR.plan_truck_factor); DRIVE_CACHE = cache;
     }
     $('run').disabled = false; $('run-msg').textContent = '';
-    const legs = pts.length * (pts.length - 1), have = RC_DRIVE.allPairs(pts).filter(([a, b]) => DRIVE_LEG && DRIVE_LEG(a, b)).length;
-    DRIVE_NOTE = error ? 'Drive times estimated (run 123_drive_times.sql for Google drive times).'
-      : `Drive times: ${have} of ${legs} ${(() => { const h = RC_DRIVE.fromHere(cache, RC_DRIVE.allPairs(pts)); return h === have ? 'from HERE truck routing (truck times)' : h ? `known — ${h} from HERE truck routing, ${have - h} from Google (car time × ${CAR.plan_truck_factor} for a truck)` : `from Google (car time × ${CAR.plan_truck_factor} for a truck)`; })()}${got.asked ? `, ${got.found} of them asked for just now` : ''}${have < legs ? `; the rest estimated (${CAR.plan_local_mph} mph under ${CAR.plan_local_miles} mi, ${CAR.plan_mph} mph beyond)` : ''}.${got.error ? ` Drive times: ${got.error}` : ''}`;
+    DRIVE_INFO = { error, got, eng, engName, pts, wanted };
+    DRIVE_NOTE = driveNote();
   }
   // Trucks for the planner: each on the hours of the driver who will run it (a truck with no driver free
   // sits out), flagged as the account's own or not when the customer is a dedicated account.
@@ -891,6 +915,10 @@ $('run').onclick = async () => {
         fleet.splice(0, fleet.length, ...fAll);
       } else rental = { none: true, multiOn, own: b.trucks.length };
     } else { msg(stops.length > 60 ? 'Planning… a big day can take up to 15 seconds.' : 'Planning…'); b = build(fleet); r = await run(b); }
+    // 148: legs the plan drives that were estimated get real truck times, then plan once more on them
+    msg('Checking the chosen routes with real truck times…');
+    if (await checkChosenLegs(r)) { msg('Planning again on real truck times…'); r = await run(b); await checkChosenLegs(r); }
+    DRIVE_NOTE = driveNote();
   } finally { $('run').disabled = false; msg(''); }
   PLAN = { loads, fleet, result: r, ms: Math.round(performance.now() - t0), goal: params().goal, multi: MULTI(), spare: params().preferSpare,
            bind: b.bind, dedicated: b.dedicated, flags: Object.fromEntries(b.trucks.map(t => [t.id, t])), rental };

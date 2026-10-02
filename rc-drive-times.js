@@ -36,15 +36,18 @@
     pairs.forEach(([a, b]) => { if (!ok(a) || !ok(b)) return; const k = key(a) + '|' + key(b);
       if (key(a) === key(b) || cache.has(k) || seen.has(k)) return; seen.add(k); want.push({ k, from: { lat: +a.lat, lng: +a.lng }, to: { lat: +b.lat, lng: +b.lng } }); });
     if (!want.length) return { asked: 0, found: 0 };
-    let found = 0, last = null;
-    for (let i = 0; i < want.length; i += 2500) {
-      const part = want.slice(i, i + 2500);
+    // 148: neighbours together (map order, starting point first) so each call packs into cheap HERE requests
+    const strip = (p) => Math.floor(p.lat * 4), mo = (a, b) => strip(a) - strip(b) || (strip(a) % 2 ? b.lng - a.lng : a.lng - b.lng);
+    want.sort((x, y) => mo(x.from, y.from) || (x.from.lat - y.from.lat) || (x.from.lng - y.from.lng) || mo(x.to, y.to));
+    let found = 0, last = null, billed = 0;
+    for (let i = 0; i < want.length; i += 5000) {
+      const part = want.slice(i, i + 5000);
       const { data, error } = await sb.functions.invoke('route-miles', { body: { action: 'matrix', pairs: part.map(w => ({ from: w.from, to: w.to })) } });
       if (error || !data || !Array.isArray(data.times)) {
         let m = error ? error.message : 'No answer'; try { m = (await error.context.json()).error || m; } catch (_) {}
         return { asked: want.length, found, error: m };
       }
-      const rows = [], src = data.source === 'here' ? 'here' : 'google';
+      const rows = [], src = data.source === 'here' ? 'here' : 'google'; billed += Number(data.billed || 0);
       data.times.forEach((t, j) => { if (!t) return; const w = part[j], [f, to] = w.k.split('|');
         cache.set(w.k, { miles: t.miles, minutes: t.minutes, source: src }); rows.push({ from_key: f, to_key: to, miles: t.miles, minutes: t.minutes, source: src, fetched_at: new Date().toISOString() }); found++; });
       for (let r = 0; r < rows.length; r += 500) {
@@ -53,7 +56,7 @@
       }
       last = src;
     }
-    return { asked: want.length, found, source: last };
+    return { asked: want.length, found, source: last, billed };
   }
 
   // For planner-core: (a, b) -> { miles, minutes as a truck } | null
@@ -62,9 +65,22 @@
   // How many of these pairs have HERE truck times (for the planner's note)
   const fromHere = (cache, pairs) => pairs.filter(([a, b]) => ok(a) && ok(b) && (cache.get(key(a) + '|' + key(b)) || {}).source === 'here').length;
 
+  // 148: the pairs worth asking for. pts[0] is the start (DC / yard): to and from every stop. Each stop:
+  // to its k nearest stops (straight line). A truck never runs between far-apart stores and straight back,
+  // so those are estimated; the planner then checks the legs its plan actually uses (see fill).
+  const crow = (a, b) => { const R = 3958.8, r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+  const nearPairs = (pts, k = 15) => {
+    const seen = new Set(), v = pts.filter(p => ok(p) && !seen.has(key(p)) && seen.add(key(p)));
+    if (v.length <= k + 2) return allPairs(v);
+    const d0 = v[0], rest = v.slice(1), out = [];
+    rest.forEach(p => { out.push([d0, p], [p, d0]); });
+    rest.forEach(a => rest.filter(b => b !== a).map(b => [b, crow(a, b)]).sort((x, y) => x[1] - y[1]).slice(0, k).forEach(([b]) => out.push([a, b])));
+    return out;
+  };
   // Every ordered pair among some points (the planner), or each point to the next (one load)
   const allPairs = (pts) => { const out = []; pts.forEach(a => pts.forEach(b => { if (a !== b) out.push([a, b]); })); return out; };
   const inOrder = (pts, back) => { const out = []; for (let i = 0; i + 1 < pts.length; i++) out.push([pts[i], pts[i + 1]]); if (back && pts.length > 1) out.push([pts[pts.length - 1], pts[0]]); return out; };
 
-  window.RC_DRIVE = { key, load, fill, leg, allPairs, inOrder, engine, fromHere };
+  window.RC_DRIVE = { key, load, fill, leg, allPairs, inOrder, engine, fromHere, nearPairs };
 })();
