@@ -148,21 +148,6 @@
       </div>
       <p class="hint" id="ft-hint" style="margin:8px 0 0"></p>
 
-      <h3 style="font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">How detention is billed</h3>
-      <p class="hint" style="margin-top:-2px">The increment from this account's contract. Each DC can have its own; blank uses the main customer's, then your default.</p>
-      <div class="row" style="align-items:end">
-        <label for="det-inc" style="flex:0 1 220px">Billed in<select id="det-inc"><option value="">Inherit</option><option value="1">Exact minutes</option><option value="5">5 minutes</option><option value="6">6 minutes (tenths of an hour)</option><option value="10">10 minutes</option><option value="15">15 minutes (quarter hours)</option><option value="30">30 minutes (half hours)</option><option value="60">Whole hours</option></select></label>
-        <label for="det-rnd" style="flex:0 1 240px">A part increment<select id="det-rnd"><option value="">Inherit</option><option value="up">Rounds up (any part counts)</option><option value="nearest">Rounds to the nearest</option><option value="down">Rounds down (only full ones)</option></select></label>
-        <button class="btn" id="det-save" type="button">Save detention terms</button>
-      </div>
-      <p class="hint" id="det-hint" style="margin:8px 0 0"></p>
-      <details style="margin-top:6px"><summary style="cursor:pointer" class="hint">Your default (every account without its own)</summary>
-        <div class="row" style="align-items:end;margin-top:6px">
-          <label for="det-dinc" style="flex:0 1 220px">Billed in<select id="det-dinc"><option value="1">Exact minutes</option><option value="5">5 minutes</option><option value="6">6 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">Whole hours</option></select></label>
-          <label for="det-drnd" style="flex:0 1 240px">A part increment<select id="det-drnd"><option value="up">Rounds up</option><option value="nearest">Rounds to the nearest</option><option value="down">Rounds down</option></select></label>
-          <button class="btn" id="det-dsave" type="button">Save default</button>
-        </div></details>
-
       <h3 style="font-size:13px;margin:18px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">This customer&rsquo;s own delay codes</h3>
       <p class="hint" style="margin-top:-2px">Some customers hand you their own codes. Set them on the <b>main customer</b> and every DC under it inherits them.
         Each one points at one of your codes, so your reporting stays the same while their file speaks their language.</p>
@@ -309,7 +294,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = (n, d = 2) => '$' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits: d, maximumFractionDigits: 4});
 const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
-const UNITS = ['pallets', 'cases', 'boxes', 'cages', 'totes', 'parts'];
+const UNITS = ['pallets', 'boxes', 'cages', 'totes', 'parts'];
 let me = null, customers = [];
 
 async function start() {
@@ -552,8 +537,6 @@ async function loadDelays() {
     ? `Blank means inherited: ${inherited.join(', ')}. A delivery point can still override its own.`
     : 'Both set on this customer. A delivery point can still override its own.';
 
-  drawDetentionTerms(c, par);
-
   // their codes: this customer's, or the parent's if it has none of its own
   const { data: own } = await sb.from('customer_delay_codes')
     .select('id, their_code, their_name, delay_code_id, active, customer_id')
@@ -577,37 +560,6 @@ async function loadDelays() {
     : 'Codes added here are inherited by every account under this customer.';
 }
 
-// 156: detention billed in the contract's increment — this account's, else its main customer's, else the company's
-const INC_NAME = { 1: 'exact minutes', 5: '5 minutes', 6: '6 minutes', 10: '10 minutes', 15: 'quarter hours', 30: 'half hours', 60: 'whole hours' };
-const RND_NAME = { up: 'rounded up', nearest: 'rounded to the nearest', down: 'rounded down' };
-async function drawDetentionTerms(c, par) {
-  const ids = [c.id, par && par.id].filter(Boolean);
-  const [cu, car] = await Promise.all([sb.from('customers').select('id, detention_increment_min, detention_rounding').in('id', ids),
-                                       sb.from('carriers').select('detention_increment_min, detention_rounding').maybeSingle()]);
-  if (cu.error) { $('det-inc').closest('.row').hidden = true; $('det-hint').textContent = ''; return; }   // before 156
-  const me = (cu.data || []).find(x => x.id === c.id) || {}, pm = par ? (cu.data || []).find(x => x.id === par.id) || {} : {}, k = car.data || {};
-  $('det-inc').value = me.detention_increment_min ?? ''; $('det-rnd').value = me.detention_rounding ?? '';
-  $('det-dinc').value = String(k.detention_increment_min ?? 15); $('det-drnd').value = k.detention_rounding ?? 'up';
-  const inc = me.detention_increment_min ?? pm.detention_increment_min ?? k.detention_increment_min ?? 15;
-  const rnd = me.detention_rounding ?? pm.detention_rounding ?? k.detention_rounding ?? 'up';
-  const from = (own, p) => own != null ? 'this account' : p != null ? esc(par.name) : 'your default';
-  const ex = Math.max(0, (rnd === 'down' ? Math.floor(40 / inc) : rnd === 'nearest' ? Math.round(40 / inc) : Math.ceil(40 / inc)) * inc);
-  $('det-hint').innerHTML = `Billed in <b>${INC_NAME[inc] || inc + ' minutes'}</b> (from ${from(me.detention_increment_min, pm.detention_increment_min)}), part increments <b>${RND_NAME[rnd]}</b> (from ${from(me.detention_rounding, pm.detention_rounding)}). Example: 40 minutes over free time bills as ${inc === 1 ? 40 : ex} minutes.`;
-  const ed = !window.RC_ACCESS || window.RC_ACCESS.can('customers', 'edit');
-  ['det-inc', 'det-rnd', 'det-save', 'det-dinc', 'det-drnd', 'det-dsave'].forEach(id => $(id).disabled = !ed);
-}
-$('det-save').onclick = async () => {
-  const c = customers.find(x => x.id === $('cust').value); if (!c) return;
-  const { error } = await sb.from('customers').update({ detention_increment_min: $('det-inc').value === '' ? null : +$('det-inc').value,
-    detention_rounding: $('det-rnd').value || null }).eq('id', c.id);
-  if (error) return flash(error.message);
-  await loadDelays(); flash('Detention terms saved. Detention on this account\'s trips not yet invoiced was recalculated.');
-};
-$('det-dsave').onclick = async () => {
-  const { error } = await sb.rpc('set_detention_default', { p_increment: +$('det-dinc').value, p_rounding: $('det-drnd').value });
-  if (error) return flash(error.message);
-  await loadDelays(); flash('Default saved. Detention on trips not yet invoiced was recalculated.');
-};
 $('ft-save').onclick = async () => {
   const c = customers.find(x => x.id === $('cust').value); if (!c) return;
   const v = (el) => $(el).value === '' ? null : Math.max(0, parseInt($(el).value, 10));
@@ -802,7 +754,7 @@ $('dl-check').onclick = async () => {
     if (moved) dlPoint = null;   // don't keep a map point in the wrong town
     out.innerHTML = same ? '<span class="ok">Found — map point saved with this stop.</span>'
       : moved ? `<span class="error"><b>Careful:</b> Google's match is in a different ${townMoved ? 'town' : 'zip code'}: <b>${esc(hit.formatted || '')}</b>. The same street name is in many towns, so check the address with the customer.</span> <button class="btn small" type="button" id="dl-use">Use it anyway</button>`
-      : `Google matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not exact)</span>' : ''} <button class="btn" type="button" id="dl-use">Use this</button>`;
+      : `Matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not exact)</span>' : ''} <button class="btn" type="button" id="dl-use">Use this</button>`;
     const use = document.getElementById('dl-use');
     if (use) use.onclick = () => { $('dl-addr').value = hit.formatted; dlPoint = { lat: hit.lat, lon: hit.lng }; out.innerHTML = '<span class="ok">Updated — save to keep it.</span>'; };
   } catch (e) { out.innerHTML = `<span class="error">${esc((e && e.message) || 'Address check unavailable')}</span>`; }

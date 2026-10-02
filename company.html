@@ -99,12 +99,10 @@
     </div>
 
     <div class="card">
-      <header id="paid"><h2>4 · Getting paid</h2></header>
+      <header><h2>4 · Getting paid</h2></header>
       <div class="pad">
-        <div class="mini" id="pay-lock" hidden>Only the owner or someone with Edit on Invoices can change the company name, office address, billing email and remit-to address — they tell customers where to pay.</div>
         <label>Remit-to address <span class="mini">where checks go, if it isn't the office</span><textarea id="f-remit_address" placeholder="Blank = office address"></textarea></label>
         <label style="max-width:260px">Payment terms (days)<input id="f-terms_days" type="number" min="0" max="180" placeholder="30"></label>
-        <div id="pay-log" class="mini" style="margin:4px 0 10px"></div>
         <label style="max-width:320px">Hours-of-service cycle <span class="mini">for drivers without ELD data</span><select id="f-hos_cycle"><option value="">Not set (60 / 7 is assumed)</option><option value="70_8">70 hours / 8 days — trucks run every day</option><option value="60_7">60 hours / 7 days</option></select></label>
       </div>
     </div>
@@ -186,19 +184,7 @@ async function start() {
     $('readonly').innerHTML = '<b>View only.</b> Ask the owner to change these.';
     FIELDS.forEach(f => $('f-' + f).disabled = true); BOOLS.concat(Object.keys(NUMS)).forEach(f => $('f-' + f).disabled = true);
     $('f-logo').disabled = true; $('save').disabled = true;
-  } else if (a && !a.owner && !(a.can && a.can('invoices', 'edit'))) {
-    // 151: the payment details need the owner or Edit on Invoices
-    PAY_FIELDS.forEach(f => { const el = $('f-' + f); if (el) { el.disabled = true; el.title = 'Owner or Edit on Invoices only'; } });
-    $('pay-lock').hidden = false;
   }
-  payLog();
-}
-const PAY_FIELDS = ['name', 'office_address', 'remit_name', 'remit_address', 'remit_email'];
-const PAY_NAME = { name: 'Company name', office_address: 'Office address', remit_name: 'Remit-to name', remit_address: 'Remit-to address', remit_email: 'Billing email', remit_phone: 'Remit phone' };
-async function payLog() {   // 151: the last changes to where customers pay (owner and Invoices viewers can read it)
-  const { data, error } = await sb.from('carrier_settings_log').select('changed_at, changed_by, setting, old_value, new_value').eq('payment', true).order('changed_at', { ascending: false }).limit(6);
-  if (error || !data || !data.length) { $('pay-log').innerHTML = ''; return; }
-  $('pay-log').innerHTML = '<b>Recent changes to the payment details</b><br>' + data.map(c => `${esc(new Date(c.changed_at).toLocaleString())} · ${esc(c.changed_by || '')} · ${esc(PAY_NAME[c.setting] || c.setting)}: "${esc(c.old_value || 'blank')}" → "${esc(c.new_value || 'blank')}"`).join('<br>');
 }
 $('login-btn').onclick = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value }); if (error) { $('login-error').textContent = error.message; return; } location.reload(); };
 $('signout').onclick = async () => { await sb.auth.signOut(); location.reload(); };
@@ -246,7 +232,7 @@ $('save').onclick = async () => {
   $('msg').textContent = 'Saving…';
   const { data, error } = await sb.from('carriers').update(upd).eq('id', me.carrier_id).select('*');
   if (error || !data || !data.length) { $('msg').innerHTML = `<span class="error">${esc(error?.message || 'Not saved. Only the owner can change these.')}</span>`; return; }
-  carrier = data[0]; fill(); payLog();
+  carrier = data[0]; fill();
   $('msg').innerHTML = '<span class="ok">Saved.</span>';
   setTimeout(() => $('msg').textContent = '', 4000);
 };
@@ -349,7 +335,7 @@ async function checkAddress(fieldId) {
     if (!hit) { out.innerHTML = '<span class="error">Google couldn\'t find that address. Check the street, town and ZIP.</span>'; return; }
     const same = (hit.formatted || '').toLowerCase().replace(/[.,]/g, '') === typed.toLowerCase().replace(/[.,]/g, '');
     if (same) { out.innerHTML = '<span class="ok">Found — the address looks right.</span>'; return; }
-    out.innerHTML = `Google matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not an exact match)</span>' : ''}
+    out.innerHTML = `Matched: <b>${esc(hit.formatted || '')}</b>${hit.partial ? ' <span class="error">(not an exact match)</span>' : ''}
       <button class="btn small" style="margin-left:6px">Use this</button>`;
     const btn = out.querySelector('button');
     if (btn) btn.onclick = () => { box.value = hit.formatted; out.innerHTML = '<span class="ok">Updated — remember to save.</span>'; };
